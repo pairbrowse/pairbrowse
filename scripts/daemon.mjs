@@ -37,7 +37,7 @@ import { createRequire } from "node:module";
 import { rmSync, existsSync, writeFileSync, readFileSync, statSync } from "node:fs";
 import { join, dirname, resolve as resolvePath, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { paths, loadConfig, ensureDirs } from "./paths.mjs";
+import { paths, loadConfig, ensureDirs, sessionFile } from "./paths.mjs";
 import { secretStore } from "./rules/secrets.mjs";
 import { createLogFile } from "./daemon/logfile.mjs";
 import { createFollow, isScreenPage, screenCard } from "./daemon/follow.mjs";
@@ -203,8 +203,7 @@ const refreshTabs = () => liveView()?.refreshTabs().catch(() => {});
 // them in itself and masks them in everything Claude reads back.
 const secrets = secretStore(paths.secrets, log);
 logFile.maskWith(() => secrets.get().values);
-// Hand-off grants (daemon/grants.mjs, their trail in audit.jsonl) and messages to the person's own
-// channels (daemon/notify/, credentials read from secrets.env at each send): yourTurn, below.
+// Hand-off grants (daemon/grants.mjs, trail in audit.jsonl) and messages to the person's channels (daemon/notify/, credentials read at each send): yourTurn, below.
 const audit = createAudit({ file: paths.audit, log });
 const grants = createGrants({ audit, log });
 const notifier = createNotifier({ channels: () => config.handoff?.channels, secret: (name) => secrets.get().values?.[name], log });
@@ -271,6 +270,7 @@ const context = createContext({
   beforeRename: () => { activityLog.flush(); return timeline.settled(); }, onRenamed: (from, to) => journal.renamed(from, to),
   liveOthers: () => liveView()?.joinersNow() || [], // people who joined this session, there now
   onTabClosed: (page) => { tabClaims.drop(page); screenshots.forgetPage(page); hud.forgetPage(page); handoffs.forgetPage(page); }, // a closed tab's turn ends with it, with the maps onto its pictures and the sparks on it
+  onRestored: () => yourTurn.recover(), onCrashLoop: () => yourTurn.crashLoop(), // a hand-off a restart cut short: a new link, or stopped safely (B16)
   status: (badge) => liveView()?.setStatus(badge),
   onDownload: (e) => downloads.event(e),
   shuttingDown: () => shuttingDown,
@@ -632,7 +632,8 @@ const journal = createJournal({ session: () => context.sessionName(), openPages:
 const outlines = createOutlines({ mask: output.mask });
 // Hand-offs to the person: the badge and the Tools tab as before, and their channels when hand-offs go there (daemon/yourturn.mjs).
 const yourTurn = createYourTurn({ config, grants, notifier, audit, handoffs, journal, hud, log, hostNote, agentBy, saveTabs: () => context.saveTabs(), sessionName: () => context.sessionName(),
-  linkFor: (key) => sharing.handoffLink(key), sends: () => handoffSends(config, { server: context.isServer() }) });
+  linkFor: (key) => sharing.handoffLink(key), sends: () => handoffSends(config, { server: context.isServer() }), actionsIn: (p) => presence.didIn(p), // what the person did there: names only (B15)
+  turnFile: (s) => sessionFile(s, "turn.json"), keptAlive: () => context.keepAlive(), successorOf: (p) => context.successorOf(p), pagesNow: () => context.openPages() }); // a restart's hand-offs come back (B16)
 const timeline = createTimeline({ dir: () => timelineDir(context.sessionName()), enabled: () => config.timeline !== false, cap: () => config.timelineCap, mask: output.mask, step: () => journal.step(), onNote: (text) => hud.addActivity(`Note: ${text}`, HOST, null), log });
 const serve = createServe({
   onRunStatus: (...a) => yourTurn.onRunStatus(...a), yourTurn, // a fast-mode run's hand-off step; hand-offs (B10 masking)
@@ -652,6 +653,7 @@ const serve = createServe({
       return { text: JSON.stringify({ close: ctx?.listenerCount("close") ?? -1, disconnected: ctx?.browser?.()?.listenerCount("disconnected") ?? -1, contexts: ctx ? contextCount(ctx) : -1, screenshots: screenshots.held().size, clients: clients.size, rss: m.rss, heapUsed: m.heapUsed, heapTotal: m.heapTotal, external: m.external, arrayBuffers: m.arrayBuffers }) };
     } } : {}),
     ...(testOn("TAB_ORDER") ? { pairbrowse_test_tab_order: (args) => tabOrder.testCommand(args) } : {}),
+    ...(testOn("FILL") ? { pairbrowse_test_fill: async ({ url, selector, value } = {}) => { const p = (await context.openPages()).find((x) => !x.isClosed() && x.url() === url); return (await within(5000, p ? p.fill(String(selector), String(value), { timeout: 4000 }).then(() => true, () => false) : Promise.resolve(false))) ? { text: "filled" } : { text: "not filled", error: true }; } } : {}), // tests only (FILL): a field set as a person would, card numbers included (no agent may type them)
     // Tests only (PAIRBROWSE_TEST_JOIN_PROMPT=1): the join request in each tab's bottom bar, and
     // clicks on it as a person would (a trusted click), as an agent's or a joiner's input would,
     // or as a page script would (synthetic events); the browser's focus set (focus: true, false,
@@ -791,8 +793,7 @@ async function shutdown(code) {
   const turnsEnded = yourTurn.stop().catch(() => {}); // hand-offs end (helper-stopped), their messages on the way while the browser closes (at most STOP_MS)
   journal.flushNow().catch(() => {}); // the goal log's last lines
   activityLog.flush(); // the activity log's last lines
-  // Join codes outlive a restart: their tunnels keep running for the next run (sharing.mjs); a
-  // tunnel kept idle for a next code ends with the helper.
+  // Join codes outlive a restart: their tunnels keep running for the next run (sharing.mjs); one kept idle for a next code ends with the helper.
   sharing.suspend();
   // Joiners' channels end before the browser closes: its tabs closing isn't the host closing them,
   // and joiners keep their copies.
@@ -800,9 +801,8 @@ async function shutdown(code) {
   follow.stop().catch(() => {});
   cobrowse.stop();
   screens.close().catch(() => {}); // joiners' direct connections and the tabs' debugger sessions
-  // The browser gets a clean close (the engine writes its cookies and logins on the way out; it
-  // writes them only every ~30 s otherwise), at most SHUTDOWN_GRACE_MS: then the helper exits
-  // and Playwright's exit handler kills what's left of it.
+  // The browser gets a clean close (the engine writes its cookies and logins on the way out; it writes them only every ~30 s
+  // otherwise), at most SHUTDOWN_GRACE_MS: then the helper exits and Playwright's exit handler kills what's left of it.
   const started = Date.now();
   setTimeout(() => { log(`shutdown: the browser didn't close within ${SHUTDOWN_GRACE_MS} ms; killing it`); process.exit(code); }, SHUTDOWN_GRACE_MS).unref();
   await Promise.all([context.close({ deadline: started + SHUTDOWN_GRACE_MS }), turnsEnded]);

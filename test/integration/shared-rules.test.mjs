@@ -56,7 +56,7 @@ test("shared sessions: agent turns across computers, scroll presence, payment fo
   const joinHome = home("sj-");
   writeFileSync(join(hostHome, "config.json"), JSON.stringify({ executablePath, browserArgs, display: "none", screenshots: false, participantName: "Bob" }));
   writeFileSync(join(joinHome, "config.json"), JSON.stringify({ executablePath, browserArgs, display: "none", screenshots: false, participantName: "Alice" }));
-  const env = (h) => ({ ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1" });
+  const env = (h) => ({ ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1", PAIRBROWSE_TEST_FILL: "1" });
   const daemons = [];
   const connect = async (h) => {
     daemons.push(spawnDaemon(h, { env: env(h) }));
@@ -140,7 +140,9 @@ test("shared sessions: agent turns across computers, scroll presence, payment fo
     stage = "a card number replaces the plain value: no stale value in Alice's copy, nothing echoed back";
     await until("abc on the host", async () => /textbox "Pay with"[^\n]*: abc/.test(await snap(host.call)));
     s = await snap(host.call);
-    assert.ok(!(await tool(host.call, "browser_type", { target: ref(s, "textbox", "Pay with"), text: "4242424242424242" })).result.isError);
+    // Agents never type a card number (spec server-mode B13): the person on the host does.
+    assert.match(text(await tool(host.call, "browser_type", { target: ref(s, "textbox", "Pay with"), text: "4242424242424242" })), /^Refused \(the text holds a card number\)/);
+    assert.equal(text(await tool(host.call, "pairbrowse_test_fill", { url: "http://shop.pbtest.example/checkout", selector: "#pay", value: "4242424242424242" })), "filled");
     await until("Alice's copy drops abc and shows it filled", async () => { const x = await snap(joiner.call); return !/: abc/.test(x) && /filled by Bob/.test(x); }, 15_000);
     await sleep(3000);
     const payField = (await until("the form on Carol's channel", async () => [...seen.forms.values()].find((f) => f.fields.some((x) => x.k === "#pay")))).fields.find((x) => x.k === "#pay");

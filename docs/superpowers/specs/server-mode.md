@@ -1499,6 +1499,55 @@ it depends on.
    `test/config-route.test.mjs` (Away).
 22. `browser_wait_for` early wake, `handedOff` refusals, card-field refusals in every session,
     fast-mode step, `turn.json` recovery (B9, B13, B15, B16). -> 21, 8
+   Landed as: B9: `yourturn.handedOff(page)` answers `"open"`, `"held"` or `""`; `tabRefusal(...,
+   { handedOff })` (passed by `rewrite.mjs`) refuses every `HAND_TOOLS` tool, `pairbrowse_run`,
+   `browser_navigate`, `browser_navigate_back` and `browser_tabs close` of the tab (its own, or by
+   index) with `HANDED_OFF_RULE` or `HELD_RULE`; a refused click leaves the "you" badge up. B13 (as
+   13.1): pure rules in `scripts/rules/cards.mjs` (`CARD_TOKENS`, `isCardNumber`: Luhn plus a network
+   table of prefixes and lengths, 13-digit Visa left out so EAN and ISBN codes pass; `cardNumbersIn`
+   on `maskCards`' shapes; `cardKey` for digits and Cmd/Ctrl+V (Shift and Alt held too, as "paste
+   and match style" is), Shift+Insert; `cardRefusal(signal)`,
+   "Refused (<signal>). Card details are the person's to enter: hand this step over with
+   pairbrowse_status kind you, step payment, then wait with browser_wait_for."), the page reads in
+   `scripts/runner/cards.mjs` (`cardFieldOf`, `cardFieldAt`, `focusedCardField`, each read bounded at
+   1.5 s and read as no card field when the page doesn't answer: the text is still checked).
+   `refuse.mjs` `cardProblem` runs in `browserToolProblem` right after the reserved-secret check:
+   `browser_type`, `browser_fill_form`, `browser_drop` `data`, `browser_select_option`, and
+   `browser_press_key` digits or paste into the focused field. Fast mode: `preflight` refuses a fill
+   with a card number before any step; `fill.mjs` refuses a saved password holding one and any card
+   field (its combobox fallback too); added beyond 13.1 for the same rule: `select.mjs` (native and
+   main path) and `press.mjs` (digits, paste). `facts.mjs` refuses a card number from `remember` and
+   drops one from `seenInForm`. B15: `yourturn.ended(page, participant)` (the agent's own "you" or
+   run step, else the grant covering the tab) is raced by `browser_wait_for` (`wait-for.mjs`: the
+   `time` sleep and the `text`/`textGone` looks alike, and with nothing named it waits for the
+   hand-off up to 120 s;
+   `endedLine`: "ended (<reason>)... take a browser_snapshot", or at expiry "timed out ... Stop
+   here"); `onRunStatus` now mints a grant for a fast-mode `handoff` step when hand-offs go to the
+   channels, which the step races through `hooks.turnEnded` (Done or cleared finishes it, expiry and
+   other ends stop the run) and ends with `agent` when the step ends; on every end but `expired` one
+   host note: why, `presence.didIn(page)` (field and button names), and to take a snapshot. B16:
+   `createYourTurn` deps `turnFile` (`sessionFile(name, "turn.json")`), `keptAlive`, `successorOf`,
+   `pagesNow`, `actionsIn`; `turn.json` is `{ v: 1, turns: [{ id, key, action, host, url, expiresAt,
+   reminded, sent }] }` (0600, rewritten on each change, removed when empty, read once per session
+   per helper before its first write). Differs from B16 as written: an end by `browser-restarted`
+   under keep-alive sends no ended message yet; `recover()` (called by `browser/tabs.mjs` after a
+   restore through the new `onRestored` dep, and by `daemon.mjs`) mints the replacement on the
+   successor tab (else the tab at the same address, else the same origin and path) with the same
+   deadline and no second reminder if one went, or sends the deferred ended message (now "the browser
+   restarted. The step was stopped safely."). The supervisor's `onCrashLoop` is `yourTurn.crashLoop()`,
+   which sends those deferred messages. A helper stop still sends its `helper-stopped` message at
+   once (the person may not see that helper again) and keeps the entry; the next helper reissues it
+   once if more than 5 s are left, else drops it. Tests: the four that typed a card through an agent
+   tool: `click-flows` now asserts the refusal (the form's `cc-*` fields alone make its submit a
+   payment), `shared-rules` and `join` set the card with the new `pairbrowse_test_fill` (switch
+   `FILL`: `page.fill` as a person would), `fastmode-forms` asserts the preflight refusal and keeps
+   the frame case with a non-card value. Unit: `test/cards.test.mjs` (new), `test/refusals.test.mjs`,
+   `test/wait-for.test.mjs` (new), `test/yourturn.test.mjs`. Security rows: "Card details are
+   entered by a person, never by an agent, in every session and app" and "An agent finishes a step
+   meant for a person" (B-4) are new; the Pay click, masking, hand-off link and files-at-rest rows
+   name them. Not here: the CHANGELOG entry (with the release, step 50), the shared-rules case
+   "after a payment hand-off ends, an agent's click on the site's Pay button still needs the Pay:
+   name" (the Pay rule itself is unchanged), the integration test of the full path (step 46's harness).
 23. `skills/pairbrowse/SKILL.md` and `core.md` text (B15). -> 22
 24. `net/config.mjs` and `network` schema (C4). -> 15
 25. Native-engine proxy rules: saved persona refusal, `proxyAuthFile` in `shellFrom` and
@@ -1683,7 +1732,7 @@ build is installed locally; the measurement lands with spike E-S1, step 39).
 - Corrections to B13 and step 22: the check lives in `browserToolProblem` (`refuse.mjs`, beside the
   secret-frame check, before `rewrite.mjs` so both drivers and the native humanized fill are covered)
   and in `runner/steps/fill.mjs`, not in the pure `tabRefusal`. It also covers `browser_drop` data,
-  `browser_press_key` digits and Cmd/Ctrl+V into a focused card field, secrets resolved by name,
+  `browser_press_key` digits and pastes (Cmd/Ctrl+V, with Shift or Alt too) into a focused card field, secrets resolved by name,
   `pairbrowse_facts remember` and `seenInForm`, and `browser_select_option` on `cc-exp-*`.
 - Detection: refuse `cc-number`, `cc-csc`, `cc-exp`, `cc-exp-month`, `cc-exp-year`; allow
   `cc-name`, `cc-given-name`, `cc-family-name`, `cc-additional-name`, `cc-type` (as `sensitiveHints`).

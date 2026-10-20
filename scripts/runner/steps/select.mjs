@@ -2,6 +2,8 @@
 import { bounded } from "../../util.mjs";
 import { byFirstOption, byNearbyText, cssString, find, formRoots, hiddenNow, onlyOne, unfold } from "../locate.mjs";
 import { chooseNative, hiddenDropdown, labelOpener, nativeNamed, pickFromOpened } from "../choices.mjs";
+import { cardRefusal } from "../../rules/cards.mjs";
+import { cardFieldOf } from "../cards.mjs";
 
 export async function select({ page, arg, hooks, touched, fail, gone, theirs }) {
   for (const [label, option] of Object.entries(arg)) {
@@ -14,6 +16,8 @@ export async function select({ page, arg, hooks, touched, fail, gone, theirs }) 
       const native = await nativeNamed(page, label);
       if (native) {
         if (await theirs(native, label)) continue;
+        const card = await cardFieldOf(native, page.url()); // a card's expiry is the person's to choose (spec server-mode B13)
+        if (card) return fail(cardRefusal(card));
         const picked = await chooseNative(native, option);
         if (!picked.picked) return fail(`"${label}" has no option "${option}". Its options: ${picked.options.join(", ")}.`);
         touched.push({ el: native, label, want: picked.picked });
@@ -52,6 +56,8 @@ export async function select({ page, arg, hooks, touched, fail, gone, theirs }) 
       else return fail(u.note ? `No dropdown "${label}" shows.${u.note}${gone()}` : await hiddenNow(page, label) ? `"${label}" is hidden right now: the form shows it only for some answers. Leave it, or change the answer it depends on.` : `No dropdown "${label}".${gone()}`);
     }
     if (await theirs(el, label)) continue;
+    const card = await cardFieldOf(el, page.url());
+    if (card) return fail(cardRefusal(card));
     await hooks.cursor?.(el, "click");
     const isSelect = await bounded(el.evaluate((n) => n.tagName === "SELECT"), false);
     if (isSelect) {

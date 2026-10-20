@@ -141,9 +141,12 @@ test("fast mode fills a form inside a frame, opens a styled dropdown, ticks a st
     // A field the form doesn't have (it dropped it) is never taken for another dropdown.
     const gone = text(await a.tool("pairbrowse_run", { steps: [{ select: { Region: "Europe" } }] }));
     assert.match(gone, /No dropdown "Region"/, gone);
-    // A card frame is never filled by fast mode: card details are the user's.
+    // Card details are the user's (spec server-mode B13): a card number is refused before any
+    // step runs, and a card frame's fields are never filled whatever the value.
     const card = text(await a.tool("pairbrowse_run", { steps: [{ fill: { "Card number": "4242424242424242" } }] }));
-    assert.match(card, /No field "Card number"/, card);
+    assert.match(card, /^Step 1 \(fill\): Refused \(the text holds a card number\)\. Card details are the person's to enter/, card);
+    const framed = text(await a.tool("pairbrowse_run", { steps: [{ fill: { "Card number": "1234" } }] }));
+    assert.match(framed, /No field "Card number"/, framed);
     // Choices with no text of their own (icons named by aria-label), and a list inside a web
     // component's shadow root, are read and clicked like any other.
     await a.tool("browser_navigate", { url: `http://127.0.0.1:${site.address().port}/icons` });

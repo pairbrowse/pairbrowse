@@ -2,8 +2,14 @@
 import { strongSignal } from "../../rules/clicks.mjs";
 import { within } from "../../util.mjs";
 import { activatingKey, enterButtonLabel, riskAt, riskReason } from "../risk.mjs";
+import { cardKey, cardRefusal, SIGNALS } from "../../rules/cards.mjs";
+import { focusedCardField } from "../cards.mjs";
 
 export async function press({ page, arg, i, steps, fail, run }) {
+  // A card's digits or a paste into a card field: the person's to enter (spec server-mode B13).
+  const typing = cardKey(arg);
+  const card = typing ? await focusedCardField(page) : "";
+  if (card) return fail(cardRefusal(SIGNALS.key(typing, card)));
   const key = activatingKey(arg);
   // Enter right after a fill goes to the field typed last, as a person's would: the run's own
   // Tab (leaving each field to check it kept its value) moved the focus on.

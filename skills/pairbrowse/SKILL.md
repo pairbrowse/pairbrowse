@@ -116,11 +116,16 @@ says where; the side panel's Record button does the same. A recording ends with 
 - A password's name typed as the value (from `pairbrowse_facts` `get`) is replaced with the real one
   and shows to you as `<secret>NAME</secret>`. Each works only on the HTTPS sites saved with it. If
   none exists or it's refused, ask the user to save it in the Profile panel or type it themselves.
+- Card details are the user's to enter, in every session: typing, filling, choosing or pasting
+  into a card number, security code or expiry field (or any field in a payment provider's card
+  frame), a card number as the text, or a saved password that holds one is refused, in fast mode
+  too, test cards included; `pairbrowse_facts` never keeps one. Fill the rest (the name on the
+  card, the billing address), then hand the step over: `pairbrowse_status` kind `you`, step
+  `payment`, and wait with `browser_wait_for`.
 - As a joiner's agent (working in someone else's browser over a join), card numbers read back as
   `••••` and their last two digits (snapshots, `browser_find`, results, outlines, payment frames
   too) and a security code, expiry, PIN, one-time code, IBAN, SSN or password field's value as
-  `••••`. To check a card you filled, compare the last two digits ("card ending 42 filled"); don't
-  retype it because it reads masked. On a page with many frames, or one whose frames don't
+  `••••`. To check a card the user entered, compare the last two digits ("card ending 42"). On a page with many frames, or one whose frames don't
   answer, every field's value reads `••••`: trust what you typed. Your screenshots there show card
   fields covered by a box (a page that can't be read: the whole view). In
   your own user's browser you read and see the page as it is. Recordings and timeline pictures

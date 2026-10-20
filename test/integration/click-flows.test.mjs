@@ -164,7 +164,14 @@ test("ordinary flows never interrupt; real commitments ask", { skip: !runtime, t
     stage = "checkout with card fields";
     flow = "checkout";
     await call("browser_navigate", { url: `${site}/checkout` });
-    await type("Card number", "4242424242424242");
+    // The card is the person's to enter (spec server-mode B13): the agent's typing is refused, and
+    // the form's card fields alone make its submit a payment.
+    // A card number is refused for what it is (the text is looked at first); any other text into
+    // the card number field is refused for the field.
+    const typed = await call("browser_type", { target: ref(await snap(), "textbox", "Card number"), text: "4242424242424242" });
+    assert.match(text(typed), /^Refused \(the text holds a card number\)\. Card details are the person's to enter/);
+    const short = await call("browser_type", { target: ref(await snap(), "textbox", "Card number"), text: "1234" });
+    assert.match(text(short), /^Refused \(a card number field \(autocomplete cc-number\)\)\. Card details are the person's to enter/);
     const order = await click("button", "Place order");
     assert.match(text(order), /^Refused[^\n]*final action \(pay\)/, "refused until named");
     const fast = await claude.call("tools/call", { name: "pairbrowse_run", arguments: { steps: [{ click: "Place order" }] } });

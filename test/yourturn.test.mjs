@@ -5,7 +5,7 @@
 import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -31,7 +31,7 @@ function pageAt(url, tabs = []) {
 
 // A helper's worth of hand-offs: real grants, audit, notifier (webhook through a stub post) and
 // Tools tab list, on clocks and timers the test moves.
-function setup({ enabled = true, away = true, server = false, channels = [{ type: "webhook", urlSecret: "PAIRBROWSE_WEBHOOK_URL" }], post, agentBy } = {}) {
+function setup({ enabled = true, away = true, server = false, channels = [{ type: "webhook", urlSecret: "PAIRBROWSE_WEBHOOK_URL" }], post, agentBy, extra = {} } = {}) {
   const clock = { t: 1_800_000_000_000, m: 9_000 };
   const timers = [];
   const fake = { set: (fn, ms) => { const t = { fn, at: clock.t + ms, done: false }; timers.push(t); return t; }, clear: (t) => { if (t) t.done = true; } };
@@ -60,7 +60,7 @@ function setup({ enabled = true, away = true, server = false, channels = [{ type
     journal: { flushNow: async () => { flushed++; }, status: (kind, text) => journal.push({ kind, text }) },
     saveTabs: async () => { saved++; return {}; }, sessionName: () => "default",
     linkFor: async (key) => `http://127.0.0.1:4100/${key}/`,
-    sends: () => handoffSends(config, { server }), timers: fake, now: () => clock.t, turnMs: () => 0, ...(agentBy ? { agentBy } : {}),
+    sends: () => handoffSends(config, { server }), timers: fake, now: () => clock.t, turnMs: () => 0, ...(agentBy ? { agentBy } : {}), ...extra,
   });
   return { clock, fire, grants, yt, sent, notes, journal, badges, logged, handoffs, hud, audit: () => linesOf(file), file, config, counts: () => ({ saved, flushed }) };
 }
@@ -139,12 +139,12 @@ test("the agent's next status ends its hand-off (agent); a cleared check ends Pa
   s.hud.page = page;
   await s.yt.onStatus("p1", { kind: "you", text: "Sign in", step: "login" }, page);
   const id = s.grants.open()[0].id;
-  assert.equal(s.yt.handedOff(page), true);
+  assert.equal(s.yt.handedOff(page), "open");
   assert.equal(await s.yt.onStatus("p1", { kind: "claude", text: "Filling the form" }, page), "");
   await tick();
   assert.equal(s.grants.open().length, 0);
   assert.deepEqual(s.sent.at(-1), { event: "pairbrowse.ended", id, kind: "login", host: "shop.example", link: null, expiresAt: s.sent[0].expiresAt, reason: "agent" });
-  assert.equal(s.yt.handedOff(page), false);
+  assert.equal(s.yt.handedOff(page), "");
   // A check on a page: a grant of kind captcha; cleared ends it.
   const check = pageAt("https://tickets.example/queue");
   s.yt.onChallenge(CHALLENGE_TURN, check);
@@ -213,7 +213,7 @@ test("at expiry: flush, save tabs, yourTurn line, keys stop, one ended message, 
   assert.match(s.handoffs.list()[0].text, /^Timed out/);
   assert.deepEqual(s.notes, [TIMEOUT_NOTE]);
   assert.equal(s.grants.held(page), true);
-  assert.equal(s.yt.handedOff(page), true, "agents keep out of a held tab");
+  assert.equal(s.yt.handedOff(page), "held", "agents keep out of a held tab");
   assert.equal(s.yt.masked(page), true, "and its results stay masked");
   // A new "you" mints a new grant to that same tab (and a single reminder again); the hold goes.
   await s.yt.onStatus("p1", { kind: "you", text: "Pay", step: "payment" }, page);
@@ -457,4 +457,145 @@ test("B10 wiring: pairbrowse_click_at covers or drops the picture of a handed-ov
   assert.equal(own.covers[0], null);
   assert.equal(own.r.content.some((c) => c.type === "image"), true);
   assert.equal(own.pictures.length, 1);
+});
+
+test("on every end but expired, one host note names what the person did (names only) and says to take a snapshot; ended(page) wakes a waiter", async () => {
+  const s = setup({ extra: { actionsIn: () => 'typed in "Card number", clicked "Pay"' } });
+  const page = pageAt("https://shop.example/checkout");
+  s.hud.page = page;
+  await s.yt.onStatus("p1", { kind: "you", text: "Pay", step: "payment" }, page);
+  assert.equal(s.yt.ended(null, "p2"), null, "another agent has no hand-off of its own");
+  const waiting = s.yt.ended(null, "p1");
+  const byTab = s.yt.ended(page);
+  const id = s.grants.open()[0].id;
+  s.grants.end(id, "done");
+  assert.deepEqual(await waiting, { id, reason: "done" });
+  assert.deepEqual(await byTab, { id, reason: "done" });
+  assert.equal(s.notes.length, 1);
+  assert.equal(s.notes[0], `Hand-off ${id} (Approve a payment on shop.example, tab 0) ended: the person pressed Done. The person there: typed in "Card number", clicked "Pay". ` +
+    "Take a browser_snapshot before you go on; Done is only a hint, so check the page shows the step finished.");
+  assert.equal(s.yt.ended(page), null, "nothing open now");
+  // The agent's next status, a closed tab: one note each. Expiry: the timeout note alone (B11).
+  await s.yt.onStatus("p1", { kind: "you", text: "Pay", step: "payment" }, page);
+  await s.yt.onStatus("p1", { kind: "claude", text: "Checking" }, page);
+  assert.match(s.notes.at(-1), /ended: your next status ended it\./);
+  await s.yt.onStatus("p1", { kind: "you", text: "Pay", step: "payment" }, page);
+  s.clock.t += 15 * MIN + 1;
+  s.grants.sweep();
+  for (let i = 0; i < 6; i++) await tick();
+  assert.deepEqual(s.notes.slice(2), [TIMEOUT_NOTE]);
+});
+
+test("a fast-mode handoff step gets a grant when hand-offs go to the channels; the step's end ends it (agent)", async () => {
+  const s = setup();
+  const page = pageAt("https://shop.example/login");
+  s.yt.onRunStatus("p1", "Sign in, then press Done", "you", page, "Claude");
+  const [g] = s.grants.open();
+  assert.equal(g.page, page);
+  assert.equal(s.yt.handedOff(page), "open");
+  const ended = s.yt.ended(page, "p1");
+  s.yt.onRunStatus("p1", "", "clear", page, "Claude");
+  assert.deepEqual(await ended, { id: g.id, reason: "agent" });
+  assert.equal(s.handoffs.list().length, 0);
+});
+
+// B16: turn.json in a folder of the test's own; the browser's tabs as the test sets them.
+function restartable(extra = {}) {
+  const dir = mkdtempSync(join(tmpdir(), "pb-turnfile-"));
+  const file = join(dir, "turn.json");
+  const tabs = { list: [], successors: new Map() };
+  const s = setup({ extra: { turnFile: () => file, keptAlive: () => true, successorOf: (p) => tabs.successors.get(p) || null, pagesNow: async () => tabs.list, ...extra } });
+  return { s, file, tabs };
+}
+
+test("a browser restart with keepAlive mints one replacement grant with the same deadline; turn.json holds no key or link", async () => {
+  const { s, file, tabs } = restartable();
+  const page = pageAt("https://shop.example/login?step=2");
+  s.hud.page = page;
+  await s.yt.onStatus("p1", { kind: "you", text: "Sign in", step: "login" }, page);
+  const [g] = s.grants.open();
+  const saved = readFileSync(file, "utf8");
+  assert.deepEqual(JSON.parse(saved).turns, [{ id: g.id, key: "status:p1", action: "login", host: "shop.example", url: "https://shop.example/login?step=2", expiresAt: g.expiresAt, reminded: false, sent: ["webhook"] }]);
+  assert.ok(!saved.includes(s.sent[0].link.split("/")[3]), "no key");
+  assert.equal((statSync(file).mode & 0o777).toString(8), "600");
+  s.clock.t += 2 * MIN;
+  s.yt.browserClosed();
+  await tick();
+  assert.equal(s.sent.filter((m) => m.event === "pairbrowse.ended").length, 0, "no ended message while the browser comes back");
+  const back = pageAt("https://shop.example/login?step=2");
+  tabs.successors.set(page, back);
+  tabs.list = [back];
+  await s.yt.recover();
+  const [r] = s.grants.open();
+  assert.equal(r.page, back);
+  assert.equal(r.expiresAt, g.expiresAt, "the same deadline");
+  assert.notEqual(r.id, g.id);
+  const turn = s.sent.at(-1);
+  assert.equal(turn.event, "pairbrowse.turn");
+  assert.equal(turn.reason, "browser-restarted");
+  assert.notEqual(turn.link, s.sent[0].link, "a new link");
+  assert.deepEqual(s.audit().filter((l) => l.kind === "minted").map((l) => l.detail), ["login", ["login", "replacement"]]);
+  await s.yt.recover();
+  assert.equal(s.grants.open().length, 1, "once");
+  assert.deepEqual(JSON.parse(readFileSync(file, "utf8")).turns.map((t) => t.id), [r.id]);
+  // Its end (done) clears the file.
+  s.grants.end(r.id, "done");
+  assert.equal(existsSync(file), false);
+});
+
+test("a helper restart reissues once from turn.json before the deadline, never after; the reminder already sent isn't sent again", async () => {
+  const { s, file, tabs } = restartable();
+  const page = pageAt("https://bank.example/verify");
+  s.hud.page = page;
+  await s.yt.onStatus("p1", { kind: "you", text: "Code", step: "2fa" }, page);
+  s.clock.t += 10 * MIN;
+  s.fire(); await tick(); await tick();
+  await s.yt.stop(); // helper-stopped: the person hears it ended; the file stays for the next helper
+  assert.equal(s.sent.at(-1).reason, "helper-stopped");
+  assert.equal(JSON.parse(readFileSync(file, "utf8")).turns[0].reminded, true);
+  // The next helper, the tab restored at its address.
+  const next = setup({ extra: { turnFile: () => file, keptAlive: () => true, pagesNow: async () => tabs.list } });
+  next.clock.t = s.clock.t + MIN;
+  tabs.list = [pageAt("https://news.example/"), pageAt("https://bank.example/verify")];
+  await next.yt.recover();
+  const [r] = next.grants.open();
+  assert.equal(r.page, tabs.list[1]);
+  assert.equal(next.sent.at(-1).reason, "browser-restarted");
+  next.clock.t = r.expiresAt - MIN;
+  next.fire(); await tick(); await tick();
+  assert.equal(next.sent.filter((m) => m.event === "pairbrowse.reminder").length, 0, "exactly one reminder in all");
+  await next.yt.recover();
+  assert.equal(next.grants.open().length, 1, "once");
+  // After the deadline: nothing reissued; the file goes.
+  await next.yt.stop();
+  const late = setup({ extra: { turnFile: () => file, keptAlive: () => true, pagesNow: async () => tabs.list } });
+  late.clock.t = r.expiresAt + 1;
+  await late.yt.recover();
+  assert.equal(late.grants.open().length, 0);
+  assert.equal(late.sent.length, 0, "its end was said when the helper stopped");
+  assert.equal(existsSync(file), false);
+});
+
+test("a browser restart whose tab doesn't come back, or a crash loop, ends with the stopped-safely message", async () => {
+  const { s, tabs } = restartable();
+  const page = pageAt("https://shop.example/login");
+  s.hud.page = page;
+  await s.yt.onStatus("p1", { kind: "you", text: "Sign in", step: "login" }, page);
+  s.yt.browserClosed();
+  tabs.list = [pageAt("https://other.example/")];
+  await s.yt.recover();
+  await tick();
+  assert.equal(s.grants.open().length, 0);
+  assert.equal(s.sent.at(-1).event, "pairbrowse.ended");
+  assert.equal(s.sent.at(-1).reason, "browser-restarted");
+  const t = restartable();
+  t.s.hud.page = page;
+  await t.s.yt.onStatus("p1", { kind: "you", text: "Sign in", step: "login" }, page);
+  t.s.yt.browserClosed();
+  t.s.yt.crashLoop();
+  await tick();
+  assert.deepEqual(t.s.sent.filter((m) => m.event === "pairbrowse.ended").map((m) => m.reason), ["browser-restarted"]);
+  t.tabs.list = [page];
+  await t.s.yt.recover();
+  assert.equal(t.s.grants.open().length, 0, "nothing comes back after the crash loop ended it");
 });

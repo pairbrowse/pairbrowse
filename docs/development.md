@@ -134,6 +134,7 @@ is under the temp folder with a linked runtime), so none reaches an installed he
 | `SHOTS` | gate | you: a folder | `ui-screen` and `ui-right` save screenshots there |
 | `ACTIVE_MS` | knob | `integration/tour-fixes` | How long an agent's connection counts as active |
 | `APPROVAL` | knob | `integration/approval`, `integration/test-gate` | Adds `pairbrowse_test_approval`: the approval card, clicked as a person would |
+| `FILL` | knob | `integration/join`, `integration/shared-rules` | Adds `pairbrowse_test_fill`: a field in a tab set as a person would (`page.fill`), for card numbers no agent may type |
 | `FAILOVER_MS` | knob | `failover`, `integration/connections` | How long a joiner waits on a silent tunnel before the standby |
 | `GONE_MS` | knob | `join` | When a silent joiner counts as gone |
 | `JOIN_LOCAL` | knob | the join tests, `picker`, `taborder`, `bench` | Join codes may point at `http://127.0.0.1` (no tunnel) |

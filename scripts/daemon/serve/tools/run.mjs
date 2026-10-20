@@ -69,6 +69,8 @@ export function createRunTool(conn, api) {
         return who ? `${who === host ? "The user" : who} took over this tab mid-step (${presence.didIn(page) || "clicked"}): stopped there. Take a snapshot, then go on.` : "";
       },
       status: (text, kind) => { hud.setBadge(text, kind).catch(() => {}); try { onRunStatus(participant, text, kind, page, myLabel()); } catch {} },
+      // The hand-off a handoff step's status made, when it went to the person's channels (yourturn.mjs ended).
+      turnEnded: () => api.yourTurn?.ended?.(page, participant) || null,
       activity: (text) => hud.addActivity(text, myLabel(), page),
       cursor: (el, act) => hud.cursorTo(page, el, act, myLabel()),
       remember: facts.seenInForm,

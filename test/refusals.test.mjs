@@ -99,3 +99,69 @@ test("a request-shape answer is only a live view route's, and names what a valid
     assert.doesNotMatch(m.text, /\b(?:refused|denied|can't|isn't allowed)\b/i, `${m.where}: a refusal, not a request shape: ${m.text}`);
   }
 });
+
+// ---- a handed-over tab, and card details (spec server-mode B9, B13) ----
+const { tabRefusal, createRefusals, HANDED_OFF_RULE, HELD_RULE } = await import("../scripts/daemon/serve/refuse.mjs");
+const { HAND_TOOLS } = await import("../scripts/rules/policy.mjs");
+const { cardRefusal, SIGNALS, CARD_RULE } = await import("../scripts/rules/cards.mjs");
+const { cardPage } = await import("./helpers/card-page.mjs");
+
+test("agents' hands, run, navigate and close are refused in a handed-off or held tab; snapshots and dialogs are not", () => {
+  const web = (url) => ({ url: () => url, isClosed: () => false });
+  const handed = web("https://shop.example/pay"), held = web("https://bank.example/verify"), other = web("https://news.example/");
+  const handedOff = (p) => (p === handed ? "open" : p === held ? "held" : "");
+  const acting = [...HAND_TOOLS, "pairbrowse_run", "browser_navigate", "browser_navigate_back"];
+  for (const name of acting) {
+    assert.equal(tabRefusal(name, { target: "e1", url: "https://x.example/" }, { here: handed, handedOff }), HANDED_OFF_RULE, name);
+    assert.equal(tabRefusal(name, { target: "e1", url: "https://x.example/" }, { here: held, handedOff }), HELD_RULE, name);
+    assert.equal(tabRefusal(name, { target: "e1", url: "https://x.example/" }, { here: other, handedOff }), null, name);
+  }
+  assert.equal(tabRefusal("browser_tabs", { action: "close" }, { here: handed, handedOff }), HANDED_OFF_RULE, "its own tab");
+  assert.match(tabRefusal("browser_tabs", { action: "close", index: 1 }, { here: other, pages: [other, held], handedOff }), /^Tab 1 is held for the person after a hand-off timed out: leave it open/);
+  assert.match(tabRefusal("browser_tabs", { action: "close", index: 0 }, { here: other, pages: [handed], handedOff }), /^Tab 0 is handed over to the person: leave it open/);
+  for (const name of ["browser_snapshot", "browser_find", "browser_wait_for", "browser_handle_dialog", "browser_hover", "pairbrowse_status", "pairbrowse_scroll"]) {
+    assert.equal(tabRefusal(name, { time: 1 }, { here: handed, handedOff }), null, name);
+  }
+  assert.equal(tabRefusal("browser_tabs", { action: "select", index: 0 }, { here: other, pages: [handed], handedOff }), null, "reading it from another tab");
+  for (const rule of [HANDED_OFF_RULE, HELD_RULE]) assert.ok(nextStep(rule), rule);
+});
+
+// The browser tools' checks (createRefusals browserToolProblem) on a page stand-in.
+function checks({ page, values = {} } = {}) {
+  const conn = { approvedArgs: new WeakMap(), approvedWhere: new WeakMap(), recentRisk: () => "", refNames: {}, remote: null, risks: new Map(), actingIn: page };
+  const api = {
+    cap: (s) => s, clickApprovals: null, context: { pageAt: async () => page, currentUrl: () => page.url() }, handOff: (r) => r, inUse: () => [], log: () => {},
+    popups: { dialogAnswered() {} }, secretNames: () => Object.keys(values), secrets: { get: () => ({ values, domains: {}, problem: null }) },
+    serverPage: async () => page, serverUrl: async () => page.url(),
+  };
+  return createRefusals(conn, api).browserToolProblem;
+}
+
+test("in any session, an agent's type, fill, choice, drop or key into a card field, or a card number as the value, is refused with the hand-over sentence; a secret holding a card number is never typed", async () => {
+  const page = cardPage({ fields: {
+    e1: { autocomplete: "cc-number" }, e2: { autocomplete: "cc-name" }, e3: { autocomplete: "cc-exp-month", tag: "SELECT" }, e4: { autocomplete: "email" },
+    f1e1: { frame: { origin: "https://js.pay.example", cardFields: true } }, f2e1: { frame: { origin: "https://pay.example", allow: "payment" } },
+  }, focused: "e1" });
+  const problem = checks({ page, values: { SAVED_CARD: "4111 1111 1111 1111", SHOP_PW: "hunter2-secret" } });
+  const number = cardRefusal(SIGNALS.number);
+  const field = cardRefusal(SIGNALS.token("cc-number"));
+  assert.equal(await problem("browser_type", { target: "e1", text: "x" }), field);
+  assert.equal(await problem("browser_type", { target: "e4", text: "4242 4242 4242 4242" }), number);
+  assert.equal(await problem("browser_type", { target: "e4", text: "SAVED_CARD" }), cardRefusal(SIGNALS.secret("SAVED_CARD")));
+  assert.equal(await problem("browser_fill_form", { fields: [{ target: "e2", value: "Ada Lovelace" }, { target: "e3", value: "04" }] }), cardRefusal(SIGNALS.token("cc-exp-month")));
+  assert.equal(await problem("browser_fill_form", { fields: [{ target: "f1e1", value: "Ada" }] }), cardRefusal(SIGNALS.cardFrame));
+  assert.equal(await problem("browser_type", { target: "f2e1", text: "ada@example.com" }), cardRefusal(SIGNALS.payFrame));
+  assert.equal(await problem("browser_select_option", { target: "e3", values: ["04"] }), cardRefusal(SIGNALS.token("cc-exp-month")));
+  assert.equal(await problem("browser_drop", { target: "e1", data: { "text/plain": "hi" } }), field);
+  assert.equal(await problem("browser_drop", { target: "e4", data: { "text/plain": "5555555555554444" } }), number);
+  assert.equal(await problem("browser_press_key", { key: "4" }), cardRefusal(SIGNALS.key("digit", SIGNALS.token("cc-number"))));
+  assert.equal(await problem("browser_press_key", { key: "ControlOrMeta+v" }), cardRefusal(SIGNALS.key("paste", SIGNALS.token("cc-number"))));
+  // Unchanged: the name on the card, other fields, other keys, files dropped, numbers that aren't cards.
+  assert.equal(await problem("browser_type", { target: "e2", text: "Ada Lovelace" }), null);
+  assert.equal(await problem("browser_fill_form", { fields: [{ target: "e4", value: "IMEI 490154203237518" }] }), null);
+  assert.equal(await problem("browser_press_key", { key: "Tab" }), null);
+  assert.equal(await problem("browser_drop", { target: "e1", paths: ["/tmp/a.png"] }), null);
+  const plain = checks({ page: cardPage({ fields: { e4: { autocomplete: "email" } }, focused: "e4" }) });
+  assert.equal(await plain("browser_press_key", { key: "4" }), null);
+  assert.ok(nextStep(CARD_RULE));
+});

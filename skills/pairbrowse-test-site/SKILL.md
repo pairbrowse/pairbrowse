@@ -24,7 +24,9 @@ PairBrowse plugin. PairBrowse is the browser; code changes happen in the project
 
 1. Agree the scope with the user in one message: which URL, which flows (sign-up, checkout,
    settings), and which test account. Use a clean session for first-visit flows:
-   `pairbrowse_session` `new` with `clean: true`.
+   `pairbrowse_session` `new` with `clean: true`. For a checkout, say that card fields are the
+   user's: no agent types a card, test cards included, so the user types the test card (or you
+   hand that step over with `pairbrowse_status` kind `you`, step `payment`) and you test the rest.
 2. `run_save` with `name` (for example `test-localhost-signup`) and `goal`.
 3. Local addresses (`localhost`, `127.0.0.1`, `*.local`, `192.168.*`, `10.*`, `100.64.*` to `100.127.*`) ask the user
    before `browser_navigate` opens them; that is expected, say why you are opening it. In

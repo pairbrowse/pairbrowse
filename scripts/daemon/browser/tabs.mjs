@@ -23,7 +23,10 @@ export function stopRequestMirroring(page) {
 }
 
 export function createTabs(st, deps, api) {
-  const { config, hostNote, hud, log, onTabClosed, personTabs, popups, presence, status } = deps;
+  const { config, hostNote, hud, log, onTabClosed, personTabs, popups, presence, status, onRestored = () => {} } = deps;
+  // The session's tabs are back (or there were none): a hand-off a restart cut short is reissued
+  // to its tab (deps.onRestored: yourturn.mjs recover, spec server-mode B16).
+  const restored = () => { try { Promise.resolve(onRestored()).catch((e) => log(`after restore: ${e?.message || e}`)); } catch (e) { log(`after restore: ${e?.message || e}`); } };
   const focusing = (own, change) => (own ? change() : keepFocus(change));
 
   const findPage = (ctx, url) => ctx.pages().find((p) => p.url() === url);
@@ -122,7 +125,7 @@ export function createTabs(st, deps, api) {
     // Nothing is written while the saved tabs come back (a stop or a crash meanwhile keeps the whole list).
     let tracker = null;
     tracker = st.tabTracker = trackTabs(ctx, { file: tabsFile(st.session), activePage: () => findPage(ctx, st.lastCurrentUrl), log, holding: () => st.restoring !== null && st.tabTracker === tracker });
-    if (!saved.tabs.length) { screen?.close().catch(() => {}); return; }
+    if (!saved.tabs.length) { screen?.close().catch(() => {}); restored(); return; }
     st.restoredActiveUrl = saved.tabs[saved.active]?.url || null;
     const restoreAt = Date.now();
     st.restoring = focusing(own, () => restoreTabs(ctx, saved, {
@@ -140,6 +143,7 @@ export function createTabs(st, deps, api) {
       log(`restored ${saved.tabs.length} tabs`);
       log(`launch: restore ${Date.now() - restoreAt} ms`);
       capTabs(ctx).catch(() => {});
+      restored();
     }));
   }
 

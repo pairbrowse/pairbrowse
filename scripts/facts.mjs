@@ -6,6 +6,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { writeJsonAtomic } from "./util.mjs";
 import { paths } from "./paths.mjs";
 import { setSecret, deleteSecret, reservedSecret } from "./rules/secrets.mjs";
+import { holdsCardNumber } from "./rules/cards.mjs";
 
 export const FACTS_FILE = paths.factsJson;
 const MAX = 400;
@@ -130,6 +131,8 @@ export function createFacts({ secrets, log = () => {}, onChange = () => {}, file
       const problems = [];
       for (const [label, value] of Object.entries(details)) {
         if (Object.values(values).includes(String(value))) { problems.push(`${label}: looks like a saved password, not stored`); continue; }
+        // Card details are the person's to enter (spec server-mode B13): never kept for an agent to type.
+        if (holdsCardNumber(value)) { problems.push(`${label}: holds a card number, not stored (card details are the person's to enter)`); continue; }
         const error = remember({ label, value, source: "claude" });
         if (error) problems.push(`${label}: ${error}`);
       }
@@ -147,8 +150,8 @@ export function createFacts({ secrets, log = () => {}, onChange = () => {}, file
     return { text: `${describeFacts(facts)}\n\nSaved passwords (type the NAME as the value): ${names.length ? names.map((n) => `${n} (${(domains[n] || []).join(", ")})`).join("; ") : "none. The user adds them in the Profile panel of the live view."}` };
   }
 
-  // A value fast mode saw typed into a form.
-  const seenInForm = (label, value, site) => { remember({ label, value, source: "form", site }); onChange(); };
+  // A value fast mode saw typed into a form (never a card number, under any label).
+  const seenInForm = (label, value, site) => { if (holdsCardNumber(value)) return; remember({ label, value, source: "form", site }); onChange(); };
 
   // What the live view's Profile panel calls.
   const profile = {

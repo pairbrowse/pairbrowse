@@ -30,7 +30,8 @@ export function createHandle(conn, api) {
     // "Your turn" is done once Claude acts again: take the badge down.
     // The bar and the docks (session status) together: one cleared alone left the dock saying
     // "your turn" after the bar had cleared.
-    if ((hud.statusOf(participant)?.kind === "you" || session.statusOf(participant)?.kind === "you") && (CLICKING_TOOLS.has(name) || name === "browser_navigate" || name === "pairbrowse_click_at")) {
+    // (Not while its tab is handed over: that call is refused, tabRefusal.)
+    if ((hud.statusOf(participant)?.kind === "you" || session.statusOf(participant)?.kind === "you") && (CLICKING_TOOLS.has(name) || name === "browser_navigate" || name === "pairbrowse_click_at") && !api.yourTurn?.handedOff?.(conn.mine)) {
       hud.setBadgeFor(participant, "", "clear").catch(() => {});
       session.setStatus(participant, "", "clear");
     }
@@ -54,7 +55,7 @@ export function createHandle(conn, api) {
       if (d) return reply(msg.id, `The page is waiting on its ${d.type} dialog ("${String(d.message).slice(0, 120)}"): answer it with browser_handle_dialog (accept, or dismiss) before anything else.`, true);
     }
     // The browser's own pages (chrome://pairbrowse...) and the person's own tabs are never a
-    // tab an agent acts in, selects or closes (tabRefusal).
+    // tab an agent acts in, selects or closes, nor a tab handed over to the person (tabRefusal).
     {
       let here = ownTab() || (conn.serverAt && !conn.serverAt.isClosed() ? conn.serverAt : null);
       // A run starting with go, asked from one of the browser's own pages: it opens its own web
@@ -70,7 +71,7 @@ export function createHandle(conn, api) {
         }
       }
       const byIndex = name === "browser_tabs" && (args.action === "select" || args.action === "close") && args.index !== undefined;
-      const tabNo = tabRefusal(name, args, { here, pages: byIndex ? await openTabs() : [], personTab });
+      const tabNo = tabRefusal(name, args, { here, pages: byIndex ? await openTabs() : [], personTab, handedOff: (p) => api.yourTurn?.handedOff?.(p) || "" });
       if (tabNo) return reply(msg.id, tabNo, true);
     }
     // Another agent's tab is theirs to close.

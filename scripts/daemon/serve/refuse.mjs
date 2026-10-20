@@ -12,6 +12,8 @@ import { APPROVAL_TOOLS, approvalAsk, decide } from "../../rules/decide.mjs";
 import { clickClass } from "../../rules/clicks.mjs";
 import { activatingKey, contextAt, enterButtonLabel, riskAt, riskReason } from "../../runner.mjs";
 import { hostAllowed, RESERVED_RULE } from "../../rules/secrets.mjs";
+import { cardKey, cardRefusal, holdsCardNumber, SIGNALS } from "../../rules/cards.mjs";
+import { cardFieldAt, focusedCardField } from "../../runner/cards.mjs";
 import { pathsIn } from "../../upload.mjs";
 import { within } from "../../util.mjs";
 import { originOf, sameWhere } from "../approvals.mjs";
@@ -33,8 +35,19 @@ export function runOpensTab(name, args, here) {
   return url && here && isBrowserPage(here.url()) && !isUntouchedStart(here.url()) ? url : null;
 }
 export const isFileTab = (page) => { try { return /^file:/i.test(String(page?.url?.() ?? "")); } catch { return false; } };
-export function tabRefusal(name, args = {}, { here = null, pages = [], personTab = () => false } = {}) {
+// A tab handed over to the person (spec server-mode B9): their hands only, until the hand-off ends
+// (Done, the page clearing, the agent's next status) or, after a timeout, the person takes the tab
+// back. Reading it (snapshots, browser_find, browser_wait_for) and its dialogs stay the agent's.
+export const HANDED_OFF_RULE = "That tab is handed over to the person (a hand-off is open there). Wait with browser_wait_for: it returns when they finish. Then take a browser_snapshot before you act.";
+export const HELD_RULE = "That tab is held for the person: nobody finished the hand-off in time. Stop here and tell the user where you are; don't retry the step or work around it. A new pairbrowse_status kind you hands it over again.";
+const handedOffRule = (state) => (state === "held" ? HELD_RULE : HANDED_OFF_RULE);
+// handedOff(page): "open" while a hand-off covers page, "held" after one timed out there, else "".
+export function tabRefusal(name, args = {}, { here = null, pages = [], personTab = () => false, handedOff = () => "" } = {}) {
   const person = (page) => !!page && (!!personTab(page) || isFileTab(page));
+  // Hands, a run, navigation and closing it stay out of a handed-over tab.
+  const handed = (page) => (page ? handedOff(page) || "" : "");
+  if (here && handed(here) && (HAND_TOOLS.has(name) || ["pairbrowse_run", "browser_navigate", "browser_navigate_back"].includes(name) || (name === "browser_tabs" && args.action === "close" && args.index === undefined))) return handedOffRule(handed(here));
+  if (name === "browser_tabs" && args.action === "close" && args.index !== undefined && handed(pages[Number(args.index)])) return `Tab ${args.index} is ${handed(pages[Number(args.index)]) === "held" ? "held for the person after a hand-off timed out" : "handed over to the person"}: leave it open for them. Wait with browser_wait_for, or stop and tell the user where you are.`;
   if ((name.startsWith("browser_") && name !== "browser_tabs" && name !== "browser_close") || BROWSER_GUARDED.has(name)) {
     // The one exception: browser_navigate may take an untouched new tab page (the start tab, a fresh
     // Cmd+T) to a web page, as it took the about:blank start tab before the build had its own new
@@ -157,6 +170,37 @@ export function createRefusals(conn, api) {
     return page ? enterButtonLabel(page, target, kind) : "";
   }
 
+  // Card details are the person's to enter (spec server-mode B13, 13.1), in every session and app,
+  // whoever's agent: a card number typed, filled or dropped as text (a saved password's value
+  // counts as itself), and typing, choosing, dropping text, a digit key or a paste into a card
+  // field (scripts/rules/cards.mjs, read by runner/cards.mjs). The refusal names the signal.
+  async function cardProblem(name, args) {
+    const values = secrets.get().values || {};
+    const saved = secretNames();
+    const put = name === "browser_type" ? [[args.target, args.text]]
+      : name === "browser_fill_form" ? (args.fields || []).map((f) => [f?.target, f?.value])
+      : name === "browser_drop" && args.data && typeof args.data === "object" ? Object.values(args.data).map((v) => [args.target, v]) : [];
+    for (const [, v] of put) {
+      const s = String(v ?? "");
+      if (saved.includes(s) && Object.hasOwn(values, s) && holdsCardNumber(values[s])) return cardRefusal(SIGNALS.secret(s));
+      if (holdsCardNumber(s)) return cardRefusal(SIGNALS.number);
+    }
+    const key = name === "browser_press_key" ? cardKey(args.key) : "";
+    const targets = name === "browser_select_option" ? [args.target] : put.map(([t]) => t);
+    if (!targets.length && !key) return null;
+    const page = conn.actingIn || await serverPage();
+    if (!page) return null;
+    for (const t of [...new Set(targets)]) {
+      const signal = await cardFieldAt(page, t);
+      if (signal) return cardRefusal(signal);
+    }
+    if (key) {
+      const signal = await focusedCardField(page);
+      if (signal) return cardRefusal(SIGNALS.key(key, signal));
+    }
+    return null;
+  }
+
   // Checks for the browser tools, which go on to Playwright MCP: web pages only, passwords only
   // on their sites, and no final action pressed under a milder name. Returns a refusal, or null.
   async function browserToolProblem(name, args) {
@@ -166,6 +210,9 @@ export function createRefusals(conn, api) {
     }
     // PairBrowse's own credentials (a proxy's, a hand-off channel's) never go into a page.
     if (reservedSecretsIn(name, args, secretNames()).length) return RESERVED_RULE;
+    // Card details are the person's to enter, in every session (spec server-mode B13).
+    const card = await cardProblem(name, args);
+    if (card) return card;
     const { domains, problem } = secrets.get();
     const used = secretNamesIn(name, args, secretNames());
     if (used.length) {

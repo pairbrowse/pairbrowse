@@ -179,7 +179,17 @@
   CAPTCHA, one link is made for that tab and sent; the agent's result says which channels it went
   to, for which tab and until when, never the link. Exactly one reminder comes at `remindMinutes`
   (with the link only if it hasn't been opened yet), and a message when the hand-off ends (the
-  agent went on, the check cleared, the tab or browser closed), except when you pressed Done. If
+  agent went on, the check cleared, the tab or browser closed), except when you pressed Done.
+  While it is open, agents keep out of that tab and the tabs it opened: clicks, typing, keys,
+  uploads, `pairbrowse_run`, navigating and closing it are refused (they may still read it and
+  answer its dialogs). The agent waits with `browser_wait_for`, which returns as soon as the
+  hand-off ends, and a fast-mode `handoff` step finishes when you press Done; when it ends the
+  agent is told what you did there (field and button names only) and to look at the page first.
+  If the browser restarts with `server.keepAlive`, the tab that comes back gets one new link with
+  the same deadline ("The browser restarted; use this new link"); so does a restarted helper,
+  once, before the deadline, from the session's `turn.json` (owner-only: the step, the tab's
+  address, the deadline, whether it was reminded and the channels; never a key or link).
+  Otherwise the ended message says the step was stopped safely. If
   nobody finishes the step in time, the goal log and the session's tabs are saved, the agent is
   told to stop there, the badge and the Tools tab say "Timed out", and the tab stays held (agents
   keep out) until a new hand-off, your own input in it, or the session ends. While a hand-off is

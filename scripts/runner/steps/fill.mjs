@@ -1,6 +1,8 @@
 // A fill step: type each value into the field its label names, then check each kept it.
 import { SENSITIVE } from "../../rules/policy.mjs";
 import { hostAllowed, reservedSecret, RESERVED_RULE } from "../../rules/secrets.mjs";
+import { cardRefusal, holdsCardNumber, SIGNALS } from "../../rules/cards.mjs";
+import { cardFieldOf } from "../cards.mjs";
 import { within, bounded } from "../../util.mjs";
 import { field, find, hiddenNow, openSectionOf, unfold } from "../locate.mjs";
 import { choicesBefore, clearChoices, hiddenDropdown, pickSuggestion } from "../choices.mjs";
@@ -13,6 +15,11 @@ export async function fill({ page, arg, i, hooks, touched, fail, gone, theirs, t
     // PairBrowse's own credentials (a proxy's, a hand-off channel's): never into a page. preflight
     // refuses the run before any step; this is the backstop for a caller that skipped it.
     if (reservedSecret(String(raw)) && Object.hasOwn(hooks.secrets?.values || {}, String(raw))) return fail(RESERVED_RULE);
+    // Card details are the person's to enter (spec server-mode B13): a card number (a saved
+    // password's value too) is never filled, nor is anything into a card field (below).
+    const savedValue = Object.hasOwn(hooks.secrets?.values || {}, String(raw)) ? hooks.secrets.values[String(raw)] : null;
+    if (savedValue !== null && holdsCardNumber(savedValue)) return fail(cardRefusal(SIGNALS.secret(String(raw))));
+    if (holdsCardNumber(raw)) return fail(cardRefusal(SIGNALS.number));
     // A person using the tab: wait until they're done, then go on (their fields stay theirs).
     await hooks.holdForPeople?.();
     trace(`step ${i + 1}: finding "${label}"`);
@@ -28,6 +35,8 @@ export async function fill({ page, arg, i, hooks, touched, fail, gone, theirs, t
       return fail(u.note ? `No field "${label}" shows.${u.note}${gone()}` : await hiddenNow(page, label) ? `"${label}" is hidden right now: the form shows it only for some answers. Leave it, or change the answer it depends on.` : `No field "${label}".${gone()}`);
     }
     if (await theirs(el, label)) continue;
+    const card = await cardFieldOf(el, page.url());
+    if (card) return fail(cardRefusal(card));
     // The element itself is held from here: a field named by text that goes away once it holds
     // a value (its label drawn in the box as its placeholder) can't be found by that name after
     // the fill, and every later look at it would wait for the name instead.
@@ -66,6 +75,8 @@ export async function fill({ page, arg, i, hooks, touched, fail, gone, theirs, t
         // The name matched something else first (a floating label, a wrapper): the text box
         // named that, when there is one.
         const box = await find(page, [(root) => root.getByRole("textbox", { name: label, exact: true }), (root) => root.getByRole("textbox", { name: label })]);
+        const boxCard = box ? await cardFieldOf(box, page.url()) : "";
+        if (boxCard) return fail(cardRefusal(boxCard));
         if (box && (await box.fill(value, { timeout: 5000 }).then(() => true, () => false))) { el = (await box.elementHandle({ timeout: 1000 }).catch(() => null)) || box; filled.push({ el, label, value, secret: isSecret }); continue; }
         return fail(`"${label}" isn't a text field (it's a dropdown or a button): use a select step ({"select": {"${label}": "..."}}) or click it.`);
       }

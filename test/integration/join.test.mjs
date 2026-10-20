@@ -213,7 +213,7 @@ test("co-browsing: form values both ways (never sensitive ones), no echo, pointe
   writeFileSync(join(hostHome, "secrets.env"), "SHOP_PASSWORD=hunter2hunter2\nSHOP_PASSWORD_DOMAINS=shop.pbtest.example\n");
   chmodSync(join(hostHome, "secrets.env"), 0o600);
   writeFileSync(join(joinHome, "config.json"), JSON.stringify({ executablePath, browserArgs, display: "none", screenshots: false, participantName: "Alice" }));
-  const env = (h) => ({ ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1", PAIRBROWSE_PARTICIPANT: h === hostHome ? "Bob" : "" });
+  const env = (h) => ({ ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1", PAIRBROWSE_TEST_FILL: "1", PAIRBROWSE_PARTICIPANT: h === hostHome ? "Bob" : "" });
   const daemons = [];
   const connect = async (h) => {
     daemons.push(spawnDaemon(h, { env: env(h) }));
@@ -272,7 +272,9 @@ test("co-browsing: form values both ways (never sensitive ones), no echo, pointe
     stage = "the host's agent fills the form: values cross, sensitive ones only as filled";
     await select(host.call, /one\.pbtest\.example\/form/);
     let s = await snap(host.call);
-    for (const [name, value] of [["Name", "Ada Lovelace"], ["Card number", "4242424242424242"]]) assert.ok(!(await tool(host.call, "browser_type", { target: ref(s, "textbox", name), text: value })).result.isError, name);
+    assert.ok(!(await tool(host.call, "browser_type", { target: ref(s, "textbox", "Name"), text: "Ada Lovelace" })).result.isError, "Name");
+    // The card is the person's to enter (spec server-mode B13): set on the host as a person would.
+    assert.equal(text(await tool(host.call, "pairbrowse_test_fill", { url: "http://one.pbtest.example/form", selector: "#card", value: "4242424242424242" })), "filled");
     const typedPw = await tool(host.call, "browser_type", { target: ref(s, "textbox", "Password"), text: "hunter2hunter2" });
     assert.ok(!(await tool(host.call, "browser_click", { target: ref(s, "checkbox", "Agree") })).result.isError);
     assert.ok(!(await tool(host.call, "browser_select_option", { target: ref(s, "combobox", "Size"), values: ["Medium"] })).result.isError);

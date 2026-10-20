@@ -30,7 +30,7 @@ const ENDINGS = {
   "session-switched": "the browser session changed.",
   revoked: "it was called off.",
   expired: "nobody finished the step in time. Progress is saved, and the agent stops there.",
-  "browser-restarted": "the browser restarted.",
+  "browser-restarted": "the browser restarted. The step was stopped safely.",
   "helper-stopped": "PairBrowse stopped. The step was stopped safely.",
 };
 const FIELDS = new Set(["kind", "id", "action", "host", "link", "expiresAt", "reason"]);

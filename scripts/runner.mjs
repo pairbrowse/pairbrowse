@@ -7,6 +7,7 @@
 // review, delete, message people) are left for browser_click so the user confirms them.
 import { navigationProblem } from "./rules/policy.mjs";
 import { reservedSecret, RESERVED_RULE } from "./rules/secrets.mjs";
+import { cardRefusal, holdsCardNumber, SIGNALS } from "./rules/cards.mjs";
 import { isLocalNetwork } from "./rules/network.mjs";
 import { uploadProblem } from "./upload.mjs";
 import { within } from "./util.mjs";
@@ -40,6 +41,8 @@ export function preflight(steps, uploadsDir, secretNames = []) {
       if (isLocalNetwork(arg)) return `${at}: ${arg} is on the local network. Use browser_navigate so the user can approve it.`;
     } else if (kind === "fill") {
       if (arg && typeof arg === "object" && Object.values(arg).some((v) => reservedSecret(String(v)) && secretNames.includes(String(v)))) return `${at}: ${RESERVED_RULE} Nothing was done.`;
+      // A card number is the person's to enter (spec server-mode B13); fill.mjs checks the fields and saved values as it runs.
+      if (arg && typeof arg === "object" && Object.values(arg).some((v) => holdsCardNumber(v))) return `${at}: ${cardRefusal(SIGNALS.number)} Nothing was done.`;
     } else if (kind === "click") {
       // What the click does is checked when it runs (the page isn't there yet).
     } else if (kind === "upload") {

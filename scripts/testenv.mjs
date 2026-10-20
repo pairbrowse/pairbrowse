@@ -42,6 +42,7 @@ export const SWITCHES = {
   ACTIVE_MS: "how long an agent's connection counts as active (serve.mjs)",
   APPROVAL: "pairbrowse_test_approval: the approval card, clicked as a person would",
   FAILOVER_MS: "how long a joiner waits on a silent tunnel before the standby (sharing/join-client.mjs)",
+  FILL: "pairbrowse_test_fill: a field in a tab set as a person would (a card number no agent may type)",
   GONE_MS: "when a silent joiner counts as gone (liveview/push.mjs)",
   JOIN_LOCAL: "join codes may point at http://127.0.0.1 (no tunnel)",
   JOIN_PROMPT: "pairbrowse_test_join_prompt: the join request in the bottom bar",

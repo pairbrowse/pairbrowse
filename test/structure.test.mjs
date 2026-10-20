@@ -106,3 +106,32 @@ test("the fixed entry paths are listed once and exist; no other file only forwar
   }).map(rel);
   assert.deepEqual(forwarders.filter((f) => !ENTRY.includes(f) && !BARRELS.includes(f)), [], "a re-export left at an old path: update its importers and remove it");
 });
+
+// The browser's parts (daemon/browser/, daemon/sessions/) read what they need from the deps
+// createContext hands them: a name a part reads that the context never passes on falls to the
+// part's default (a no-op), and the helper's wiring is lost without a word (B16's onRestored and
+// onCrashLoop once were). Seams only tests pass straight to a part are listed with their part.
+const PART_SEAMS = {
+  "scripts/daemon/browser/launch.mjs": ["adBlockerOf", "safeStorageKeyFileOf", "adBlockerCrxOf"],
+  "scripts/daemon/browser/supervise.mjs": ["startScreen", "needsScreen", "server", "now", "setTimer", "mark"],
+};
+const namesIn = (list) => list.split(",").map((s) => s.trim().split(/\s*=/)[0].trim()).filter(Boolean);
+
+test("every dep the browser's parts read reaches them from createContext, and the helper passes its restart hooks", () => {
+  const context = readFileSync(join(ROOT, "scripts/daemon/context.mjs"), "utf8");
+  const passed = new Set(namesIn(context.match(/const deps = \{([^}]*)\};/)[1]));
+  const params = new Set(namesIn(context.match(/export function createContext\(\{([\s\S]*?)\}\) \{/)[1].replace(/\([^)]*\)\s*=>\s*(\{\}|[^,]*)/g, "")));
+  for (const name of passed) assert.ok(params.has(name), `context.mjs passes ${name} on but never takes it`);
+  const parts = ["browser", "sessions"].flatMap((d) => walk(join(ROOT, "scripts/daemon", d)));
+  for (const p of parts) {
+    for (const m of readFileSync(p, "utf8").matchAll(/const \{((?:[^{}]|\{\})*)\} = deps;/g)) {
+      for (const name of namesIn(m[1])) {
+        if ((PART_SEAMS[rel(p)] || []).includes(name)) continue;
+        assert.ok(passed.has(name), `${rel(p)} reads deps.${name}, which createContext never passes on`);
+      }
+    }
+  }
+  const daemon = readFileSync(join(ROOT, "scripts/daemon.mjs"), "utf8");
+  const call = daemon.slice(daemon.indexOf("const context = createContext({"));
+  for (const hook of ["onRestored:", "onCrashLoop:"]) assert.ok(call.slice(0, call.indexOf("\n});")).includes(hook), `daemon.mjs gives createContext ${hook}`);
+});

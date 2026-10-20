@@ -182,12 +182,17 @@ and helper, crash recovery and session restoration, sandbox always on.
   geometry, startedAt }`, 0600, `writeJsonAtomic`). At start: our recorded pid alive with
   `/proc/<pid>/cmdline` = `Xvfb ... -auth <our cookie>` is ended (SIGTERM, 2 s, SIGKILL); a lock of the
   recorded display holding our dead pid and owned by our uid is removed with its socket. Anything else
-  is skipped.
+  is skipped. A recorded Xvfb still alive 1 s after SIGKILL is not counted as ended and its record is
+  kept, so a later start tries again.
 - **A7. Race-free start**: accept a display only if the child still runs and `/tmp/.X<n>-lock` holds the
   child's pid; else kill it and try the next number. `-displayfd` not adopted until measured in the
   container.
-- **A8. Shutdown always ends the screen**: async `stop()` (SIGTERM, 1 s, SIGKILL, remove cookie and
-  record); sync `stopNow()` from the existing `process.on("exit")` (`daemon.mjs:317`).
+- **A8. Shutdown always ends the screen**: async `stop()` (SIGTERM, 1 s, SIGKILL, up to 1 s more,
+  remove cookie; remove the record only once Xvfb has exited, since a SIGKILLed Xvfb leaves its lock
+  and socket and the record is what lets the next start's `reapOwn` clear them); sync `stopNow()` from the existing `process.on("exit")` (`daemon.mjs:317`, through
+  `context.stopScreenNow()`). `stopNow()` sends SIGTERM and removes the cookie; it removes the record
+  only when Xvfb has already exited, since it can't wait, so an Xvfb that outlives the helper is still
+  ended by the next start's `reapOwn` (step 3).
 - **A9. `server: { keepAlive: false }`**: when true, a browser close with no agent does not end the
   helper (`daemon.mjs:313`), an unexpected close relaunches after 2, 10, 30 s (bounded by A5), the start
   launches and restores at once, and `readUse` (`scripts/handoff.mjs:103`) counts the helper as in use
@@ -211,7 +216,8 @@ and helper, crash recovery and session restoration, sandbox always on.
   `browserSandbox: { values: [true, false, "required"] }`. None is in Settings' `POST config` list.
 - `scripts/display.mjs`: `screenGeometry(config)`, `serverMode(config, env)`,
   `startVirtualDisplay(log, { name, geometry, onExit })` returning `{ env, display, pid, geometry, stop,
-  stopNow }`, `reapOwn(name, deps)` with injectable `/proc`, stat, kill.
+  stopNow }`, `reapOwn(name, deps)` with injectable `/proc`, stat, kill, called by `startVirtualDisplay` itself
+  before it tries a display (also checks `/proc/<pid>` is owned by our uid), `recordPath(name)`, `isOwnXvfb`.
 - `scripts/daemon/browser/supervise.mjs` `createSupervisor(st, deps, api)`: `ensureScreen()`,
   `stopScreen()`, `stopScreenNow()`, `noteUnexpectedClose(launchedAt)`, `crashLoop()`,
   `relaunchSoon()`, `statusParts()`. Wiring: `launch.mjs:179` calls `api.ensureScreen()`, `:331` calls

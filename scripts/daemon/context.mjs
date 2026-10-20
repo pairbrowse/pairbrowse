@@ -76,6 +76,8 @@ export function createContext({ personTabs = createPersonTabs(), config, log, ch
     sessionInfo, sessionCommand, startUp, close, sessionName: () => st.session, renameSaved, renameCurrent, saveTabs,
     // The browser's pages used their key (or the helper stops): its file has done its job.
     dropHelperKey: () => dropHelperKey(),
+    // At process exit, where close() can't wait: the virtual screen is told to end now.
+    stopScreenNow: () => st.screen?.stopNow?.(),
     // The tab a page came back as after its session's browser restarted (a session switch and
     // back), or null.
     successorOf,

@@ -314,7 +314,7 @@ const context = createContext({
   },
 });
 // the grace-timeout exit too: the browser's key file never outlives the helper
-process.on("exit", () => { context.dropHelperKey(); previews.clear(); });
+process.on("exit", () => { context.dropHelperKey(); context.stopScreenNow(); previews.clear(); });
 const output = createOutput({ dir: paths.files, secretValues: () => secrets.get().values });
 const screenshots = createScreenshots({ secrets: () => secrets.get(), log, hidePeers: (page, hidden) => hud.call(page, hidden ? "1" : "", "peers-hidden").catch(() => {}) });
 const facts = createFacts({ secrets, log, onChange: () => liveView()?.setProfile(facts.summary()) });

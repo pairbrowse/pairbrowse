@@ -116,8 +116,8 @@ test("the launch self-check's virtual screen has its own X cookie, so a running 
     assert.equal(check.env.XAUTHORITY, join(paths.home, "run", "Xauthority-check"));
     assert.ok(existsSync(main.env.XAUTHORITY) && existsSync(check.env.XAUTHORITY), "both cookies stay");
   } finally {
-    main.stop();
-    check.stop();
+    await main.stop();
+    await check.stop();
   }
 });
 

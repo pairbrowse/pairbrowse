@@ -146,7 +146,7 @@ export async function selfCheck(exec, { config = loadConfig(), log = () => {}, t
   } finally {
     await ctx?.close().catch(() => {});
     await work.catch(() => {});
-    screen?.stop();
+    await screen?.stop();
     site.close();
     rmSync(scratch, { recursive: true, force: true });
   }

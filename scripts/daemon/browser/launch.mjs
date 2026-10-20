@@ -328,7 +328,7 @@ export function createLaunch(st, deps, api) {
     } catch {}
     dropHelperKey();
     try { sweepTemporary(); } catch {}
-    st.screen?.stop();
+    await st.screen?.stop(); // Xvfb ended (at most about 1 s), its cookie and record removed
   }
 
   // Before the browser runs: the shell the next launch would have (the build chooseEngine would

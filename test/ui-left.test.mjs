@@ -58,6 +58,12 @@ async function clickInFrame(page, frame, sel) {
   await page.mouse.click(at.x + r.x, at.y + r.y);
 }
 const pickerFrames = (page) => page.frames().filter((f) => f.url().includes("/picker/")).length;
+// The picker's frames once they have had a moment to go: a frame whose src was taken away can
+// still be listed briefly (a slow machine), so this waits up to 3 s for none.
+async function pickerFramesGone(page) {
+  for (let i = 0; i < 60 && pickerFrames(page); i++) await page.waitForTimeout(50);
+  return pickerFrames(page);
+}
 const shown = () => ({ collapse: document.getElementById("dock-collapse").checkVisibility(), expand: document.getElementById("dock-expand").checkVisibility() });
 const token = (name) => { const s = document.createElement("span"); s.style.color = `var(${name})`; document.body.append(s); const c = getComputedStyle(s).color; s.remove(); return c; };
 const calls = async (ctx, iface, method) => (await ctx.shim.calls()).filter((c) => c.iface === iface && c.method === method);
@@ -378,7 +384,7 @@ scenario("left: keyboard", { viewport: OPEN, shim: { layout: { right: 1 } } }, a
   await until("the sessions tab", () => window.__pairbrowse.calls.some((c) => c.iface === "tabs" && c.method === "create" && c.args[0] === "pairbrowse://sessions"));
   assert.deepEqual(await inPage(() => ({ hidden: document.getElementById("switcher").hidden, src: document.getElementById("picker").getAttribute("src"), focus: document.activeElement?.id })),
     { hidden: true, src: null, focus: "nav-sessions" });
-  assert.equal(pickerFrames(ctx.page), 0);
+  assert.equal(await pickerFramesGone(ctx.page), 0);
   assert.equal(ctx.helper.posts.some((p) => p.route === "picker"), false, "no picker route");
   await ctx.page.focus("#add-agent");
   await ctx.page.keyboard.press("Enter");
@@ -429,7 +435,7 @@ scenario("left: the session switcher", { viewport: { width: 420, height: 936 }, 
   // The frame unloads once the switcher has faded out (DESIGN.md Part I).
   await until("closed after the pick", () => document.getElementById("switcher").hidden && document.activeElement?.id === "nav-sessions" && document.getElementById("picker").getAttribute("src") === null);
   assert.deepEqual(await inPage(state), { hidden: true, src: null, focus: "nav-sessions" });
-  assert.equal(pickerFrames(page), 0, "the picker unloaded");
+  assert.equal(await pickerFramesGone(page), 0, "the picker unloaded");
   // Again; a click outside closes it without moving focus there.
   await page.click("#nav-sessions");
   assert.equal(await inPage(() => document.getElementById("nav-sessions").getAttribute("aria-expanded")), "true");
@@ -443,7 +449,7 @@ scenario("left: the session switcher", { viewport: { width: 420, height: 936 }, 
   await framedPicker(page);
   helper.push("layout", { left: "hidden", right: "open", strip: 88 });
   await until("hidden", () => document.body.dataset.dock === "hidden" && document.getElementById("switcher").hidden && document.getElementById("picker").getAttribute("src") === null);
-  assert.equal(pickerFrames(page), 0);
+  assert.equal(await pickerFramesGone(page), 0);
   // The rail's Sessions row opens the dock first (44 px leaves the switcher no room), then the
   // switcher (Part H); Escape closes it.
   helper.push("layout", { left: "rail", right: "open", strip: 88 });
@@ -681,7 +687,7 @@ scenario("left: the logo's old ask opens nothing here", { viewport: { width: 420
   await inPage(() => { window.__heard = []; const ch = new BroadcastChannel("pairbrowse-share"); ch.onmessage = (e) => window.__heard.push(e.data); ch.postMessage({ open: "switch", window: 1 }); window.__strip = ch; });
   await inPage(() => new Promise((r) => setTimeout(r, 200)));
   assert.equal(await inPage(() => document.getElementById("switcher").hidden), true);
-  assert.equal(pickerFrames(ctx.page), 0);
+  assert.equal(await pickerFramesGone(ctx.page), 0);
   assert.deepEqual(await inPage(() => (window.__strip.close(), window.__heard)), []);
   await clean(ctx);
 });
@@ -757,7 +763,7 @@ scenario("left: the Sessions row opens the sessions page", { viewport: OPEN, shi
   assert.deepEqual((await calls(ctx, "tabs", "create")).map((c) => c.args), [["pairbrowse://sessions", true, 1]], "in this dock's window");
   assert.deepEqual(await calls(ctx, "bubbles", "open"), [], "no popup");
   assert.deepEqual(await inPage(() => [document.getElementById("switcher").hidden, document.getElementById("picker").getAttribute("src")]), [true, null], "no frame");
-  assert.equal(pickerFrames(page), 0);
+  assert.equal(await pickerFramesGone(page), 0);
   await until("Sessions current", () => document.getElementById("nav-sessions").getAttribute("aria-current") === "page" && !document.getElementById("nav-browser").hasAttribute("aria-current"));
   const sessionsId = await inPage(() => window.__pairbrowse.fixture.tabs.find((t) => t.url === "pairbrowse://sessions").id);
   // Browser brings the last web tab back; Sessions again brings the open page forward, no second one.

@@ -205,14 +205,16 @@ export function machoArchs(file) {
 // (machO: machoArchs of the program). Throws a sentence otherwise.
 export function buildFits(manifest, layout, machO = null) {
   const mac = layout.platform === "macos";
+  // Named in a refusal only as text: any other value (an object whose toString isn't one) is unknown.
+  const named = typeof manifest?.platform === "string" ? manifest.platform.slice(0, 40) : "an unknown platform";
   if (typeof manifest?.arch !== "string" || !manifest.arch) throw new Error(`the build's manifest names no arch; this computer is ${layout.arch}`);
   if (manifest.arch !== layout.arch) throw new Error(`the build is for ${manifest.arch}, this computer is ${layout.arch}`);
   if (mac) {
-    if (manifest.platform !== undefined && manifest.platform !== "macos") throw new Error(`the build is for ${manifest.platform}, not macos`);
+    if (manifest.platform !== undefined && manifest.platform !== "macos") throw new Error(`the build is for ${named}, not macos`);
     if (!machO) throw new Error("the build's program isn't a macOS program");
     if (!machO.includes(layout.arch)) throw new Error(`the build's program runs on ${machO.join(", ")}, this computer is ${layout.arch}`);
   } else if (manifest.platform !== layout.platform) {
-    throw new Error(`the build is for ${manifest.platform}, not ${layout.platform}`);
+    throw new Error(`the build is for ${named}, not ${layout.platform}`);
   }
 }
 

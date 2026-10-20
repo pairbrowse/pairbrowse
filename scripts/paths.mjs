@@ -148,6 +148,12 @@ export const DEFAULT_CONFIG = {
   // screen (Xvfb) and you watch through the live view. "auto": use one when there's no screen;
   // "xvfb": always; "none": never.
   display: "auto",
+  // That virtual screen's size in pixels and its color depth (display.mjs screenGeometry): width
+  // 800 to 7680, height 600 to 4320, depth 16 or 24. Helper-wide, never a browser profile's.
+  virtualScreen: { width: 1366, height: 900, depth: 24 },
+  // Server mode (display.mjs serverMode): keepAlive true marks this helper as a server even with a
+  // screen of its own.
+  server: { keepAlive: false },
   // Fixed live view port, so an SSH tunnel command stays the same. 0 picks a random port.
   liveViewPort: 0,
   // Extra host names the live view answers to, for invite links only (say, this computer's

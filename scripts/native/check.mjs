@@ -11,7 +11,7 @@ import { engineConfig, shellOf } from "../browser/choice.mjs";
 import { launchEngine } from "../engine.mjs";
 import { nativeManifest } from "../native-engine.mjs";
 import { ensureRuntime } from "../runtime.mjs";
-import { needsVirtualDisplay, startVirtualDisplay } from "../display.mjs";
+import { needsVirtualDisplay, screenGeometry, startVirtualDisplay } from "../display.mjs";
 import { loadBrowserDriver, patchrightNodeMinimum } from "../driver.mjs";
 import { readJson, sleep, withTimeout } from "../util.mjs";
 
@@ -104,7 +104,7 @@ export async function selfCheck(exec, { config = loadConfig(), log = () => {}, t
   let screen = null;
   let ctx = null;
   const work = (async () => {
-    if (needsVirtualDisplay(config, env)) screen = await startVirtualDisplay(log, { name: "Xauthority-check" });
+    if (needsVirtualDisplay(config, env)) screen = await startVirtualDisplay(log, { name: "Xauthority-check", geometry: screenGeometry(config) });
     // Launched as the helper launches it (browser.mjs launchOptions), on purpose without three
     // things: no live view (no helper switches), a plain about:blank first tab whatever the
     // build's start page (blankStart: the check drives that tab), and never firstRun (on macOS

@@ -160,3 +160,24 @@ test("under pairbrowse, an extension, a proxy, launch options or switches are un
   for (const k of ["extensions", "proxy", "args", "ignoreDefaultArgs", "agentLlmKey"]) assert.ok(CONFIG_WARNINGS[0].includes(`"pairbrowse.${k}"`), k);
   assert.ok(!CONFIG_WARNINGS[0].includes("pairbrowse.fingerprint"), "an engine fingerprint option is known");
 });
+
+test("virtualScreen bounds and server.keepAlive: good values kept, others refused field by field", () => {
+  const good = loadConfig(file({ virtualScreen: { width: 800, height: 4320, depth: 16 }, server: { keepAlive: true } }));
+  assert.deepEqual(CONFIG_WARNINGS, []);
+  assert.deepEqual(good.virtualScreen, { width: 800, height: 4320, depth: 16 });
+  assert.deepEqual(good.server, { keepAlive: true });
+  const f = file({ virtualScreen: { width: 7681, height: 599, depth: 30, colors: 3 }, server: { keepAlive: "yes" } });
+  const config = loadConfig(f);
+  const w = CONFIG_WARNINGS.join("\n");
+  assert.match(w, /virtualScreen\.width is a whole number from 800 to 7680, not 7681/);
+  assert.match(w, /virtualScreen\.height is a whole number from 600 to 4320, not 599/);
+  assert.match(w, /virtualScreen\.depth is 16 or 24, not 30 \(a whole number\)/);
+  assert.match(w, /server\.keepAlive is true or false, not "yes"/);
+  assert.match(w, /unknown key "virtualScreen\.colors"/);
+  assert.deepEqual(config.virtualScreen, { colors: 3 }, "the refused fields left out (screenGeometry fills them)");
+  assert.deepEqual(config.server, {});
+  assert.equal(loadConfig(file({ virtualScreen: "1280x800" })).virtualScreen, DEFAULT_CONFIG.virtualScreen);
+  assert.match(configProblem({ virtualScreen: { width: 100 } }), /^virtualScreen\.width is a whole number from 800 to 7680/);
+  assert.deepEqual(DEFAULT_CONFIG.virtualScreen, { width: 1366, height: 900, depth: 24 }, "today's screen");
+  assert.deepEqual(DEFAULT_CONFIG.server, { keepAlive: false });
+});

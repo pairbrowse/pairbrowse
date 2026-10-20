@@ -6,7 +6,7 @@ import { ensureBrowser, launchOptions, prepareProfile, panelExtensionId, resetPa
 import { chooseBrowser, engineConfig, shellOf } from "../../browser/choice.mjs";
 import { engineProfile, launchEngine, validateEngine, SANDBOX } from "../../engine.mjs";
 import { ensureNative, nativeDirs, nativeLayout, notChosen, pinnedAsset } from "../../native/install.mjs";
-import { needsVirtualDisplay, startVirtualDisplay } from "../../display.mjs";
+import { needsVirtualDisplay, screenGeometry, startVirtualDisplay } from "../../display.mjs";
 import { profileDir, createSession, sweepTemporary } from "../../sessions.mjs";
 import { within } from "../../util.mjs";
 import { setQuietTabs } from "../../focus.mjs";
@@ -176,7 +176,7 @@ export function createLaunch(st, deps, api) {
     if (st.ownPages && !helper) log("the browser's own pages have no helper address");
     step("live view");
     api.forgetTemporaryDownloads();
-    if (!st.screen && needsVirtualDisplay(config)) st.screen = await startVirtualDisplay(log);
+    if (!st.screen && needsVirtualDisplay(config)) st.screen = await startVirtualDisplay(log, { geometry: screenGeometry(config) });
     createSession(st.session);
     // The PairBrowse browser (scripts/browser.mjs), or another browser on the same engine from config.
     let keyFile = null, captureKeyFile = null;

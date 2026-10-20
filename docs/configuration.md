@@ -103,6 +103,13 @@
   Unset, you're asked once, and the answer is saved here.
 - `display`: on a Linux machine without a screen, the browser runs headed on a private virtual
   screen (Xvfb): `"auto"` (default) uses one when there's no screen, `"xvfb"` always, `"none"` never.
+- `virtualScreen`: that virtual screen's size and color depth: `{ "width": 1366, "height": 900,
+  "depth": 24 }` (default). Width 800 to 7680, height 600 to 4320, depth 16 or 24; a field left out
+  or out of range takes its default. It sets the screen only: the browser's window keeps its own
+  size. Used only when PairBrowse runs its own virtual screen (`display` `"auto"` on a machine
+  without a screen, or `"xvfb"`).
+- `server`: `{ "keepAlive": false }` (default). Reserved for server mode (a helper kept running on
+  a server, even one with a screen of its own); in this version `true` changes nothing yet.
 - `reportUrl`: where a problem report you send yourself goes (default
   `https://pairbrowse.com/api/report`): an https address with no user, query or fragment.
   `null`: no report is ever sent, and Settings doesn't offer it.

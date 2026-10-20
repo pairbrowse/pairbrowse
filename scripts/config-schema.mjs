@@ -37,6 +37,9 @@ export const CONFIG_SCHEMA = {
   chromeArgs: { ...NAMES, older: true },
   chromeSandbox: { type: "boolean", older: true },
   display: { values: ["auto", "xvfb", "none"] },
+  // Depth 30 stays out until measured on a server's Xvfb.
+  virtualScreen: { type: "object", fields: { width: { type: "integer", min: 800, max: 7680 }, height: { type: "integer", min: 600, max: 4320 }, depth: { values: [16, 24] } } },
+  server: { type: "object", fields: { keepAlive: { type: "boolean" } } },
   liveViewPort: PORT,
   liveViewHosts: NAMES,
   inviteBaseUrl: { type: "string", nullable: true },
@@ -93,7 +96,7 @@ const shown = (v) => { const t = JSON.stringify(v); return t === undefined ? Str
 const plainObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 
 // Whether value fits spec (its own type and values; an object's fields are checked one by one by the caller).
-function fits(spec, v) {
+export function fits(spec, v) {
   if (v === null) return !!spec.nullable;
   if (spec.values) return spec.values.includes(v);
   switch (spec.type) {

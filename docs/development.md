@@ -142,6 +142,7 @@ is under the temp folder with a linked runtime), so none reaches an installed he
 | `JOIN_PROMPT` | knob | `integration/join-prompt` | Adds `pairbrowse_test_join_prompt`: the join request in the bottom bar |
 | `KEEP_GRACE_MS` | knob | `tunnel` | How long a tunnel keeper outlives a quiet helper |
 | `MEMORY` | knob | `integration/memory`, `integration/interruption`, `bench` | Adds `pairbrowse_test_memory`: listener counts |
+| `NETLOG` | knob | `integration/proxy` | The browser writes its NetLog (`--log-net-log`) to `<home>/netlog.json`, anew each launch; the DNS leak test reads which names it looked up itself (`test/helpers/netlog.mjs`) |
 | `NET_CHECK` | knob | `net-probe` | The proxy exit checks' local stand-ins, JSON `{ "checkUrl", "directUrl", "stun", "ms" }`: the check address (`http:` allowed), the one read without the proxy, the STUN server and the bound (`network.checkUrl`, `stun:stun.cloudflare.com:3478` and 10 seconds otherwise) |
 | `NO_CAPTURE` | knob | `capture`, `integration/shared-mode` (host only) | Acts as a build without a capture page: no direct connection, no recording |
 | `NO_DIRECT` | knob | `integration/shared-mode` | A network where no direct screen connection can be made |

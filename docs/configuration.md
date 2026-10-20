@@ -233,23 +233,26 @@
   the `bypass` entries. With `strict` `true`, the browser looks up no name itself except the
   proxy's own and `localhost` (every other one goes to the proxy) and sends no WebRTC traffic
   outside the proxy; a `--host-resolver-rules` of yours in `browserArgs` is dropped for such a
-  session (one helper log line says so). A SOCKS5 session gets the same name rule even with
-  `strict` `false`. A proxy with `auth` needs both secrets in `secrets.env` (4 characters or
-  more each) and a PairBrowse build that reads them from an owner-only file the helper writes for
-  that launch and deletes once the browser is up: no build does yet and the open build never will,
-  so such a session doesn't start for now, with an error saying why. A session whose network can't
-  be used doesn't start (its error says why); it never starts direct instead. Before any saved tab
-  loads, at every start (a recovery after a crash included), the proxy's exit is checked: the
-  helper reads `checkUrl` through the proxy, the browser reads it too and gathers WebRTC
-  candidates, and without `expectEgress` this computer's own exit is read once to compare (never
-  kept). The two exits must match and fall inside `expectEgress` (without one, differ from this
-  computer's own), and with `strict` `true` WebRTC may show no address but that exit. Anything
-  else, a timeout included (10 s), closes the browser before a saved tab opens: the session's
-  starts are refused with the reason for a minute (at once again after you change `config.json`
-  or `secrets.env`), `pairbrowse_status` says why and you get one notification. Each check is
-  kept in the session's `network.json` (owner-only, the last 50; clean sessions: memory only)
-  with the proxy's exit and country, never this computer's own address. The repeats every
-  `recheckMinutes` and `onEgressChange` come in a later version.
+  session (one helper log line says so). With `strict` `false` through an `http:` or `https:`
+  proxy, the browser also looks names up itself (the leak test reads pages' names and its own
+  background services' in the browser's network log), though the pages still load through the
+  proxy. A SOCKS5 session gets the same name rule even with `strict` `false`. A proxy with `auth`
+  needs both secrets in `secrets.env` (4 characters or more each) and a PairBrowse build that
+  reads them from an owner-only file the helper writes for that launch and deletes once the
+  browser is up: no build does yet and the open build never will, so such a session doesn't start
+  for now, with an error saying why. A session whose network can't be used doesn't start (its
+  error says why); it never starts direct instead. Before any saved tab loads, at every start (a
+  recovery after a crash included), the proxy's exit is checked: the helper reads `checkUrl`
+  through the proxy, the browser reads it too and gathers WebRTC candidates, and without
+  `expectEgress` this computer's own exit is read once to compare (never kept). The two exits must
+  match and fall inside `expectEgress` (without one, differ from this computer's own), and with
+  `strict` `true` WebRTC may show no address but that exit. Anything else, a timeout included
+  (10 s), closes the browser before a saved tab opens: the session's starts are refused with the
+  reason for a minute (at once again after you change `config.json` or `secrets.env`),
+  `pairbrowse_status` says why and you get one notification. Each check is kept in the session's
+  `network.json` (owner-only, the last 50; clean sessions: memory only) with the proxy's exit and
+  country, never this computer's own address. The repeats every `recheckMinutes` and
+  `onEgressChange` come in a later version.
 - `reportUrl`: where a problem report you send yourself goes (default
   `https://pairbrowse.com/api/report`): an https address with no user, query or fragment.
   `null`: no report is ever sent, and Settings doesn't offer it.

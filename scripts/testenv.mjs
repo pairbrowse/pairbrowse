@@ -48,6 +48,7 @@ export const SWITCHES = {
   JOIN_PROMPT: "pairbrowse_test_join_prompt: the join request in the bottom bar",
   KEEP_GRACE_MS: "how long a tunnel keeper outlives a quiet helper (tunnels/quick.mjs)",
   MEMORY: "pairbrowse_test_memory: listener counts",
+  NETLOG: "the browser writes its NetLog to <home>/netlog.json, which the DNS leak tests read (daemon/browser/launch.mjs withNetLog)",
   NET_CHECK: "the egress checks' local stand-ins: JSON { checkUrl (http allowed), directUrl, stun, ms } (net/probe.mjs checkTargets)",
   NO_CAPTURE: "no window capture",
   NO_DIRECT: "a network where no direct screen connection can be made",

@@ -246,7 +246,8 @@ test("launch wiring follows section 3.2: screen, network, then the browser; the 
   const network = src.indexOf("net = network ? network.forLaunch(st.session, { shell: st.shell, native: next.browserEngine === \"pairbrowse\" }) : null;");
   const engine = src.indexOf("ctx = await launchEngine(");
   assert.ok(screen > 0 && network > screen && engine > network, "ensureScreen, network.forLaunch, launchEngine");
-  assert.match(src.slice(engine), /^ctx = await launchEngine\(browserType\(\), next, profile\(\), net \? net\.apply\(options\) : options,/);
+  // The session's network applied to the launch options, then (a test run only) the NetLog switch.
+  assert.match(src.slice(engine), /^ctx = await launchEngine\(browserType\(\), next, profile\(\), withNetLog\(net \? net\.apply\(options\) : options\),/);
   assert.match(src, /finally \{ net\?\.drop\(\);/);
   // forLaunch inside the try that drops its auth file; the network recorded only once the browser is up.
   assert.ok(src.lastIndexOf("try {", network) > src.indexOf("let ctx, net = null;"), "forLaunch inside the try");

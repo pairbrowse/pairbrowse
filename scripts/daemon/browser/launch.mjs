@@ -14,6 +14,16 @@ import { MEASURING } from "../../native-engine.mjs";
 import { OPEN_ACCEPT_MS } from "../../opener.mjs";
 import { isBrowserPage, BROWSER_PICKER, extensionUrl } from "../../../ui/urls.js";
 import { pruneStaleContexts } from "../exec-contexts.mjs";
+import { paths } from "../../paths.mjs";
+import { testOn } from "../../testenv.mjs";
+
+// A test run's NetLog (testenv.mjs NETLOG, kept only in a helper the harness started): the browser
+// writes what its network stack did, each name its own resolver was asked for among it, to
+// <home>/netlog.json (written anew each launch), which the DNS leak tests read (spec server-mode
+// C12). The helper's own switch, after the user's, so no browserArgs entry is needed or allowed.
+export const NETLOG_SWITCH = "--log-net-log";
+export const withNetLog = (options, { env = process.env, file = paths.netlog } = {}) =>
+  (testOn("NETLOG", env) ? { ...options, args: [...(options.args || []), `${NETLOG_SWITCH}=${file}`] } : options);
 
 // An extension page: web pages can't open, frame or script it (no web_accessible_resources).
 // A build with its own pages shows its own picker instead (BROWSER_PICKER, ui/urls.js).
@@ -208,7 +218,7 @@ export function createLaunch(st, deps, api) {
           helper: helper && keyFile ? { origin: helper.origin, keyFile, ...(captureKeyFile ? { captureKeyFile } : {}) } : null,
         }),
       };
-      ctx = await launchEngine(browserType(), next, profile(), net ? net.apply(options) : options, launchLog, undefined, { server: api.isServer() }); // in server mode the sandbox is required (spec server-mode A10)
+      ctx = await launchEngine(browserType(), next, profile(), withNetLog(net ? net.apply(options) : options), launchLog, undefined, { server: api.isServer() }); // in server mode the sandbox is required (spec server-mode A10)
     } catch (e) { dropHelperKey(keyFile, captureKeyFile); throw e; } // a failed launch leaves no key file
     finally { net?.drop(); launchLog.done(hud.badge()); } // the proxy's auth file: read by now, or the launch failed
     // The screen ended while the browser started (supervise.mjs lost() cleared it): this browser has

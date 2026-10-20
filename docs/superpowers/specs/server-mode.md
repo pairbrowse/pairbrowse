@@ -658,7 +658,8 @@ fail closed, also after recovery.
   returns false so joiners get frames, and a strict session asks for frames when it joins.
 - **C12. Leak tests read what the engine did.** Test switch `NETLOG` adds `--log-net-log=<test home>/netlog.json`
   in a harness-started helper only; the test fails on any host resolution other than the proxy host
-  and loopback. Docker opt-in adds a stub DNS server and a STUN responder on the direct network.
+  and loopback (and strict mode's own `~notfound`, which the resolver is asked for in place of a
+  mapped name: step 30). Docker opt-in adds a stub DNS server and a STUN responder on the direct network.
 - **C13. Coherence input.** Each check's `loc` (country) feeds `scripts/rules/coherence.mjs`
   (`locale.timezone-vs-egress`, `locale.language-vs-egress`) so time zone and languages are checked
   against the egress region.
@@ -1744,6 +1745,30 @@ it depends on.
    notification, clean sessions, through `createContext`, the wiring order), `test/net-launch.test.mjs`
    and `test/supervise.test.mjs` (updated pins).
 30. NetLog leak tests (C12). -> 29
+   Landed as: `testenv.mjs` `NETLOG`; `daemon/browser/launch.mjs` `withNetLog(options)` adds
+   `--log-net-log=<paths.netlog>` (`paths.mjs` `netlog`, `<home>/netlog.json`, written anew each
+   launch) after every other switch, only while the switch is kept (the gate removes it outside a
+   harness-started helper; `browserArgs` can't ask for it, the allowlist has no such switch). The
+   reader is test-only, `test/helpers/netlog.mjs`: `parseNetLog` (a file cut short by a killed
+   browser read up to its last whole event), `resolvedHosts` (the `host` or `hostname` of every
+   `HOST_RESOLVER_*` and `DNS_*` event, bare: no scheme, port or brackets) and `dnsLeaks(log, {
+   proxyHost })` (everything but the proxy's host, loopback, `*.localhost` and `~notfound`).
+   Found here: strict mode's rule doesn't stop the resolver from being asked, it changes the name
+   first, so the NetLog shows requests for `~notfound` (the network quality estimator asks for each
+   request's host), never the page's name; the reader counts that as no lookup. Without strict, an
+   `http:` proxy session's browser looked up the page's own names and its background services'
+   itself (the estimator, prefetch, updates), so strict mode is what keeps names off this computer's
+   resolver, not the proxy alone (`docs/configuration.md` says so). The STUN server's name never
+   showed in the NetLog either way: WebRTC's leak test stays the browser check's gathering (step 28,
+   `test/integration/net-browsercheck.test.mjs`). `test/integration/proxy.test.mjs` starts here with
+   the DNS leak test through an `http:` and a `socks5:` proxy in strict mode (the page, an image, a
+   dns-prefetch, a preconnect, a prefetch, a WebSocket and a STUN server, names new each run; no
+   leak, the page through the proxy) and its proof with strict off (the page's names leak); the rest
+   of that file's Phase C cases come with their steps. The Docker opt-in half of C12 (a stub DNS
+   server and a STUN responder on the direct network) needs the A13 container and lands with
+   `test/optin/proxy-docker.test.mjs` in step 39b. Row C-1 names `test/netlog.test.mjs` and
+   `test/integration/proxy.test.mjs`; the test-switch row (C-6) names the NetLog. Tests:
+   `test/netlog.test.mjs`, `test/security.test.mjs` (`NETLOG`), `test/integration/proxy.test.mjs`.
 31. Recheck, egress change, pause and notify through the B notifier (C8). -> 29, 16
 32. Session rename and delete with network; strict sessions share frames (C4, C11).
 32b. Settings "Network" section and owner routes: add, edit, test, remove a proxy, default and
@@ -1760,6 +1785,9 @@ it depends on.
     D14, Phase D migration). -> 37
 39. Spike E-S1: `SystemInfo`, software switches, Linux WebGPU, fixtures; lands the A13 container
     harness `test/optin/server/container.mjs`, its first user. -> 8
+39b. The Docker half of C12: `test/optin/proxy-docker.test.mjs` on the A13 container (its only route
+    out the proxy; a stub DNS server logs no page names, a STUN responder on the direct network sees
+    nothing, a planted direct route fails the check). -> 29, 39
 40. `native/properties.mjs`, `validate.mjs`, validation shape in the store (E5, E6, E8). -> 34
 41. `native/graphics.mjs`, `backend.mjs`, `pairbrowse.graphics` (E2, E3, E9). -> 39
 42. `native/probe.mjs`, `probeLaunch`, self-check step (E4). -> 39, 40

@@ -189,6 +189,23 @@ test("NET_CHECK: listed, documented, and stripped outside the harness", async ()
   assert.deepEqual(checkTargets({ checkUrl: "https://cloudflare.com/cdn-cgi/trace" }, env), { checkUrl: "https://cloudflare.com/cdn-cgi/trace", directUrl: "https://cloudflare.com/cdn-cgi/trace", stun: "stun:stun.cloudflare.com:3478", timeoutMs: 10_000 });
 });
 
+// The DNS leak tests' NetLog (spec server-mode C12, C-6): a project's environment can't make the
+// person's browser write what it does on the network to a file.
+test("NETLOG: listed, documented, and stripped outside the harness", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { SWITCHES, applyTestGate } = await import("../scripts/testenv.mjs");
+  const { withNetLog } = await import("../scripts/daemon/browser/launch.mjs");
+  assert.ok(Object.hasOwn(SWITCHES, "NETLOG"));
+  assert.match(readFileSync(new URL("../docs/development.md", import.meta.url), "utf8"), /^\| `NETLOG` \| knob \|/m);
+  const env = { PAIRBROWSE_HOME: "/nowhere", PAIRBROWSE_TEST_NETLOG: "1" };
+  assert.match(withNetLog({ args: [] }, { env }).args.join(" "), /--log-net-log=/, "the switch works where it is kept");
+  applyTestGate(env);
+  assert.equal(env.PAIRBROWSE_TEST_NETLOG, undefined);
+  assert.deepEqual(withNetLog({ args: [] }, { env }).args, []);
+  const { screenBrowserArgs } = await import("../scripts/browser-args.mjs");
+  for (const harness of [false, true]) assert.deepEqual(screenBrowserArgs(["--log-net-log=/tmp/x.json"], "darwin", { harness }).kept, [], "nor can config.json's browserArgs ask for it");
+});
+
 // Every path under ~/.pairbrowse is built in paths.mjs (one place to see what the helper keeps):
 // no other module joins onto the home or reads PAIRBROWSE_HOME itself.
 test("paths under the home come from paths.mjs", async () => {

@@ -62,6 +62,9 @@ export const paths = {
   // The PairBrowse browser's Safe Storage password (browser/safe-storage.mjs, native patch 594),
   // owner-only, made by the helper once.
   safeStorageKey: join(HOME, "safe-storage-key"),
+  // The browser's NetLog, written only in a test run (testenv.mjs NETLOG): the DNS leak tests read
+  // which names the browser looked up itself (spec server-mode C12).
+  netlog: join(HOME, "netlog.json"),
   // Diagnostics bundles (scripts/diagnostics-bundle.mjs), when no other folder is given.
   diagnostics: join(HOME, "diagnostics"),
   // Playwright may read files only inside this folder (and the project).

@@ -30,6 +30,14 @@
 // results from it are masked as a joiner's agent's are and its pictures covered (B10, serve/result.mjs).
 // Nothing typed by the person passes through here: messages and audit lines carry words from
 // fixed lists, host notes and the goal log fixed sentences.
+//
+// Compatibility vs verification (B14): when a hand-off starts, the open compatibility items
+// (compatibility(): the session's network verdict and the coherence items of its profile and exit,
+// rules/coherence.mjs) are read and reported in two lists: "Site verification (yours to do)", the
+// step handed over, and "PairBrowse setup problems (PairBrowse's to fix)", the items; in the
+// status result for an agent's "you", in a host note for PairBrowse's own check. A setup problem
+// never mints a grant or sends a message by itself and is never handed to the person to work
+// around; a site's verification is handed over once and never retried here.
 import { rmSync } from "node:fs";
 import { readJson, within, writeJsonAtomic } from "../util.mjs";
 import { handoffTimes } from "../config-schema.mjs";
@@ -37,6 +45,7 @@ import { CHALLENGE_TURN } from "../popups.mjs";
 import { testMs } from "../testenv.mjs";
 import { ACTIONS, actionSentence, clock } from "./notify/message.mjs";
 import { handoffKind } from "./toolstab.mjs";
+import { setupLines } from "../rules/coherence.mjs";
 
 // How long pairbrowse_status waits for the channels' answers before saying the message is on its way.
 export const REPORT_MS = 12_000;
@@ -88,7 +97,7 @@ const entryOf = (e) => (e && typeof e === "object" && /^[0-9a-f]{8}$/.test(e.id)
 // as. pagesNow(): the open tabs. actionsIn(page): what people did in a tab, names only (presence didIn).
 export function createYourTurn({ config, grants, notifier, sends, handoffs, journal, saveTabs = async () => ({}), hostNote = () => {}, audit = null, hud, sessionName, linkFor = async () => null,
   agentBy = (p, color = "") => ({ label: "Agent", color }), log = () => {}, turnMs = () => testMs("TURN_MS", 0), timers = { set: setTimeout, clear: clearTimeout }, now = Date.now,
-  turnFile = () => null, keptAlive = () => false, successorOf = () => null, pagesNow = async () => [], actionsIn = () => "" }) {
+  turnFile = () => null, keptAlive = () => false, successorOf = () => null, pagesNow = async () => [], actionsIn = () => "", compatibility = () => [] }) {
   const turns = new Map(); // grant id -> { id, key, participant, page, action, host, session, expiresAt, sent, timer, reminded }
   // B16: grant id -> { entry (turn.json's), session, page, participant, waiting }: waiting, the
   // restart that ended it ("browser-restarted", "helper-stopped") while it may come back.
@@ -286,6 +295,17 @@ export function createYourTurn({ config, grants, notifier, sends, handoffs, jour
     log(`hand-off ${id}: stopped safely after the restart`);
   }
 
+  // The site's verification a step is, in the report's words (B14).
+  const VERIFICATION = { captcha: (h) => `CAPTCHA on ${h}`, "2fa": (h) => `a 2FA code on ${h}`, login: (h) => `signing in on ${h}`, payment: (h) => `approving a payment on ${h}`, other: (h) => `a step on ${h}` };
+  // The two lists for a hand-off of action on page (B14), "" when the setup has nothing open. The
+  // items are read now, never cached: a setup problem fixed since isn't reported.
+  function report(action, page) {
+    let items;
+    try { const open = compatibility(); items = Array.isArray(open) ? open.filter((i) => i && (i.severity === "error" || i.severity === "warning")) : []; } catch { items = []; }
+    if (!items.length) return "";
+    return setupLines({ verification: (VERIFICATION[action] || VERIFICATION.other)(hostOf(page) || "this site"), items });
+  }
+
   const endKey = (key, reason) => { for (const t of [...turns.values()]) if (t.key === key) grants.end(t.id, reason); };
   const actionOf = (step, text) => (ACTIONS.includes(step) ? step : handoffKind(text));
 
@@ -298,7 +318,8 @@ export function createYourTurn({ config, grants, notifier, sends, handoffs, jour
       if (args.kind !== "you") { steps.delete(participant); endKey(key, "agent"); return ""; }
       const action = actionOf(args.step, args.text);
       steps.set(participant, action);
-      return (await start({ key, participant, page, action }))?.line || "";
+      const r = await start({ key, participant, page, action });
+      return r ? [r.line, report(action, page)].filter(Boolean).join("\n") : "";
     },
     // The badge's statuses (hud.mjs onStatus): the Tools tab's hand-off entry for an agent's "you".
     onBadge(participant, st) {
@@ -308,12 +329,19 @@ export function createYourTurn({ config, grants, notifier, sends, handoffs, jour
     },
     // A fast-mode run's hand-off step (runner "handoff"): a Tools tab entry for that tab until the
     // step ends, and a grant and its message when hand-offs go to the channels (the step waits for
-    // it: ended). The step's end ends the grant ("agent").
+    // it: ended). The step's end ends the grant ("agent"). The run has no status result for B14's
+    // lists, so they go in a host note, as for PairBrowse's own check.
     onRunStatus(participant, text, kind, page, label) {
       const key = `run:${participant}`;
       if (kind === "you") {
-        handoffs.set(key, { text, page: page || null, kind: handoffKind(text), by: { label: label || "Agent", color: hud.sparkColor(participant) } });
-        start({ key, participant, page, action: handoffKind(text) }).then((r) => { if (r?.id) log(`hand-off ${r.id}: a fast-mode step`); }).catch((e) => log(`hand-off: ${e?.message || e}`));
+        const action = handoffKind(text);
+        handoffs.set(key, { text, page: page || null, kind: action, by: { label: label || "Agent", color: hud.sparkColor(participant) } });
+        start({ key, participant, page, action }).then((r) => {
+          if (!r?.id) return;
+          log(`hand-off ${r.id}: a fast-mode step`);
+          const lines = report(action, page);
+          if (lines) hostNote(`A fast-mode step handed this page to the user (hand-off ${r.id}). ${lines.replace(/\n/g, " ")} Don't retry the step or work around it.`);
+        }).catch((e) => log(`hand-off: ${e?.message || e}`));
       } else { handoffs.clear(key); endKey(key, "agent"); }
     },
     // A CAPTCHA or bot check PairBrowse saw (popups.mjs onYourTurn): the badge and the Tools tab
@@ -322,7 +350,12 @@ export function createYourTurn({ config, grants, notifier, sends, handoffs, jour
       hud.setBadge(text, "you").catch(() => {});
       handoffs.set("check", { text, page: page || null, kind: "captcha", by: { label: "PairBrowse", color: "" } });
       if ([...turns.values()].some((t) => t.key === "check" && t.page === page)) return;
-      start({ key: "check", page, action: "captcha" }).then((r) => { if (r?.id) log(`hand-off ${r.id}: a check on the page`); }).catch((e) => log(`hand-off: ${e?.message || e}`));
+      start({ key: "check", page, action: "captcha" }).then((r) => {
+        if (!r?.id) return;
+        log(`hand-off ${r.id}: a check on the page`);
+        const lines = report("captcha", page);
+        if (lines) hostNote(`PairBrowse handed the check on this page to the user (hand-off ${r.id}). ${lines.replace(/\n/g, " ")} Don't retry the check or work around it.`);
+      }).catch((e) => log(`hand-off: ${e?.message || e}`));
     },
     // The check is done: "Your turn" (or its "Timed out") down again if it was this one, its
     // hand-off ends and a tab it held is the person's again.

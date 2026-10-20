@@ -218,7 +218,8 @@ export function createLaunch(st, deps, api) {
       // strict switches and auth file, or the refusal this launch stops with (never direct instead).
       // Inside the try, so the finally drops its auth file whatever stops the launch.
       // The profile's network id counts unless config.json's network.sessions names one (C4).
-      net = network ? network.forLaunch(st.session, { profileNetwork: chosen.network, shell: st.shell, native }) : null;
+      // locale: what its pages read, judged against the exit's country at the check (C13).
+      net = network ? network.forLaunch(st.session, { profileNetwork: chosen.network, shell: st.shell, native, locale: chosen.locale }) : null;
       const options = {
         // The helper's own shutdown closes the browser (daemon.mjs shutdown -> close below).
         // Playwright's signal handlers would start a close of their own on the same SIGTERM, and

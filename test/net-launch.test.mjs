@@ -244,7 +244,7 @@ test("launch wiring follows section 3.2: screen, profile, network, then the brow
   const src = readFileSync(new URL("../scripts/daemon/browser/launch.mjs", import.meta.url), "utf8");
   const screen = src.indexOf("const screen = await api.ensureScreen();");
   const chosen = src.indexOf("const chosen = api.profiles.forLaunch(st.session, {");
-  const network = src.indexOf("net = network ? network.forLaunch(st.session, { profileNetwork: chosen.network, shell: st.shell, native }) : null;");
+  const network = src.indexOf("net = network ? network.forLaunch(st.session, { profileNetwork: chosen.network, shell: st.shell, native, locale: chosen.locale }) : null;");
   const engine = src.indexOf("ctx = await launchEngine(");
   assert.ok(screen > 0 && chosen > screen && network > chosen && engine > network, "ensureScreen, profiles.forLaunch, network.forLaunch, launchEngine");
   // The session's network applied to the launch options, then (a test run only) the NetLog switch.

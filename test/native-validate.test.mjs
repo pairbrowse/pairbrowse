@@ -10,7 +10,9 @@ import assert from "node:assert/strict";
 import { readFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { validate, measuredRecord, entryStatus, rendererFamily, RULES, RULE_IDS } from "../scripts/native/validate.mjs";
+import { validate, measuredRecord, entryStatus, RULES, RULE_IDS } from "../scripts/native/validate.mjs";
+import { rendererFamily, COHERENCE_RULES } from "../scripts/rules/coherence.mjs";
+import { COHERENCE } from "../scripts/native/validate.mjs";
 import { PROPERTIES, RUNTIMES, property, classOf, runtimeOf } from "../scripts/native/properties.mjs";
 import { checkProfile, ITEM_CLASSES, ITEM_STATUSES, ITEM_SEVERITIES } from "../scripts/profiles/schema.mjs";
 import { PAIRBROWSE_ENGINE_KEYS } from "../scripts/config-schema.mjs";
@@ -54,7 +56,7 @@ const noWebgpu = { available: false, reason: "requestAdapter returned null" };
 
 test("the property matrix: every runtime classed, mechanisms from the known lists, every rule a validator or coherence rule", () => {
   assert.deepEqual(RUNTIMES, ["macos", "linux-software", "linux-gpu"]);
-  const coherence = ["gpu.vs-platform", "gpu.software-as-hardware", "screen.believable", "locale.timezone-vs-egress", "locale.language-vs-egress"];
+  const coherence = Object.keys(COHERENCE_RULES);
   const named = new Set();
   for (const p of PROPERTIES) {
     assert.match(p.field, /^[A-Za-z][A-Za-z0-9]{0,39}(?:\.[A-Za-z][A-Za-z0-9]{0,39}){0,3}$/, p.field);
@@ -82,6 +84,47 @@ test("the property matrix: every runtime classed, mechanisms from the known list
     "webgpu.vendor", "webgpu.device", "canvas.stable", "canvas.repeat", "screen.display", "locale", "ua.build", "sandbox.on", "bridge.absent"]) assert.equal(sev[id], "error", id);
   for (const id of ["webgl.same-origins", "webgpu.features-vs-limits", "fonts.available"]) assert.equal(sev[id], "warning", id);
   for (const id of ["media.capabilities", "memory"]) assert.equal(sev[id], "info", id);
+  // The coherence rules the validator runs: the shared module's severities, each named by a property.
+  for (const r of COHERENCE) {
+    assert.equal(r.severity, COHERENCE_RULES[r.id], r.id);
+    assert.ok(named.has(r.id) && property(r.field), `${r.id} is named by a property`);
+  }
+});
+
+test("the E13 coherence rules are validation items: the Linux persona is gpu.software-as-hardware; a Mac's Apple GPU fits; an unbelievable window warns", () => {
+  const persona = validate({ requested: requested(), derived: LINUX, measured: measurement("probe-linux-llvmpipe-persona", "systeminfo-linux-xvfb-llvmpipe", { webgpu: noWebgpu }) });
+  const soft = itemOf(persona, "gpu.software-as-hardware");
+  assert.deepEqual([soft.field, soft.status, soft.severity, soft.class], ["webgl.strings", "mismatch", "error", "M"]);
+  assert.match(soft.reason, /hardware GPU \(ANGLE \(Intel, Mesa Intel\(R\) UHD Graphics 770.* while the browser renders in software/);
+  assert.equal(itemOf(persona, "gpu.vs-platform").status, "matched", "an Intel GPU fits Linux");
+  assert.equal(persona.status, "failed");
+  // The real strings over llvmpipe: both rules matched, still validated.
+  const real = validate({ requested: requested(), derived: LINUX, measured: measurement("probe-linux-llvmpipe-real", "systeminfo-linux-xvfb-llvmpipe", { webgpu: noWebgpu }) });
+  assert.deepEqual([itemOf(real, "gpu.software-as-hardware").status, itemOf(real, "gpu.vs-platform").status, real.status], ["matched", "matched", "validated"]);
+  // An Apple renderer read on Linux fails gpu.vs-platform.
+  const m = measurement("probe-linux-llvmpipe-real", "systeminfo-linux-xvfb-llvmpipe", { webgpu: noWebgpu });
+  m.webgl = { ...m.webgl, unmaskedRenderer: "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Pro, Unspecified Version)" };
+  const apple = validate({ requested: requested(), derived: LINUX, measured: m });
+  assert.deepEqual([itemOf(apple, "gpu.vs-platform").status, itemOf(apple, "gpu.vs-platform").field, itemOf(apple, "gpu.vs-platform").requested, apple.status], ["mismatch", "platform", "Linux x86_64", "failed"]);
+  // The same Apple renderer when the browser really renders on an Apple GPU under Linux (Mesa's
+  // asahi driver, a Linux guest on Apple Silicon): the real GPU, nothing to fix, no item fails.
+  const asahi = measurement("probe-linux-llvmpipe-real", "systeminfo-linux-xvfb-llvmpipe", { webgpu: noWebgpu });
+  asahi.webgl = { ...asahi.webgl, unmaskedRenderer: "ANGLE (Mesa, Apple M1 (G13G B0), OpenGL 4.6)" };
+  asahi.backend = { ...asahi.backend, kind: "hardware", renderer: "Apple M1 (G13G B0)" };
+  const onAsahi = itemOf(validate({ requested: requested(), derived: LINUX, measured: asahi }), "gpu.vs-platform");
+  assert.deepEqual([onAsahi.status, onAsahi.reason], ["matched", "pages read the apple GPU the browser renders on"]);
+  // A hardware backend of another family than the page's renderer is still judged.
+  asahi.backend = { ...asahi.backend, renderer: "Mesa Intel(R) UHD Graphics 770 (RPL-S)" };
+  assert.equal(itemOf(validate({ requested: requested(), derived: LINUX, measured: asahi }), "gpu.vs-platform").status, "mismatch");
+  const mac = validate({ requested: requested(), derived: MAC, measured: measurement("probe-macos-metal", "systeminfo-macos-metal", { webgpu: noWebgpu, locale: null }) });
+  assert.deepEqual([itemOf(mac, "gpu.vs-platform").status, itemOf(mac, "gpu.software-as-hardware"), mac.status], ["matched", undefined, "validated"]);
+  // The profile's screen and window, with or without a measurement: a warning that never fails it.
+  const screen = { width: 1920, height: 1080, availWidth: 1920, availHeight: 1080, colorDepth: 24, devicePixelRatio: 1 };
+  const win = validate({ requested: requested({ screen, window: { width: 2560, height: 1440 } }), derived: MAC, measured: null });
+  const believable = itemOf(win, "screen.believable");
+  assert.deepEqual([believable.field, believable.status, believable.severity, believable.class, win.status], ["window", "mismatch", "warning", "C", "unverified"]);
+  assert.equal(itemOf(validate({ requested: requested({ screen }), derived: MAC, measured: null }), "screen.believable").status, "matched");
+  assert.equal(itemOf(validate({ requested: requested(), derived: MAC, measured: null }), "gpu.vs-platform"), undefined, "nothing measured: no graphics coherence item");
 });
 
 test("a measurement that agrees everywhere is validated, every item in Phase D's shape, and the record passes the profile schema", () => {

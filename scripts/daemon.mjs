@@ -264,7 +264,7 @@ const popups = createPopups({
 const phishing = createPhishing({ file: paths.phishingList, enabled: () => config.phishingProtection !== false, log }); // listed phishing sites stopped before they show
 phishing.start();
 const context = createContext({
-  personTabs, phishing, network: createNetwork({ log, readSecrets: () => secrets.reload(), notify: (text) => panel.notify(text), pause: (who) => pause.hold(who), channels: sendWhereHandoffsGo(config, { server: () => context.isServer(), notifier }) }), // a session's proxy, its check at each launch and its rechecks (daemon/network.mjs): an exit change holds every agent until a person here resumes (pause.mjs hold), channels only where hand-offs go (decision 8)
+  personTabs, phishing, network: createNetwork({ log, readSecrets: () => secrets.reload(), notify: (text) => panel.notify(text), pause: (who) => pause.hold(who), channels: sendWhereHandoffsGo(config, { server: () => context.isServer(), notifier }), requireCoherent: () => config.requireValidatedProfiles === true }), // a session's proxy, its check at each launch and its rechecks (daemon/network.mjs): an exit change holds every agent until a person here resumes (pause.mjs hold), channels only where hand-offs go (decision 8)
   config, log, chromium: () => runtime().chromium, driver: driverChoice.driver, hud, presence, popups, hostNote, notify: (text) => panel.notify(text),
   // A person renamed the session: the timeline's last writes land first, then the goal log follows.
   beforeRename: () => { activityLog.flush(); return timeline.settled(); }, onRenamed: (from, to) => journal.renamed(from, to),
@@ -633,7 +633,7 @@ const outlines = createOutlines({ mask: output.mask });
 // Hand-offs to the person: the badge and the Tools tab as before, and their channels when hand-offs go there (daemon/yourturn.mjs).
 const yourTurn = createYourTurn({ config, grants, notifier, audit, handoffs, journal, hud, log, hostNote, agentBy, saveTabs: () => context.saveTabs(), sessionName: () => context.sessionName(),
   linkFor: (key) => sharing.handoffLink(key), sends: () => handoffSends(config, { server: context.isServer() }), actionsIn: (p) => presence.didIn(p), // what the person did there: names only (B15)
-  turnFile: (s) => sessionFile(s, "turn.json"), keptAlive: () => context.keepAlive(), successorOf: (p) => context.successorOf(p), pagesNow: () => context.openPages() }); // a restart's hand-offs come back (B16)
+  turnFile: (s) => sessionFile(s, "turn.json"), keptAlive: () => context.keepAlive(), successorOf: (p) => context.successorOf(p), pagesNow: () => context.openPages(), compatibility: () => context.compatibility() }); // a restart's hand-offs come back (B16); setup problems reported apart (B14)
 const timeline = createTimeline({ dir: () => timelineDir(context.sessionName()), enabled: () => config.timeline !== false, cap: () => config.timelineCap, mask: output.mask, step: () => journal.step(), onNote: (text) => hud.addActivity(`Note: ${text}`, HOST, null), log });
 const serve = createServe({
   onRunStatus: (...a) => yourTurn.onRunStatus(...a), yourTurn, // a fast-mode run's hand-off step; hand-offs (B10 masking)

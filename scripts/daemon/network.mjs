@@ -12,6 +12,12 @@
 // or secrets.env changes), pairbrowse_status says why, and the person is told once. Every launch
 // goes through here, so a recovery after a crash is checked the same way. Each check is kept apart
 // from the profile in the session's network.json (C9).
+// Each check's exit country also judges the browser's time zone and languages (C13, rules/
+// coherence.mjs localeVsEgress, with the locale the launch passed: what pages read; a value geoip
+// supplies follows the exit and isn't judged, one the profile sets still is): the items go with the check (network.json keeps their ids,
+// pairbrowse_status says each, compatibility(session) hands them to a hand-off's report, B14). They
+// are reported, never a reason to go direct; with requireValidatedProfiles (requireCoherent()) an
+// error among them fails the launch's check as any other failure does.
 // While the browser runs, its exit is checked again every recheckMinutes (C8): the helper's probe
 // through the same proxy (the browser's proxy can't change while it runs, and a check in the
 // browser would open a tab in the person's window each time), compared with the exit before. An
@@ -29,8 +35,9 @@
 // resolves, or null when hand-offs don't go there now); configFile, secretsFile, runDir,
 // readSecrets() (secrets.env as it is now, { values, problem }: the helper's store's reload(), so a
 // credential added since its last read is masked from the launch that uses it on),
-// observationsFile(session) (paths.mjs's, tests pass their own); probe, inBrowser, now, recheckMs
-// (the interval, else RECHECK_MS or recheckMinutes), timers (tests).
+// observationsFile(session) (paths.mjs's, tests pass their own); requireCoherent() (config.json's
+// requireValidatedProfiles); probe, inBrowser, now, recheckMs (the interval, else RECHECK_MS or
+// recheckMinutes), timers (tests).
 import { chmodSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
@@ -43,6 +50,7 @@ import { readNetwork, networkFor, launchPart, applyLaunchPart, sessionRefusal, s
 import { probeEgress, checkTargets } from "../net/probe.mjs";
 import { checkInBrowser, GATHER_MS } from "../net/browsercheck.mjs";
 import { egressVerdict, webrtcVerdict } from "../net/verdict.mjs";
+import { localeVsEgress } from "../rules/coherence.mjs";
 
 // After a failed check, how long the session's next starts are refused without trying again
 // (each try opens and closes a window); a change to config.json or secrets.env ends it sooner.
@@ -80,7 +88,7 @@ export function dropProxyAuthFile(path) {
 export function createNetwork({ log = () => {}, notify = () => {}, pause = () => false, channels = () => null, configFile = paths.config, secretsFile = paths.secrets,
   readSecrets = () => loadSecrets(secretsFile), runDir = paths.run,
   observationsFile = (session) => sessionFile(session, "network.json"), probe = probeEgress, inBrowser = checkInBrowser, now = Date.now,
-  recheckMs = null, timers = { setTimeout, clearTimeout } } = {}) {
+  recheckMs = null, timers = { setTimeout, clearTimeout }, requireCoherent = () => false } = {}) {
   let last = null; // the network of the browser started last: { session, id, source, strict } (no address)
   // Each launch's state, kept with the handle forLaunch returns ({ session, net, targets, early };
   // early: the helper's probes): the check reads only its own launch's, so a later forLaunch (a
@@ -92,12 +100,14 @@ export function createNetwork({ log = () => {}, notify = () => {}, pause = () =>
   // The running browser's rechecks: { handle, session, net, targets, auth, baseline, failing, timer }
   // (failing: the last recheck failed and was acted on, so the next failures stay quiet), or null.
   let watch = null;
-  let failure = null; // the last failed check: { session, id, text, at, stamp }
+  let failure = null; // the last failed check: { session, id, text, at, stamp, hold }
   let told = ""; // the failure the person was last notified of (session and reason): once each
-  const checks = new Map(); // session -> its last check here ({ id, strict, verdict, loc, reason, at }), for status
+  const checks = new Map(); // session -> its last check here ({ id, strict, verdict, loc, reason, at, coherence }), for status
   const memory = new Map(); // clean sessions' observations (never on disk)
 
   // The launch's network for `session` (profileNetwork: its browser profile's network id, Phase D;
+  // locale: the time zone and languages its pages read, { timezone, languages, geoip: { timezone, languages } }
+  // (which of the two geoip supplies), C13;
   // shell: the browser's, browser/choice.mjs; native: a native build, which reads strict mode's
   // WebRTC switch in its own spelling). Throws the refusal sentence; else { id, source,
   // strict, proxy, apply(options), drop(), started() }: apply adds the proxy and switches to the
@@ -107,7 +117,7 @@ export function createNetwork({ log = () => {}, notify = () => {}, pause = () =>
   // as its launch. A launch attempt clears
   // the record first: one refused or failed leaves none. Nothing it logs names an address or a
   // credential.
-  function forLaunch(session, { profileNetwork, shell = null, native = false } = {}) {
+  function forLaunch(session, { profileNetwork, shell = null, native = false, locale = null } = {}) {
     last = null;
     const read = readNetwork(configFile);
     if (read.problem) throw new Error(sessionRefusal(session, read.problem));
@@ -128,7 +138,7 @@ export function createNetwork({ log = () => {}, notify = () => {}, pause = () =>
     const args = authPath ? [...part.args, `${PROXY_AUTH_SWITCH}=${authPath}`] : part.args;
     if (net.proxy) log(`launch: network "${net.id}" (${net.source}${net.strict ? ", strict" : ""}${authPath ? ", auth file" : ""})`);
     const auth = part.authFile ? { username: part.authFile.username, password: part.authFile.password } : null;
-    const own = { session, net, targets: null, early: null, auth };
+    const own = { session, net, targets: null, early: null, auth, locale };
     if (net.proxy) {
       // The helper's probes start now and run while the browser starts (C6 (1)): through the proxy
       // (its credentials as the auth file holds them, for an http: or https: proxy), and this
@@ -158,9 +168,11 @@ export function createNetwork({ log = () => {}, notify = () => {}, pause = () =>
   // When config.json and secrets.env last changed: a hold ends once either does.
   const stamp = () => [configFile, secretsFile].map((f) => { try { return statSync(f).mtimeMs; } catch { return 0; } }).join("/");
 
-  // The refusal the session's starts get while a failed check holds, else null.
+  // The refusal the session's starts get while a failed check holds, else null. A check failed
+  // only for its time zone (C13) holds nothing: the fix is in the browser profile, which the
+  // stamp doesn't see, so the next start checks again at once.
   function refusal(session) {
-    if (!failure || failure.session !== session) return null;
+    if (!failure || failure.session !== session || !failure.hold) return null;
     if (now() - failure.at < HOLD_MS && failure.stamp === stamp()) return failure.text;
     failure = null; // the hold is over: the next start checks again
     return null;
@@ -178,6 +190,12 @@ export function createNetwork({ log = () => {}, notify = () => {}, pause = () =>
     }
   }
   const observations = (session) => (isTemporary(session) ? memory.get(session) || [] : readJson(observationsFile(session), null)?.checks || []);
+
+  // The coherence items of an exit's country with the launch's locale (C13): none without a
+  // country or a locale; a value geoip supplies follows the exit, so only the profile's own are
+  // judged (its time zone and languages win over geoip's).
+  const coherenceOf = (locale, country) => (locale && country ? localeVsEgress({ timezone: locale.geoip?.timezone ? null : locale.timezone,
+    languages: locale.geoip?.languages ? [] : locale.languages, country }) : []);
 
   // The check after the launch (C6, C7; section 3.2 step 6), on the browser just started for
   // session (ctx, its context; launch, what forLaunch returned for it) before any saved tab loads.
@@ -203,30 +221,40 @@ export function createNetwork({ log = () => {}, notify = () => {}, pause = () =>
     const webrtc = webrtcVerdict(browserSide?.webrtc || { ok: false, problem: "the browser's check didn't run" }, { egress: egress.ip });
     // WebRTC counts only in strict mode: without it the person chose to let WebRTC go outside the
     // proxy (strict's policy is what keeps it in), so its gathering is recorded, not judged.
-    const reason = egress.verdict !== "ok" ? egress.reason : net.strict && webrtc.verdict !== "ok" ? webrtc.reason : "";
+    const coherence = egress.verdict === "ok" ? coherenceOf(p.locale, egress.loc) : [];
+    const incoherent = requireCoherent() ? coherence.find((c) => c.severity === "error") : null;
+    const reason = egress.verdict !== "ok" ? egress.reason : net.strict && webrtc.verdict !== "ok" ? webrtc.reason
+      : incoherent ? `${incoherent.text} requireValidatedProfiles is on in config.json, so a session whose browser doesn't fit its exit doesn't start.` : "";
     const ok = !reason;
     const at = now();
     observe(session, { at: new Date(at).toISOString(), kind: "launch", proxy: net.id, server: net.proxy.server,
       browser: { ip: browserSide?.browser?.ok ? browserSide.browser.ip : null, loc: browserSide?.browser?.ok ? browserSide.browser.loc : null },
       helper: { ip: helper?.ok ? helper.ip : null, loc: helper?.ok ? helper.loc : null }, sameAsDirect: egress.sameAsDirect,
       webrtc: { candidates: webrtc.candidates, verdict: webrtc.verdict }, dns: net.strict || net.proxy.scheme === "socks5" ? "strict" : "local",
-      verdict: ok ? "ok" : "failed", reason });
-    checks.set(session, { id: net.id, strict: net.strict, verdict: ok ? "ok" : "failed", loc: ok ? egress.loc : null, reason, at });
+      verdict: ok ? "ok" : "failed", reason, coherence: coherence.map((c) => c.id) });
+    checks.set(session, { id: net.id, strict: net.strict, verdict: ok ? "ok" : "failed", loc: ok ? egress.loc : null, reason, at, coherence: ok ? coherence : [] });
     if (ok) {
       if (failure?.session === session) failure = null;
       told = "";
-      passed.set(launch, { session, net, targets, auth: p.auth, baseline: egress.ip });
-      log(`network: "${net.id}" passed its check at launch${egress.loc ? ` (exit country ${egress.loc})` : ""}`);
+      passed.set(launch, { session, net, targets, auth: p.auth, baseline: egress.ip, locale: p.locale });
+      log(`network: "${net.id}" passed its check at launch${egress.loc ? ` (exit country ${egress.loc})` : ""}${coherence.length ? `; ${coherence.map((c) => c.id).join(", ")}` : ""}`);
       return { ok: true };
     }
     const head = sessionRefusal(session, `network "${net.id}" failed its check before any saved tab opened, so the browser closed`);
-    const text = `${head} ${reason} Nothing went around the proxy. Fix the proxy or config.json's network; the next start checks again (at once after a change to config.json or secrets.env, else after a minute).`;
-    failure = { session, id: net.id, text, at, stamp: stamp() };
-    log(`network: "${net.id}" failed its check at launch: ${reason}`);
+    // The proxy worked and only the browser's time zone doesn't fit its exit (C13): the fix is the
+    // browser profile's time zone (or a proxy exiting in that zone's country), not the proxy.
+    const zone = !!incoherent && egress.verdict === "ok" && !(net.strict && webrtc.verdict !== "ok");
+    const fix = zone ? `Nothing went around the proxy. Set the browser profile's locale.timezone (pairbrowse.timezone in config.json for the default profile) to a zone of ${egress.loc}, use a proxy that exits in the time zone's country, or turn requireValidatedProfiles off; the next start checks again.`
+      : "Nothing went around the proxy. Fix the proxy or config.json's network; the next start checks again (at once after a change to config.json or secrets.env, else after a minute).";
+    const text = `${head} ${reason} ${fix}`;
+    failure = { session, id: net.id, text, at, stamp: stamp(), hold: !zone };
+    log(`network: "${net.id}" failed its check at launch: ${zone ? incoherent.id : reason}`);
     const key = `${session}\u0001${reason}`;
     if (told !== key) {
       told = key;
-      try { notify(`${sessionRefusal(session, `its proxy "${net.id}" failed the check`)} Nothing went around it. See pairbrowse_status or daemon.log.`); } catch {}
+      const said = zone ? `${sessionRefusal(session, `its browser's time zone doesn't fit the exit of proxy "${net.id}" (${egress.loc}) and requireValidatedProfiles is on`)} Set the browser profile's time zone, or use a proxy in that zone's country. See pairbrowse_status.`
+        : `${sessionRefusal(session, `its proxy "${net.id}" failed the check`)} Nothing went around it. See pairbrowse_status or daemon.log.`;
+      try { notify(said); } catch {}
     }
     return { ok: false, refusal: text };
   }
@@ -234,17 +262,34 @@ export function createNetwork({ log = () => {}, notify = () => {}, pause = () =>
   // What pairbrowse_status adds about session's network (serve/tools/status.mjs more): a failed
   // check that holds, else the last check of the browser running now. Never an address or credential.
   function statusParts(session) {
-    const held = refusal(session);
+    const held = refusal(session) || (failure?.session === session && !failure.hold ? failure.text : null);
     if (held) return [`warning: ${held}`];
     const c = last?.session === session ? checks.get(session) : null;
     if (!last || last.session !== session || !last.id || !c) return [];
     const name = `network "${c.id}"${c.strict ? " (strict)" : ""}`;
     const country = c.loc ? `, country ${c.loc}` : "";
     const after = c.paused ? " Agents were paused for it until a person resumes them." : c.told ? " You were told; agents went on." : "";
+    // C13: the browser's time zone and languages against the exit, PairBrowse's setup to fix.
+    const fit = (c.coherence || []).map((i) => `${i.severity === "error" ? "warning" : "note"}: ${i.text}`);
     if (c.kind === "recheck" && c.verdict === "failed") return [`warning: ${name} failed its recheck at ${utc(c.at)}: ${c.reason}${after}`];
-    if (c.kind === "recheck" && c.verdict === "changed" && c.told) return [`warning: ${name}: its exit address changed at ${utc(c.at)}${country}.${after}`];
-    if (c.kind === "recheck") return [`${name}: exit checked at launch, last rechecked at ${utc(c.at)}${country}`];
-    return [`${name}: exit checked at launch${country}`];
+    if (c.kind === "recheck" && c.verdict === "changed" && c.told) return [`warning: ${name}: its exit address changed at ${utc(c.at)}${country}.${after}`, ...fit];
+    if (c.kind === "recheck") return [`${name}: exit checked at launch, last rechecked at ${utc(c.at)}${country}`, ...fit];
+    return [`${name}: exit checked at launch${country}`, ...fit];
+  }
+  // The running session's open compatibility items for a hand-off's report (B14): its last
+  // check's verdict when a recheck failed or moved the exit and was acted on (network.verdict),
+  // and its coherence items (C13). [] for a direct session or another session's browser. Words
+  // only: the proxy's id and codes, never an address.
+  function compatibility(session) {
+    const c = last?.session === session ? checks.get(session) : null;
+    if (!c) return [];
+    const out = [];
+    if (c.kind === "recheck" && (c.verdict === "failed" || (c.verdict === "changed" && c.told))) {
+      out.push({ id: "network.verdict", severity: "error", text: c.verdict === "failed" ? `Network "${c.id}" failed its recheck: ${c.reason}` : `Network "${c.id}" changed its exit address.`,
+        words: c.verdict === "failed" ? `network "${c.id}" failed its recheck` : `network "${c.id}" changed its exit address` });
+    }
+    if (c.verdict !== "failed") out.push(...(c.coherence || []).map((i) => ({ ...i })));
+    return out;
   }
 
   // The rechecks of the browser started with handle (its check passed): every recheckMinutes (or
@@ -285,10 +330,12 @@ export function createNetwork({ log = () => {}, notify = () => {}, pause = () =>
     const read = helper || { ok: false, problem: "the check through the proxy didn't finish", timedOut: true };
     const egress = egressVerdict({ helper: read, browser: read, direct, expectEgress: net.proxy.expectEgress, baseline: w.baseline });
     const at = now();
+    // A moved exit can land in another country: its fit is judged again (C13), reported only.
+    const fit = egress.verdict === "failed" ? [] : coherenceOf(w.locale, egress.loc);
     observe(session, { at: new Date(at).toISOString(), kind: "recheck", proxy: net.id, server: net.proxy.server, browser: null,
       helper: { ip: helper?.ok ? helper.ip : null, loc: helper?.ok ? helper.loc : null }, sameAsDirect: egress.sameAsDirect, webrtc: null,
-      dns: net.strict || net.proxy.scheme === "socks5" ? "strict" : "local", verdict: egress.verdict, reason: egress.reason });
-    const check = { id: net.id, strict: net.strict, kind: "recheck", verdict: egress.verdict, loc: egress.loc, reason: egress.reason, at, paused: false, told: false };
+      dns: net.strict || net.proxy.scheme === "socks5" ? "strict" : "local", verdict: egress.verdict, reason: egress.reason, coherence: fit.map((c) => c.id) });
+    const check = { id: net.id, strict: net.strict, kind: "recheck", verdict: egress.verdict, loc: egress.loc, reason: egress.reason, at, paused: false, told: false, coherence: fit };
     const before = checks.get(session);
     if (egress.verdict === "ok") {
       if (w.failing) log(`network: "${net.id}" passed its recheck again`);
@@ -331,7 +378,7 @@ export function createNetwork({ log = () => {}, notify = () => {}, pause = () =>
   }
 
   return {
-    forLaunch, checkAtLaunch, refusal, statusParts, observations,
+    forLaunch, checkAtLaunch, refusal, statusParts, observations, compatibility,
     // stop(handle): the browser forLaunch gave handle for closed; its rechecks end. recheck(): one
     // now, for the running browser (tests): its verdict, or null with none running.
     stop, recheck: () => recheck(),

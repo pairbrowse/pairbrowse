@@ -27,7 +27,7 @@ const MDNS = "candidate:1 1 udp 2122260223 1f4712db-ea17-4bcf-a596-105139dfd8bf.
 
 // A network part with its own files, stub probes and browser check, and a clock.
 function setup(name, network, { helper = { ok: true, ip: EXIT, loc: "US" }, direct = { ok: true, ip: HOME_IP, loc: "DE" },
-  browser = { ok: true, ip: EXIT, loc: "US" }, webrtc = { ok: true, candidates: [MDNS] }, secrets = null } = {}) {
+  browser = { ok: true, ip: EXIT, loc: "US" }, webrtc = { ok: true, candidates: [MDNS] }, secrets = null, requireCoherent = () => false } = {}) {
   const base = join(dir, name);
   const configFile = join(base, "config.json"), secretsFile = join(base, "secrets.env");
   const files = (s) => join(base, s, "network.json");
@@ -40,7 +40,7 @@ function setup(name, network, { helper = { ok: true, ip: EXIT, loc: "US" }, dire
     if (secrets) writeFileSync(secretsFile, secrets, { mode: 0o600 });
     const part = createNetwork({
       log: (l) => lines.push(l), notify: (text) => notes.push(text), configFile, secretsFile, runDir: join(base, "run"),
-      observationsFile: files, now: () => t.now,
+      observationsFile: files, now: () => t.now, requireCoherent,
       probe: async (args) => { probes.push(args); return args.proxy ? t.helper : t.direct; },
       inBrowser: async () => { t.inBrowserCalls++; return { browser: t.browser, webrtc: t.webrtc }; },
     });
@@ -48,8 +48,8 @@ function setup(name, network, { helper = { ok: true, ip: EXIT, loc: "US" }, dire
   }
 }
 const proxied = (more = {}, net = {}) => ({ proxies: { "us-east": { server: "http://203.0.113.10:3128", ...more } }, sessions: { shop: "us-east" }, ...net });
-const launch = async (s, session = "shop", shell = EXTENSION_SHELL) => {
-  const lp = s.part.forLaunch(session, { shell });
+const launch = async (s, session = "shop", shell = EXTENSION_SHELL, locale = null) => {
+  const lp = s.part.forLaunch(session, { shell, locale });
   const r = await s.part.checkAtLaunch({}, session, lp);
   if (r.ok) lp.started();
   lp.drop();
@@ -70,7 +70,7 @@ test("a passing check: kept in network.json (0600) without this computer's addre
   assert.equal(kept.version, 1);
   const [c] = kept.checks;
   assert.deepEqual({ ...c, at: "t" }, { at: "t", kind: "launch", proxy: "us-east", server: "http://203.0.113.10:3128", browser: { ip: EXIT, loc: "US" },
-    helper: { ip: EXIT, loc: "US" }, sameAsDirect: false, webrtc: { candidates: [{ type: "host", kind: "mdns" }], verdict: "ok" }, dns: "strict", verdict: "ok", reason: "" });
+    helper: { ip: EXIT, loc: "US" }, sameAsDirect: false, webrtc: { candidates: [{ type: "host", kind: "mdns" }], verdict: "ok" }, dns: "strict", verdict: "ok", reason: "", coherence: [] });
   assert.ok(!readFileSync(file, "utf8").includes(HOME_IP), "the direct address is never kept");
   assert.deepEqual(s.part.statusParts("shop"), ['network "us-east" (strict): exit checked at launch, country US']);
   assert.deepEqual(s.part.statusParts("other"), []);
@@ -273,4 +273,56 @@ test("launch wiring: the check after the screen check and before the browser is 
   assert.match(src, /const held = !st\.contextPromise && network\?\.refusal\(st\.session\);/);
   const status = readFileSync(new URL("../scripts/daemon/serve/tools/status.mjs", import.meta.url), "utf8");
   assert.match(status, /!context\.networkRefusal\?\.\(\)/, "pairbrowse_status answers while a failed check holds");
+});
+
+// C13: the exit's country judges the time zone and languages pages read (rules/coherence.mjs).
+test("coherence: a Berlin browser behind a US exit is reported with the check (status, network.json ids, a hand-off's items), never refused unless requireValidatedProfiles", async () => {
+  const NO_GEOIP = { timezone: false, languages: false };
+  const BERLIN = { timezone: "Europe/Berlin", languages: ["de-DE", "de"], geoip: NO_GEOIP };
+  const s = setup("coherence", proxied());
+  assert.deepEqual(await launch(s, "shop", EXTENSION_SHELL, BERLIN), { ok: true });
+  const parts = s.part.statusParts("shop");
+  assert.equal(parts[0], 'network "us-east" (strict): exit checked at launch, country US');
+  assert.match(parts[1], /^warning: The browser's time zone Europe\/Berlin is used in DE, but this proxy's exit is in US/);
+  assert.match(parts[2], /^note: The browser's languages name DE/);
+  assert.deepEqual(JSON.parse(readFileSync(s.files("shop"), "utf8")).checks.at(-1).coherence, ["locale.timezone-vs-egress", "locale.language-vs-egress"]);
+  assert.deepEqual(s.part.compatibility("shop").map((i) => [i.id, i.severity, i.words]), [["locale.timezone-vs-egress", "error", "time zone Europe/Berlin vs egress US"], ["locale.language-vs-egress", "warning", "languages for DE vs egress US"]]);
+  assert.deepEqual(s.part.compatibility("other"), []);
+  assert.ok(s.lines.some((l) => l.includes("locale.timezone-vs-egress")), "logged by id");
+  for (const l of s.lines) noAddress(l);
+  // New York time and en-US fit; values geoip supplies follow the exit, so aren't judged.
+  const fits = setup("coherence-fits", proxied());
+  await launch(fits, "shop", EXTENSION_SHELL, { timezone: "America/New_York", languages: ["en-US"], geoip: NO_GEOIP });
+  assert.deepEqual(fits.part.compatibility("shop"), []);
+  const geo = setup("coherence-geoip", proxied());
+  await launch(geo, "shop", EXTENSION_SHELL, { ...BERLIN, geoip: { timezone: true, languages: true } });
+  assert.deepEqual(geo.part.compatibility("shop"), []);
+  // A profile's own time zone wins over geoip, so it is still judged; geoip's languages aren't.
+  const own = setup("coherence-geoip-own", proxied());
+  await launch(own, "shop", EXTENSION_SHELL, { ...BERLIN, geoip: { timezone: false, languages: true } });
+  assert.deepEqual(own.part.compatibility("shop").map((i) => i.id), ["locale.timezone-vs-egress"]);
+  assert.match(own.part.statusParts("shop")[1], /^warning: The browser's time zone Europe\/Berlin/);
+  const ownStrict = setup("coherence-geoip-strict", proxied(), { requireCoherent: () => true });
+  assert.equal((await launch(ownStrict, "shop", EXTENSION_SHELL, { ...BERLIN, geoip: { timezone: false, languages: true } })).ok, false);
+  // requireValidatedProfiles: the error fails the check closed, as any failure does.
+  const strict = setup("coherence-strict", proxied(), { requireCoherent: () => true });
+  const r = await launch(strict, "shop", EXTENSION_SHELL, BERLIN);
+  assert.equal(r.ok, false);
+  assert.match(r.refusal, /Europe\/Berlin is used in DE, but this proxy's exit is in US.*requireValidatedProfiles is on in config\.json/);
+  assert.equal(JSON.parse(readFileSync(strict.files("shop"), "utf8")).checks.at(-1).verdict, "failed");
+  // Its fix is the profile's time zone, not the proxy, in the refusal and the person's notice;
+  // the profile store isn't in the hold's stamp, so nothing holds: the next start checks again.
+  assert.match(r.refusal, /Set the browser profile's locale\.timezone .* to a zone of US, use a proxy that exits in the time zone's country, or turn requireValidatedProfiles off/);
+  assert.doesNotMatch(r.refusal, /Fix the proxy|after a minute/);
+  assert.equal(strict.notes.length, 1);
+  assert.match(strict.notes[0], /its browser's time zone doesn't fit the exit of proxy "us-east" \(US\) and requireValidatedProfiles is on.*Set the browser profile's time zone/);
+  assert.doesNotMatch(strict.notes[0], /failed the check/);
+  assert.equal(strict.part.refusal("shop"), null, "no hold");
+  assert.match(strict.part.statusParts("shop")[0], /^warning: .*requireValidatedProfiles/);
+  const again = await launch(strict, "shop", EXTENSION_SHELL, { timezone: "America/New_York", languages: ["en-US"], geoip: NO_GEOIP });
+  assert.deepEqual(again, { ok: true }, "a fixed profile starts at once");
+  assert.equal(strict.part.statusParts("shop")[0], 'network "us-east" (strict): exit checked at launch, country US');
+  // A language mismatch alone (a warning) still starts.
+  const lang = setup("coherence-lang", proxied(), { requireCoherent: () => true });
+  assert.deepEqual(await launch(lang, "shop", EXTENSION_SHELL, { timezone: "America/Chicago", languages: ["de-DE"], geoip: NO_GEOIP }), { ok: true });
 });

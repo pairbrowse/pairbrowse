@@ -177,6 +177,52 @@ test("other major refuses, other build unverified, requireValidatedProfiles refu
   assert.equal(existsSync(bindingFile(open)), false, "a refused first start binds nothing");
 });
 
+test("coherence (E13): the profile's screen and window kept as warning items, its measured gpu mismatches open for a hand-off, an error under requireValidatedProfiles refused; the locale pages read", () => {
+  const store = newStore();
+  const wide = store.create({ name: "wide", locale: { languages: ["de-DE", "de"], timezone: "Europe/Berlin", source: "set" },
+    screen: { width: 1920, height: 1080, availWidth: 1920, availHeight: 1040, colorDepth: 24, devicePixelRatio: 1 }, window: { width: 2560, height: 1000 } });
+  const name = session("sp-coherence");
+  assignProfile(name, "wide", { store });
+  const { profiles } = parts(store);
+  const got = profiles.forLaunch(name, NATIVE);
+  const warn = got.results.find((i) => i.rule === "screen.believable");
+  assert.deepEqual([warn.field, warn.status, warn.severity, warn.class], ["window", "mismatch", "warning", "C"]);
+  assert.ok(store.get(wide.id).validation[BUILD].items.some((i) => i.rule === "screen.believable"), "kept in the launch's evidence");
+  assert.deepEqual(profiles.coherence().map((i) => [i.id, i.severity, i.words]), [["screen.believable", "warning", 'a screen or window size no real system has (browser profile "wide")']]);
+  assert.match(profiles.coherence()[0].text, /A 2560x1000 window doesn't fit on a 1920x1080 screen/);
+  // What pages read: the profile's own on the native build; the open build sends one language and no zone.
+  assert.deepEqual(got.locale, { timezone: "Europe/Berlin", languages: ["de-DE", "de"], geoip: { timezone: false, languages: false } });
+  // A measurement of this pack whose page read a hardware GPU over software rendering: open for a
+  // hand-off's report, and refused under requireValidatedProfiles (an error among its checks).
+  const soft = { field: "webgl.strings", rule: "gpu.software-as-hardware", class: "M", status: "mismatch", requested: null, measured: "ANGLE (Intel)", severity: "error", reason: "Pages read a hardware GPU (ANGLE (Intel)) while the browser renders in software: what they draw gives it away." };
+  rewrite(store, wide.id, (r) => { r.validation[BUILD] = measuredEntry({ status: "failed", pack: PACK, items: [soft] }); });
+  assert.equal(profiles.forLaunch(name, NATIVE).status, "failed");
+  assert.deepEqual(profiles.coherence().map((i) => i.id), ["screen.believable", "gpu.software-as-hardware"]);
+  assert.throws(() => parts(store, { requireValidatedProfiles: true }).profiles.forLaunch(name, NATIVE), /isn't validated|is failed on build 150\.0\.7871\.114/);
+  // Evidence of another pack counts for nothing: only the screen's item is open.
+  assert.deepEqual(profiles.forLaunch(name, { ...NATIVE, pack: "c".repeat(64) }) && profiles.coherence().map((i) => i.id), ["screen.believable"]);
+  profiles.release();
+  assert.deepEqual(profiles.coherence(), [], "none with no browser running");
+  const open = session("sp-coherence-open");
+  const plain = store.create({ name: "plain", browser: { kind: "pairbrowse-open" }, locale: { languages: ["fr-FR", "fr"], timezone: null, source: "set" } });
+  assignProfile(open, "plain", { store });
+  const intl = Intl.DateTimeFormat().resolvedOptions();
+  assert.deepEqual(profiles.forLaunch(open, OPEN).locale, { timezone: intl.timeZone, languages: ["fr-FR"], geoip: { timezone: false, languages: false } });
+  assert.equal(plain.name, "plain");
+  // geoip on the native build: it supplies only what the profile leaves unset; the profile's own
+  // time zone still reaches pages (native-engine.mjs keeps it), so the network check judges it.
+  const geo = session("sp-coherence-geoip");
+  store.create({ name: "geo-berlin", locale: { languages: null, timezone: "Europe/Berlin", source: "geoip" } });
+  assignProfile(geo, "geo-berlin", { store });
+  const geoLocale = profiles.forLaunch(geo, NATIVE).locale;
+  assert.deepEqual([geoLocale.timezone, geoLocale.geoip], ["Europe/Berlin", { timezone: false, languages: true }]);
+  profiles.release();
+  const geoAll = session("sp-coherence-geoip-all");
+  store.create({ name: "geo-all", locale: { languages: null, timezone: null, source: "geoip" } });
+  assignProfile(geoAll, "geo-all", { store });
+  assert.deepEqual(profiles.forLaunch(geoAll, NATIVE).locale.geoip, { timezone: true, languages: true });
+});
+
 test("unknown or retired profile refused by name, never the default; a field the browser can't apply refuses", () => {
   const store = newStore();
   const berlin = store.create(BERLIN);

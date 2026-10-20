@@ -101,6 +101,10 @@ export function createContext({ personTabs = createPersonTabs(), config, log, ch
     profiles: () => profiles.list(),
     // The person's profile operations on the sessions page (sessions/profile-owner.mjs): owner-only routes.
     profileOps: profiles.owner,
+    // The open compatibility items a hand-off reports apart from the site's own verification
+    // (daemon/yourturn.mjs, spec server-mode B14): the running profile's coherence items and the
+    // session's network verdict and coherence items (rules/coherence.mjs), PairBrowse's to fix.
+    compatibility: () => [...profiles.coherence(), ...(network?.compatibility(st.session) || [])],
     // The refusal the session's starts get while its proxy's failed check holds, else null.
     networkRefusal: () => network?.refusal(st.session) || null,
     // Whether the browser runs a strict proxied session now: shared browser mode then sends

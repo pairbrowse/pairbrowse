@@ -26,6 +26,9 @@
 // those folders once, when it first loads (an install's self-check loads it in this process). A
 // migration that fails is put back and the launch runs on, with a warning in the log and status.
 // owner: the person's operations on the sessions page (profile-owner.mjs), never an agent's.
+// coherence(): the running profile's open coherence items (rules/coherence.mjs, E13): its screen
+// and window as sites see them (screen.believable, also kept in the launch's evidence), and the
+// mismatches its measured validation on this pack found (gpu.*); a hand-off reports them (B14).
 import { readAssignment, readBinding, writeBinding, validName, assignedTo } from "../../sessions.mjs";
 import { createProfileStore } from "../../profiles/store.mjs";
 import { launchableBrowserArgs, browserArgsOf } from "../../browser-args.mjs";
@@ -36,6 +39,7 @@ import { entryStatus } from "../../native/validate.mjs";
 import { takeIdentity } from "../../profiles/lock.mjs";
 import { ensureMigrated, readMigration, migrationNote } from "../../profiles/migrate.mjs";
 import { createProfileOwner } from "./profile-owner.mjs";
+import { COHERENCE_RULES, screenBelievable } from "../../rules/coherence.mjs";
 
 // A native build's version as validation keys it (profiles/schema.mjs BUILD).
 const BUILD = /^\d{1,4}(?:\.\d{1,6}){3}$/;
@@ -44,6 +48,26 @@ const shown = (s) => (typeof s === "string" && (PROFILE_ID.test(s) || validName(
 
 // The warning every launch of a profile imported with license "unknown" gives (step 35).
 export const unknownLicense = (name) => `browser profile "${shown(name)}" was imported with license "unknown": PairBrowse can't tell under which terms its settings may be used; import it again with --license naming them`;
+
+// Short words for a profile's coherence item in a hand-off's report (rules/coherence.mjs setupLines).
+const COHERENCE_WORDS = { "gpu.vs-platform": "pages read a GPU this system never has", "gpu.software-as-hardware": "pages read a hardware GPU over software rendering",
+  "screen.believable": "a screen or window size no real system has" };
+
+// The time zone and languages pages read on a launch of record (mapped: its toLaunch parts):
+// { timezone, languages, geoip: { timezone, languages } }. The native build sends the profile's own
+// (engine keys); the open build sets only the first language (--lang) and never the time zone;
+// anything unset is this computer's (Intl), or under geoip (native only) the exit's: geoip says
+// which values it supplies, since a profile's own time zone and languages still win over it
+// (native-engine.mjs drops only the geoip fields the profile leaves unset).
+function pagesLocale(record, mapped, native) {
+  const intl = Intl.DateTimeFormat().resolvedOptions();
+  const set = Array.isArray(record.locale?.languages) && record.locale.languages.length ? record.locale.languages : null;
+  const zoneSet = native && typeof mapped.engineKeys?.timezone === "string";
+  const timezone = zoneSet ? mapped.engineKeys.timezone : intl.timeZone;
+  const languages = set ? (native ? set : set.slice(0, 1)) : [intl.locale];
+  const geo = !!(native && mapped.geoip);
+  return { timezone, languages, geoip: { timezone: geo && !zoneSet, languages: geo && !set } };
+}
 
 // st: the browser's state (st.profile: the running browser's profile, or null). deps: config (the
 // helper's config.json, read at each launch), log, profileStore (profiles/store.mjs
@@ -107,6 +131,10 @@ export function createProfiles(st, deps = {}) {
     // the graphics plan refuses a renderer switch that contradicts the profile's backend.
     const mapped = toLaunch(record, { browserKind, platform, userArgs: launchableBrowserArgs(browserArgsOf(config), platform) });
     if (mapped.problem) throw refuse(mapped.problem);
+    // E13: the profile's screen and window as sites see them (warnings only, never a refusal: D11).
+    const believable = screenBelievable(record.screen, { window: record.window }).map((c) => ({ field: c.field, rule: c.id,
+      class: "C", status: "mismatch", requested: `${record.screen.width}x${record.screen.height}`, measured: null, severity: c.severity, reason: c.text }));
+    const results = [...mapped.results, ...believable];
 
     if (config.requireValidatedProfiles === true) {
       const on = engine ? `build ${engine.build}` : native ? "this build" : "the open build";
@@ -130,7 +158,7 @@ export function createProfiles(st, deps = {}) {
     // The evidence of this launch, kept with the profile for its build (no new revision); the
     // default on a new major held to this build (store.repin: a history entry by "config").
     if (engine) {
-      const entry = { status: "unverified", at: new Date(now()).toISOString(), pack: typeof pack === "string" && SHA256.test(pack) ? pack : null, items: mapped.results.slice(0, 500) };
+      const entry = { status: "unverified", at: new Date(now()).toISOString(), pack: typeof pack === "string" && SHA256.test(pack) ? pack : null, items: results.slice(0, 500) };
       try {
         if (repin) {
           store.repin(record.id, { engine, build: engine.build, entry, by: "config" });
@@ -145,10 +173,18 @@ export function createProfiles(st, deps = {}) {
     // while the config-backed default on the native build still says so (the launch logs it too).
     const notes = native && record.kind === "config" && PICKS_THIS_COMPUTER.includes(config.pairbrowse?.profile) ? [`note: ${THIS_COMPUTER_NOTE} (pairbrowse.profile "${config.pairbrowse.profile}" in config.json)`] : [];
     log(`launch: ${who} on ${named}, revision ${record.revision}, ${status}${engine ? ` on ${engine.build}` : native ? "" : " (open build)"}`);
-    st.profile = { session, id: record.id, name: record.name, kind: record.kind, revision: record.revision, status, build: engine?.build || null, browserKind, warnings, notes, identity };
+    // The open coherence items: the screen's, and the measured ones of this pack (status validated
+    // or failed: entryStatus counts a measurement only for its own pack).
+    const measuredItems = status === "unverified" ? [] : (prior?.items || []).filter((i) => COHERENCE_RULES[i?.rule] && i.status === "mismatch" && i.rule !== "screen.believable");
+    const coherence = [...believable, ...measuredItems].slice(0, 20).map((i) => ({ id: i.rule, severity: i.severity, text: String(i.reason || ""), words: `${COHERENCE_WORDS[i.rule] || i.rule} (browser profile "${shown(record.name)}")` }));
+    st.profile = { session, id: record.id, name: record.name, kind: record.kind, revision: record.revision, status, build: engine?.build || null, browserKind, warnings, notes, identity, coherence };
     return {
       id: record.id, name: record.name, kind: record.kind, revision: record.revision, status, build: engine?.build || null,
-      switches: mapped.switches, network: mapped.network, adBlocker: mapped.adBlocker, results: mapped.results, warnings,
+      switches: mapped.switches, network: mapped.network, adBlocker: mapped.adBlocker, results, warnings,
+      // What pages read for time zone and languages (the network check's coherence input, C13):
+      // the profile's on the native build, else this computer's; a value geoip supplies follows the
+      // exit, so isn't judged.
+      locale: pagesLocale(record, mapped, native),
       // The engine layer native-engine.mjs reads (config.browserProfile): only the mapper's keys, and
       // the backend asked for (its switches are among the mapper's; native-engine.mjs files it in GRAPHICS).
       engine: { id: record.id, kind: record.kind, geoip: mapped.geoip, graphics: record.graphics.backend, engineKeys: Object.fromEntries(Object.entries(mapped.engineKeys).filter(([k]) => ENGINE_KEYS.includes(k))) },
@@ -180,7 +216,10 @@ export function createProfiles(st, deps = {}) {
   // What config.json gives the config-backed default now, for an assignment made between launches.
   const configSettings = (native) => fromConfig(config, { native, platform });
 
-  const api = { prepare, forLaunch, release, statusParts, list, store, configSettings };
+  // The running profile's open coherence items (B14), [] with none running.
+  const coherence = () => (st.profile?.coherence || []).map((i) => ({ ...i }));
+
+  const api = { prepare, forLaunch, release, statusParts, list, store, configSettings, coherence };
   api.owner = createProfileOwner(st, { config, log, store, platform, now, configSettings });
   return api;
 }

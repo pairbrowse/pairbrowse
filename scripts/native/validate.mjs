@@ -23,15 +23,11 @@
 // Host GPU strings stay in the profile's 0600 file (reasons may name the renderer); nothing here
 // writes or logs. Pure; Node's standard library only.
 import { classOf, runtimeOf } from "./properties.mjs";
+import { rendererFamily, softwareRenderer as softwareName, gpuVsPlatform, gpuSoftwareAsHardware, screenBelievable, platformOf } from "../rules/coherence.mjs";
 
 const SHA256 = /^[0-9a-f]{64}$/;
 const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
 const BUILD = /^\d{1,4}(?:\.\d{1,6}){3}$/;
-// A software renderer by its name (Mesa's llvmpipe, softpipe and lavapipe, the engine's SwiftShader).
-const SOFTWARE = /llvmpipe|softpipe|lavapipe|swiftshader|software rasterizer|basic render driver/i;
-// Hardware renderer families, by the names their strings carry.
-const FAMILIES = [["apple", /\bapple\b|\bmetal\b/i], ["intel", /\bintel\b/i], ["nvidia", /nvidia|geforce|quadro/i],
-  ["amd", /\bamd\b|\bati\b|radeon/i], ["qualcomm", /qualcomm|adreno/i], ["arm", /\bmali\b|\barm\b/i], ["broadcom", /broadcom|videocore/i]];
 // The engine's sandbox status page (Linux): the namespace layer, and seccomp-BPF where the kernel
 // isn't emulated (spec step 39).
 const PAGE_LAYERS = [["the namespace layer", /^Layer 1 Sandbox\tNamespace$/], ["PID namespaces", /^PID namespaces\tYes$/],
@@ -130,13 +126,8 @@ export function measuredRecord(raw) {
 
 // --- Rules --------------------------------------------------------------------------------------
 
-const softwareName = (s) => typeof s === "string" && SOFTWARE.test(s);
-// A renderer string's family: "software", a hardware family's name, or null when it names none.
-export function rendererFamily(s) {
-  if (typeof s !== "string" || !s) return null;
-  if (softwareName(s)) return "software";
-  return FAMILIES.find(([, re]) => re.test(s))?.[0] ?? null;
-}
+// Renderer families and software names: rules/coherence.mjs (rendererFamily), shared with the
+// coherence rules below.
 const backendFamily = (b) => (b.kind === "software" ? "software" : rendererFamily(b.renderer) || (b.kind === "hardware" ? null : "software"));
 const gl = (m) => (m.webgl?.available ? m.webgl : m.webgl2?.available ? m.webgl2 : null);
 const pow2 = (n) => Number.isInteger(n) && n > 0 && (n & (n - 1)) === 0;
@@ -369,12 +360,54 @@ export const RULES = Object.freeze([
 ]);
 export const RULE_IDS = Object.freeze(RULES.map((r) => r.id));
 
+// The E13 coherence rules (rules/coherence.mjs) as validation items, after RULES: on the
+// measurement, gpu.vs-platform (WebGL's renderer against the system navigator.platform names) and
+// gpu.software-as-hardware (a hardware renderer or adapter over a software backend); on the
+// request, screen.believable (the profile's screen and window, warnings only). Each answers a
+// matched item where it could tell and found nothing, else one mismatch per problem; a rule that
+// can't tell gives no item. Errors here fail the entry as RULES' errors do (E6).
+export const COHERENCE = Object.freeze([
+  { id: "gpu.vs-platform", severity: "error", field: "platform",
+    check(ctx) {
+      const m = ctx.measured, page = m ? gl(m) : null;
+      const platform = m?.navigator?.platform || m?.runtime.platform;
+      if (!page?.unmaskedRenderer || !platformOf(platform)) return null;
+      // Pages read the GPU the browser really renders on (an Apple GPU under Linux through Mesa's
+      // asahi driver, a Linux guest on Apple Silicon whose virgl renderer names Apple): nothing
+      // PairBrowse made up, so nothing for it to fix.
+      const family = rendererFamily(page.unmaskedRenderer);
+      if (m.backend?.kind === "hardware" && family && family !== "software" && rendererFamily(m.backend.renderer) === family) {
+        return matched(`pages read the ${family} GPU the browser renders on`, platform, short(page.unmaskedRenderer));
+      }
+      const found = gpuVsPlatform({ platform, renderer: page.unmaskedRenderer });
+      return found.length ? found.map((c) => mismatch(c.text, platform, short(page.unmaskedRenderer))) : matched(`a ${rendererFamily(page.unmaskedRenderer) || "named"} renderer fits ${platform}`, platform, short(page.unmaskedRenderer));
+    } },
+  { id: "gpu.software-as-hardware", severity: "error", field: "webgl.strings",
+    check(ctx) {
+      const m = ctx.measured, b = m?.backend;
+      if (!b || b.kind !== "software") return null;
+      const page = gl(m), g = m.webgpu?.available ? m.webgpu : null;
+      if (!page?.unmaskedRenderer && !g) return null;
+      const found = gpuSoftwareAsHardware({ backend: b, renderer: page?.unmaskedRenderer || null, adapter: g });
+      return found.length ? found.map((c) => mismatch(c.text, null, short(page?.unmaskedRenderer || g?.vendor || null))) : matched("pages read software rendering, as the browser does", null, short(page?.unmaskedRenderer || g?.vendor || null));
+    } },
+  { id: "screen.believable", severity: "warning", field: "screen",
+    check(ctx) {
+      const s = ctx.requested.screen;
+      if (!plainObject(s)) return null;
+      const win = plainObject(ctx.requested.window) ? ctx.requested.window : null;
+      const found = screenBelievable(s, { window: win });
+      const size = `${s.width}x${s.height}`;
+      return found.length ? found.map((c) => ({ ...mismatch(c.text, size), field: c.field })) : matched(`a ${size} screen${win ? ` and a ${win.width}x${win.height} window` : ""} real systems have`, size);
+    } },
+]);
+
 // --- The entry ----------------------------------------------------------------------------------
 
 const ITEMS_MAX = 500;
 const FAILING = new Set(["mismatch", "unsupported", "not-applied"]);
 
-// requested: what the launch applied, { graphics: { backend, require }, screen, locale: {
+// requested: what the launch applied, { graphics: { backend, require }, screen, window, locale: {
 // timezone, languages }, switches (the launch's final switch list), results (profiles/map.mjs
 // toLaunch's items, kept first) }. derived: { build, pack, runtimeKey (this runtime's, native/
 // graphics.mjs runtimeKey), platform ("darwin", "linux"), virtualScreen ({ width, height } on
@@ -398,7 +431,7 @@ export function validate({ requested = {}, derived = {}, measured = null, live =
     switches: Array.isArray(req.switches) ? req.switches.filter((s) => typeof s === "string") : [] };
 
   const items = [];
-  for (const rule of RULES) {
+  for (const rule of [...RULES, ...COHERENCE]) {
     let got;
     try { got = rule.check(ctx, rule); } catch { got = unverified("this check couldn't read the measurement"); }
     for (const r of got === null || got === undefined ? [] : Array.isArray(got) ? got : [got]) {

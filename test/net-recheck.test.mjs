@@ -117,7 +117,7 @@ test("a passing recheck: kept as kind recheck without the browser's or this comp
   assert.equal(await s.part.recheck(), "ok");
   const c = s.checks().at(-1);
   assert.deepEqual({ ...c, at: "t" }, { at: "t", kind: "recheck", proxy: "us-east", server: "http://203.0.113.10:3128", browser: null,
-    helper: { ip: EXIT, loc: "US" }, sameAsDirect: false, webrtc: null, dns: "strict", verdict: "ok", reason: "" });
+    helper: { ip: EXIT, loc: "US" }, sameAsDirect: false, webrtc: null, dns: "strict", verdict: "ok", reason: "", coherence: [] });
   assert.ok(!readFileSync(s.files("shop"), "utf8").includes(HOME_IP), "this computer's own exit is never kept");
   assert.deepEqual(s.part.statusParts("shop"), ['network "us-east" (strict): exit checked at launch, last rechecked at 22:13 UTC, country US']);
   assert.deepEqual([s.pauses, s.notes, s.sent], [[], [], []]);

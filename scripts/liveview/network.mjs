@@ -46,13 +46,17 @@ export function readConfigFile(file) {
 
 // The browser's time zone and languages (what pages read), from config.json's "pairbrowse"
 // settings on the native build (timezone, acceptLanguage, geoip), else this computer's own.
-// { timezone, languages, geoip }.
+// { timezone, languages, geoip: { timezone, languages } }: geoip says which of the two it supplies
+// from the exit, since a time zone or languages set there still win over it (native-engine.mjs).
 export function localeOf(config, { native = false } = {}) {
   const intl = Intl.DateTimeFormat().resolvedOptions();
   const own = native && config?.pairbrowse && typeof config.pairbrowse === "object" ? config.pairbrowse : {};
-  const timezone = typeof own.timezone === "string" && own.timezone ? own.timezone : intl.timeZone;
-  const langs = typeof own.acceptLanguage === "string" && own.acceptLanguage ? own.acceptLanguage.split(",").map((t) => t.split(";")[0].trim()).filter(Boolean) : [intl.locale];
-  return { timezone, languages: langs, geoip: own.geoip === true };
+  const zoneSet = typeof own.timezone === "string" && !!own.timezone;
+  const langSet = typeof own.acceptLanguage === "string" && !!own.acceptLanguage;
+  const timezone = zoneSet ? own.timezone : intl.timeZone;
+  const langs = langSet ? own.acceptLanguage.split(",").map((t) => t.split(";")[0].trim()).filter(Boolean) : [intl.locale];
+  const geo = own.geoip === true;
+  return { timezone, languages: langs, geoip: { timezone: geo && !zoneSet, languages: geo && !langSet } };
 }
 
 // configFile: config.json (paths.mjs's). secrets: the helper's secret store (rules/secrets.mjs
@@ -142,7 +146,10 @@ export function createNetworkSettings({ configFile = paths.config, secrets, sess
       const egress = egressVerdict({ helper: read, browser: read, direct, expectEgress });
       const exit = read.ok ? { ip: read.ip, country: read.loc || null } : null;
       const here = locale();
-      const coherence = exit?.country && !here.geoip ? localeVsEgress({ timezone: here.timezone, languages: here.languages, country: exit.country }) : [];
+      // A value geoip supplies follows the exit, so only the ones set here are compared.
+      const geo = here.geoip === true ? { timezone: true, languages: true } : here.geoip || {};
+      const judged = { timezone: geo.timezone ? null : here.timezone, languages: geo.languages ? null : here.languages };
+      const coherence = exit?.country ? localeVsEgress({ timezone: judged.timezone, languages: judged.languages || [], country: exit.country }) : [];
       log(`network: Settings tested ${f.id ? `"${f.id}"` : "a proxy"}: ${egress.verdict === "ok" ? "passed" : "failed"}`);
       return {
         verdict: egress.verdict === "ok" ? "ok" : "failed",
@@ -150,8 +157,9 @@ export function createNetworkSettings({ configFile = paths.config, secrets, sess
         exit,
         sameAsDirect: egress.sameAsDirect,
         coherence,
-        // geoip sets the time zone and languages from the exit at each launch: nothing to compare.
-        locale: here.geoip ? "geoip" : { timezone: here.timezone, languages: here.languages },
+        // geoip sets the time zone and languages from the exit at each launch: nothing to compare
+        // ("geoip"); else the values compared, null for one geoip supplies.
+        locale: geo.timezone && geo.languages ? "geoip" : judged,
         note: TEST_NOTE,
       };
     } finally {

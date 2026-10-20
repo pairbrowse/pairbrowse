@@ -270,6 +270,10 @@ test("Test reads the exit through the proxy: address, country, leak verdict and 
   const geo = setup({ probe: async (o) => (o.proxy ? { ok: true, ip: "203.0.113.7", loc: "US" } : { ok: true, ip: "192.0.2.50", loc: "DE" }), locale: () => ({ timezone: "Europe/Berlin", languages: ["de-DE"], geoip: true }) });
   const g = await geo.network.test({ op: "test", type: "http", host: "203.0.113.10" });
   assert.deepEqual([g.coherence, g.locale], [[], "geoip"]);
+  // A time zone set in config.json wins over geoip, so it is still compared; geoip's languages aren't.
+  const own = setup({ probe: async (o) => (o.proxy ? { ok: true, ip: "203.0.113.7", loc: "US" } : { ok: true, ip: "192.0.2.50", loc: "DE" }), locale: () => ({ timezone: "Europe/Berlin", languages: ["de-DE"], geoip: { timezone: false, languages: true } }) });
+  const o = await own.network.test({ op: "test", type: "http", host: "203.0.113.10" });
+  assert.deepEqual([o.coherence.map((i) => i.id), o.locale], [["locale.timezone-vs-egress"], { timezone: "Europe/Berlin", languages: null }]);
 });
 
 test("net/settings: forms, summaries and changes are pure and never repeat a credential", () => {
@@ -290,7 +294,8 @@ test("net/settings: forms, summaries and changes are pure and never repeat a cre
   assert.deepEqual(sum.sessions, [{ name: "default", choice: "default", id: null }], "clean sessions are never listed");
   assert.doesNotMatch(JSON.stringify(sum), new RegExp(PASSWORD));
   // The browser's locale: the native build's own settings, else this computer's.
-  assert.deepEqual(localeOf({ pairbrowse: { timezone: "Asia/Tokyo", acceptLanguage: "ja-JP,ja;q=0.9", geoip: true } }, { native: true }), { timezone: "Asia/Tokyo", languages: ["ja-JP", "ja"], geoip: true });
+  assert.deepEqual(localeOf({ pairbrowse: { timezone: "Asia/Tokyo", acceptLanguage: "ja-JP,ja;q=0.9", geoip: true } }, { native: true }), { timezone: "Asia/Tokyo", languages: ["ja-JP", "ja"], geoip: { timezone: false, languages: false } });
+  assert.deepEqual(localeOf({ pairbrowse: { timezone: "Asia/Tokyo", geoip: true } }, { native: true }).geoip, { timezone: false, languages: true });
   assert.equal(localeOf({ pairbrowse: { timezone: "Asia/Tokyo" } }, { native: false }).timezone, Intl.DateTimeFormat().resolvedOptions().timeZone);
 });
 

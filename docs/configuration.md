@@ -308,17 +308,24 @@ user's file, readable by others), the section says why and refuses a username or
   the exit address and country, whether the traffic leaves through the proxy (not from this
   computer's own address), and a warning when the browser's time zone isn't one used in the exit's
   country or its languages name another region (the native build's `pairbrowse.timezone` and
-  `acceptLanguage`, else this computer's; none with `geoip`, which follows the exit). The browser's
-  own read, WebRTC and its name lookups are checked when a session using the proxy starts. A
-  change counts from a session's next start.
+  `acceptLanguage`, else this computer's; unset values under `geoip` follow the exit and aren't
+  compared, a time zone or languages set there still are). The browser's own read, WebRTC and its
+  name lookups are checked when a session using the proxy starts, and the same time zone and
+  languages comparison runs at every start and recheck with the session's own (its browser
+  profile's): `pairbrowse_status` shows a warning for the time zone and a note for the languages,
+  and a hand-off lists them as PairBrowse's to fix. A change counts from a session's next start.
 - `requireValidatedProfiles`: `false` (default). For browser profiles, which server mode brings
   (kept owner-only in `~/.pairbrowse/browser-profiles/`): `true` refuses to start a session on a
   profile that hasn't been validated on the browser build in use, or one with an error in its
-  consistency checks. A profile is validated only by a measurement of the build's engine pack on
-  this computer's runtime (its graphics, driver and display); a measurement taken with another
-  engine pack, or without a known engine pack, leaves it `unverified` again. A start compares only
-  the engine pack for now: whether the runtime has changed since the measurement is checked at
-  start in a later version, once the browser's own graphics read is taken then. Until PairBrowse
+  consistency checks (a GPU the system pages are told about never has, unless it is the one the
+  browser really renders on, a hardware GPU read over software rendering); and a proxied session
+  whose browser's time zone isn't one used in the exit's country fails its start check (the fix
+  is the profile's time zone, or a proxy in that zone's country, and the next start checks again
+  at once). A profile is validated only by a measurement of the build's engine pack on this
+  computer's runtime (its graphics, driver and display); a measurement taken with another engine
+  pack, or without a known engine pack, leaves it `unverified` again. A start compares only the
+  engine pack for now: whether the runtime has changed since the measurement is checked at start
+  in a later version, once the browser's own graphics read is taken then. Until PairBrowse
   measures a build (a later version), every profile is `unverified`, so `true` refuses every
   start; the open build's starts are never validated.
 

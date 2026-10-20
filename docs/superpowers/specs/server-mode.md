@@ -448,7 +448,10 @@ by the person. On no response: progress saved, exactly one reminder, safe stop.
   E). The status result reports two lists: "Site verification (yours to do): CAPTCHA on <host>" and
   "PairBrowse setup problems (PairBrowse's to fix): time zone Europe/Berlin vs egress US". A
   compatibility problem never mints a grant by itself and never asks the person to work around it; a
-  genuine verification is always handed over, never retried or bypassed.
+  genuine verification is always handed over, never retried or bypassed. (Step 43: the lists go
+  with hand-offs that go to the channels, in the status result for an agent's "you" and in a host
+  note for PairBrowse's own check and a fast-mode run's hand-off step; a desktop without Away stays
+  as today, decision 8.)
 - **B15. Resume.** Grant end reasons: `done`, `cleared`, `agent`, `tab-closed`, `session-switched`,
   `revoked`, `expired`, `browser-restarted`, `helper-stopped`. On every end but `expired`, one host note
   names the person's actions (field names only) and says to take a snapshot; `browser_wait_for` wakes
@@ -840,7 +843,8 @@ one.
   items: [...] }` with one item shape shared with Phase E: `{ field, rule, class, status, requested,
   measured, severity, reason }`, `class` from the property matrix (section 9), `status` one of
   `applied, not-applied, derived, unsupported, matched, mismatch, unverified`. `requireValidatedProfiles`
-  (default false) refuses `unverified` and error-severity coherence items.
+  (default false) refuses `unverified` and error-severity coherence items (step 43: a profile's
+  through its stored entry; `locale.timezone-vs-egress` through the network check at launch).
 - **D11. Explicit fields fail closed; imported data is reported.** A set field the chosen browser cannot
   apply refuses the launch (for example `locale.timezone` on the open build). Data inside an imported
   file that is not applied is listed per field as `unsupported` or `not-applied` and never refuses.
@@ -1074,8 +1078,9 @@ inconsistency; remove the canvas bridge; keep the sandbox on.
   `use-mock-keychain` pattern), so no validation comes from a user's headless run.
 - **E13. Coherence rules** (shared module, `scripts/rules/coherence.mjs`, used by B14, C13, D16):
   `gpu.vs-platform` (renderer family vs platform), `gpu.software-as-hardware` (page claims hardware
-  on a software backend), `screen.display`, `screen.believable` (window within screen, avail within
-  screen, DPR in a common set), `locale.timezone-vs-egress` (error), `locale.language-vs-egress`
+  on a software backend), `screen.display` (kept a validator rule, step 43: it needs the launch's
+  virtual screen), `screen.believable` (window within screen, avail within screen, DPR in a common
+  set: 0.25 steps), `locale.timezone-vs-egress` (error), `locale.language-vs-egress`
   (warning). The time-zone-to-country table is generated from the IANA tz database's `zone.tab`
   and, where the system has it, `zone1970.tab` (public domain; macOS ships only `zone.tab`), each
   zone also under the name Intl reports for it (`Asia/Saigon`), into `scripts/rules/tzcountry.mjs`
@@ -2418,6 +2423,52 @@ it depends on.
     browser).
 43. `rules/coherence.mjs` and `tzcountry.mjs` (the locale rules and the table landed with 32b, `screen.believable` with 35); wired into D validation, C verdicts and the B report;
     `test/compat-vs-verification.test.mjs` (E13, C13, D16, B14). -> 29, 37, 21
+    Landed as: `scripts/rules/coherence.mjs` gains `COHERENCE_RULES` (id to severity, the one list),
+    `rendererFamily` and `softwareRenderer` (moved from `native/validate.mjs`, which imports them),
+    `platformOf` (navigator.platform or a runtime name to `macos`, `linux`, `windows`; a phone's or
+    tablet's, iPhone, iPad or Android, is not judged), `gpuVsPlatform({ platform, renderer })`
+    (`gpu.vs-platform`, error: Apple's GPUs only on macOS; a Mac's are Apple, Intel or AMD),
+    `gpuSoftwareAsHardware({ backend, renderer, adapter })` (`gpu.software-as-hardware`, error: a
+    hardware WebGL renderer or a non-fallback hardware WebGPU adapter over a `software` backend),
+    `screenBelievable(screen, { window })` now also warning on an available area larger than the
+    screen and a window larger than it, each item's `field` (`window` or `screen`, which the
+    validator, the launch's evidence and an import file it under), short `words` on the locale
+    items, and `setupLines({ verification, items })` (B14's two lists; `profiles/import.mjs` passes
+    the file's window too). `screen.display` stays a validator rule (`native/validate.mjs` RULES):
+    it needs the launch's virtual screen. D validation: `native/validate.mjs` `COHERENCE` runs after
+    `RULES` (gpu rules over the measurement, `gpu.vs-platform` matched when the backend is hardware
+    of the page renderer's own family, the real GPU, as an Apple GPU under Linux through Mesa's
+    asahi driver; `screen.believable` over the requested screen and the new `requested.window`;
+    matched where a rule could tell, a mismatch per problem; errors fail the entry).
+    `daemon/sessions/profiles.mjs` `forLaunch` keeps `screen.believable` items in the launch's
+    evidence and its `results`, answers `locale` (what pages read: the profile's on the native
+    build, the first language only and this computer's zone on the open build, else Intl; `geoip: {
+    timezone, languages }` says which of the two geoip supplies, since a profile's own win over it,
+    `native-engine.mjs` dropping only the geoip fields left unset) and `coherence()` (the screen
+    items and, with a measured entry of this pack, its coherence mismatches);
+    `requireValidatedProfiles` already refuses those errors through the stored entry. C verdicts:
+    `daemon/network.mjs` `forLaunch(..., { locale })` (passed by `browser/launch.mjs` from the
+    profile), `localeVsEgress` on each check's and recheck's exit country (a value geoip supplies
+    isn't judged, one the profile sets is): kept with the check (`network.json` keeps the ids), a
+    `warning:` (time zone) or `note:` (languages) status part, `compatibility(session)` (those items
+    and a `network.verdict` item for a recheck that failed or moved the exit and was acted on); with
+    `requireCoherent()` (`config.requireValidatedProfiles`, daemon.mjs) a time zone error fails the
+    launch's check closed like any failure, with its own refusal and notice naming the profile's
+    `locale.timezone` (or a proxy in the zone's country) as the fix, and no hold: the profile store
+    isn't in the hold's stamp, so the next start checks again at once. Settings' Test
+    (`liveview/network.mjs` `localeOf`) reads geoip per value the same way. B report:
+    `context.compatibility()` (profile then network items) reaches `createYourTurn({ compatibility
+    })`; when a hand-off goes to the channels (decision 8: a desktop without Away is unchanged, no
+    report) the agent's status result gets "Site verification (yours to do): CAPTCHA on <host>." and
+    "PairBrowse setup problems (PairBrowse's to fix, not the user's to work around): time zone
+    Europe/Berlin vs egress US; ..." after the hand-off line; PairBrowse's own check gets the same
+    lists in a host note (it has no status result), ending "Don't retry the check or work around
+    it.", and so does a fast-mode run's `handoff` step (`onRunStatus`), ending "Don't retry the step
+    or work around it.". Nothing here mints a grant or sends a message; a reader that throws is
+    ignored. Tests: `test/coherence.test.mjs`, `test/native-validate.test.mjs`,
+    `test/session-profiles.test.mjs`, `test/net-refuse.test.mjs`, `test/net-recheck.test.mjs`,
+    `test/net-launch.test.mjs`, `test/compat-vs-verification.test.mjs`,
+    `test/liveview-network-routes.test.mjs`.
 44. Launch steps 4 and 7, status part, diagnostics (E7, E9); the other two graphics probe triggers
     (E4): the first launch per runtime key ("measuring graphics once for this browser version") and
     `cli.mjs validate`; filing a measurement into a profile's `validation[build]`. -> 41, 42, 37

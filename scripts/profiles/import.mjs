@@ -228,7 +228,7 @@ export function checkImport(data, host = {}) {
     out.unverified = true;
     out.items.push(item("license", "unverified", "U", 'its license is "unknown": the profile imports unverified, and every launch on it warns until its license is known', { severity: "warning", rule: "import.provenance" }));
   }
-  for (const c of screenBelievable(profile.screen)) out.items.push(item("screen", "mismatch", "C", c.text, { severity: c.severity, rule: c.id }));
+  for (const c of screenBelievable(profile.screen, { window: profile.window })) out.items.push(item(c.field, "mismatch", "C", c.text, { severity: c.severity, rule: c.id }));
   const kept = Object.fromEntries(SETTINGS.map((k) => [k, profile[k]]));
   return { ...out, ok: true, name, settings: kept, provenance: profile.provenance, license: profile.license };
 }

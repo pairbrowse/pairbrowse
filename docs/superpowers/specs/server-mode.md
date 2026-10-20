@@ -1087,8 +1087,8 @@ inconsistency; remove the canvas bridge; keep the sandbox on.
 | `scripts/native/graphics.mjs` (new, pure) | `GRAPHICS_BACKENDS`, `normalizeWebgpu`, `graphicsPlan({ requested, platform, browserKind, measured, userArgs })` returning `{ switches, engineKeys, refusals }`, `compatErrors(...)`, `runtimeKey(info)`, `GRAPHICS` state (like `SANDBOX`) |
 | `scripts/native/backend.mjs` (new) | `readBackend(ctx, { ms })` returning `{ kind: "hardware" \| "software" \| "unverified", vendor, device, renderer, driver, source: "systeminfo" }`; pure `parseSystemInfo` |
 | `scripts/native/probe.mjs` (new) | probe page and `runProbe(page)`; `probeLaunch(...)` sharing bounded steps with `captureMacHost` |
-| `scripts/native/validate.mjs` (new, pure) | `validate({ requested, derived, measured })` returning Phase D's `validation[build]` with items; `RULES` |
-| `scripts/native/properties.mjs` (new, pure) | the section 9 matrix as data: field, class per runtime, switch or key, rule |
+| `scripts/native/validate.mjs` (new, pure) | `validate({ requested, derived, measured, live })` returning Phase D's `validation[build]` with items; `RULES`; `measuredRecord` (the stored shape); `entryStatus(entry, { pack, runtimeKey })` |
+| `scripts/native/properties.mjs` (new, pure) | the section 9 matrix as data: field, class per runtime, switch or key, rule; `classOf`, `runtimeOf` |
 | `scripts/native-engine.mjs` | E1 guard, `normalizeWebgpu` on every layer, `graphicsPlan` merged, E7 screen, `graphics` read so it is not logged unknown |
 | `scripts/config-schema.mjs` | `pairbrowse.graphics: { values: GRAPHICS_BACKENDS }` |
 | `scripts/daemon/browser/launch.mjs` | steps 4 and 7 of section 3.2 |
@@ -1107,7 +1107,10 @@ round trip; canvas 2D and text scenes hashed twice in one page, on two origins a
 `mediaCapabilities` answers; time zone and languages.
 
 Measured record in `validation[build].graphics`: `{ at, runtimeKey, pack, runtime: { platform, arch,
-display, sandbox }, backend, webgl, webgl2, webgpu, canvas: { stable, repeat, noise }, fonts, media }`.
+display, emulated, sandbox: { on, page } }, backend, webgl, webgl2, webgpu, canvas: { stable, repeat, noise },
+fonts: { checked, missing, controlFound }, media, screen, locale, navigator }` (step 40: every key
+present, a part not measured null; `screen`, `locale` and `navigator` added for `screen.display`,
+`locale` and `ua.build`, `runtime.emulated` for `sandbox.on`'s seccomp-BPF rule).
 Host GPU strings stay in the 0600 profile file and never leave the home.
 
 Rules (severity): `backend.requested`, `backend.stable`, `require.*`, `webgl.strings-vs-backend`,
@@ -1171,10 +1174,12 @@ macOS native (host capture), Linux native on Xvfb without a GPU (software), Linu
 | Proxy and egress | Phase C network | `--proxy-server`, auth file | C (proxy), M (egress) | C, M | C, M | `integration/proxy`, `net-verdict` | 962 for credentials |
 | WebRTC addresses | Phase C strict mode | WebRTC policy switch | C (policy), M (candidates) | C, M | C, M | `proxy` I4, I13 | none |
 | Rendering backend | host | `SystemInfo` read | M (Metal) | M (software); `software` forces it | M (hardware); `gpu` requires it | `native-graphics`, opt-in `linux-graphics`, `gpu-host` | none |
+| Graphics requirements | profile `graphics.require` | checked against the measurement, never applied | M | M | M | `native-validate` rules `require.webgl`, `require.webgpu`, `require.platforms` | none |
 | WebGL/WebGL2 vendor, renderer | host | capture (macOS), `disableGpuFingerprint` (Linux) | M | M | M | probe rule `webgl.strings-vs-backend` | none |
 | WebGL limits, extensions, precision | host | same | M | M | M | `webgl.limits-vs-backend` | none |
 | WebGL and canvas pixels | host GPU or software raster | none | M | M | M | `canvas.stable`, `canvas.repeat` | none |
 | Canvas noise | build default | `fingerprintNoise` | C (on) | U (off on real pixels) | U (off on real pixels) | `native-graphics` "Linux plan sets noise off" | none |
+| Canvas bridge | none (E1) | removed | U | U | U | rule `bridge.absent` | 960 |
 | WebGPU available, features, `isFallbackAdapter` | host | engine passes real | M | M (adapter or defined reason) | M | probe `webgpu.*` | none |
 | WebGPU vendor, architecture | host | capture or `webgl_real` | M | M | M | `webgpu.vendor` | none |
 | WebGPU limits | persona table today | engine override | M (captured) | D until 961, then M | D until 961, then M | `webgpu.device` | 961 |
@@ -2290,6 +2295,36 @@ it depends on.
     out the proxy; a stub DNS server logs no page names, a STUN responder on the direct network sees
     nothing, a planted direct route fails the check). -> 29, 39
 40. `native/properties.mjs`, `validate.mjs`, validation shape in the store (E5, E6, E8). -> 34
+    Landed as: `scripts/native/properties.mjs` (pure): `PROPERTIES`, section 9's rows as data (field
+    in validation items' form, source, mechanism as switch names, engine keys and prefs, class per
+    runtime `macos`, `linux-software`, `linux-gpu`, `measuredToo`, `later` with its patch, the rules
+    that check it), with "Graphics requirements" and "Canvas bridge" rows added and the media row split
+    into `media.capabilities` and `memory`; `classOf`, `runtimeOf` (Linux not measured as hardware
+    counts as software). `scripts/native/validate.mjs` (pure): `measuredRecord(raw)`, the probe's record
+    in the one stored shape (bounded: strings cut and control characters dropped, at most 40 WebGPU
+    features, 48 limits, 16 sandbox page lines and media answers, 12 font names per list, nothing
+    outside it, so its largest stays within the schema's 20000 characters as JSON; null without a
+    time, runtime key or runtime); `RULES` (section 8's list and
+    severities; `webgl.limits-vs-backend` reads WebGL and WebGL2 against each other and as powers
+    of two, since SystemInfo carries no GL limits; `webgl.context` accepts no WebGL under
+    `--disable-gpu`; `locale` gives one item per set field); `validate({ requested, derived,
+    measured, live })` (requested: the profile's graphics, screen and locale, the launch's final
+    switches and `toLaunch`'s items, kept first; derived: build, pack, runtime key, platform,
+    `virtualScreen`; live: this launch's E3 read for `backend.stable`) answering the
+    `validation[build]` entry: `validated` only with a measurement of this pack and runtime key and
+    every error rule matched (no pack: `unverified`, the measurement kept as evidence), `failed` on an error mismatch (a part the page didn't answer for a
+    switch the launch passed, by each rule's `switches`, is one), else `unverified`; `entryStatus`
+    (a measured entry counts only for its own pack and runtime key, and never without a pack on
+    either side). `profiles/schema.mjs`:
+    `validation[build].graphics` typed (`MEASURED_BACKENDS`, `MEASURED_PARTS`, every key required),
+    and a `validated` or `failed` entry refused without a measurement of its own runtime key and
+    pack, or with a null pack. `store.recordValidation(id, { build, entry })`: a measured entry replaces the build's, no
+    revision, no history, refused without a measurement or on an older record. `daemon/sessions/
+    profiles.mjs` `forLaunch` reads the status through `entryStatus` with the launch's pack (the
+    runtime key waits for step 44). Tests: `test/native-validate.test.mjs` (over spike E-S1's
+    fixtures; the Linux persona of 13.1 fails `webgl.strings-vs-backend` and `screen.display`, and
+    `webgpu.device` fails on both platforms until 961), `test/profile-schema.test.mjs`,
+    `test/profile-store.test.mjs`, `test/session-profiles.test.mjs` (`test/helpers/measured.mjs`).
 41. `native/graphics.mjs`, `backend.mjs`, `pairbrowse.graphics` (E2, E3, E9). -> 39
 42. `native/probe.mjs`, `probeLaunch`, self-check step (E4). -> 39, 40
 43. `rules/coherence.mjs` and `tzcountry.mjs` (the locale rules and the table landed with 32b, `screen.believable` with 35); wired into D validation, C verdicts and the B report;

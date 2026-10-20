@@ -29,7 +29,7 @@ import { upgradeProfile } from "./upgrade.mjs";
 import { validName } from "../sessions.mjs";
 
 // What update() takes: the settings and the name. Provenance and license come with an import
-// (create), engine and validation with a launch, status with retire and restore.
+// (create), engine and validation with a launch or a measurement, status with retire and restore.
 const EDITABLE = new Set(["name", ...SETTINGS]);
 const FILE = /^(p-[0-9a-f]{16})\.json$/;
 const REVISION_FILE = /^([1-9]\d{0,8})\.json$/;
@@ -428,6 +428,32 @@ export function createProfileStore({ dir = paths.browserProfiles, now = Date.now
         const prior = before.validation?.[build];
         const same = (a, b) => sameValue({ status: a.status, pack: a.pack, items: a.items }, { status: b.status, pack: b.pack, items: b.items });
         if (entry && typeof build === "string" && (!prior || (prior.status === "unverified" && !same(prior, entry)))) next.validation = { ...before.validation, [build]: structuredClone(entry) };
+        if (sameValue(next, before)) return false;
+        if (r.kind === "config") {
+          const problems = stubProblems(next);
+          if (problems.length) throw fail("PROFILE_INVALID", `Browser profile ${id} (the config-backed "${DEFAULT_PROFILE}") wasn't updated: ${problems[0]}`);
+        } else checked(next, "updated");
+        writeJsonAtomic(recordFile(id), next, { mode: 0o600 });
+        return true;
+      });
+    },
+
+    // A measurement's verdict (E6, E8; native/validate.mjs validate's entry, spec step 40): entry,
+    // with its runtimeKey and graphics (the measured record), becomes validation[build] in place of
+    // whatever was there (a launch's unverified entry, an older measurement). Evidence, not
+    // settings: no new revision, no history entry, and the profile's graphics request stays as it
+    // is. An entry without a measurement is a launch's (recordLaunch). A record of an older schema
+    // is refused (it is upgraded at its next change first). Returns whether anything was written.
+    recordValidation(id, { build, entry } = {}) {
+      if (typeof build !== "string" || !/^\d{1,4}(?:\.\d{1,6}){3}$/.test(build)) throw fail("PROFILE_INVALID", "A measurement is kept under a build like \"150.0.7871.114\".");
+      if (!plainObject(entry) || !plainObject(entry.graphics) || typeof entry.runtimeKey !== "string") throw fail("PROFILE_INVALID", "A measurement's entry carries its runtimeKey and graphics; a launch's own entry is kept by recordLaunch.");
+      return locked(() => {
+        const read = readRaw(id);
+        if (!read) throw fail("PROFILE_UNKNOWN", `There is no browser profile "${shown(id)}".`);
+        if (!plainObject(read.raw) || read.raw.schema !== SCHEMA_VERSION) throw fail("PROFILE_INVALID", `Browser profile ${id} has an older record; change any setting first so it is written in this version's form.`);
+        const r = load(id);
+        const before = r.kind === "config" ? r.stub : r.profile;
+        const next = { ...structuredClone(before), validation: { ...before.validation, [build]: structuredClone(entry) } };
         if (sameValue(next, before)) return false;
         if (r.kind === "config") {
           const problems = stubProblems(next);

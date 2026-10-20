@@ -17,6 +17,7 @@ import { createSession, assignProfile, assignmentFile, bindingFile, readBinding,
 import { createContext } from "../scripts/daemon/context.mjs";
 import { validateProfile, cliCommand, CLI } from "../scripts/profiles/validate.mjs";
 import { identityFile } from "../scripts/profiles/lock.mjs";
+import { measuredEntry } from "./helpers/measured.mjs";
 
 const dir = mkdtempSync(join(tmpdir(), "pb-session-profiles-"));
 after(() => rmSync(dir, { recursive: true, force: true }));
@@ -155,9 +156,9 @@ test("other major refuses, other build unverified, requireValidatedProfiles refu
   assert.deepEqual(store.get(berlin.id).engine, { major: "150", build: BUILD });
   assert.equal(store.get(berlin.id).validation["150.0.7871.200"].status, "unverified");
   // Measured evidence (Phase E) for the pinned build: validated, and never written over by a launch.
-  rewrite(store, berlin.id, (r) => { r.validation[BUILD] = { status: "validated", at: "2026-10-21T09:00:00Z", pack: PACK, items: [] }; });
+  rewrite(store, berlin.id, (r) => { r.validation[BUILD] = measuredEntry({ pack: PACK }); });
   assert.equal(profiles.forLaunch(name, NATIVE).status, "validated");
-  assert.deepEqual(store.get(berlin.id).validation[BUILD], { status: "validated", at: "2026-10-21T09:00:00Z", pack: PACK, items: [] });
+  assert.deepEqual(store.get(berlin.id).validation[BUILD], measuredEntry({ pack: PACK }));
   const strict = parts(store, { requireValidatedProfiles: true }).profiles;
   assert.equal(strict.forLaunch(name, NATIVE).status, "validated");
   assert.deepEqual(strict.statusParts(), [`Profile: berlin (rev 1, validated on ${BUILD})`]);
@@ -167,7 +168,7 @@ test("other major refuses, other build unverified, requireValidatedProfiles refu
   rewrite(store, berlin.id, (r) => { r.validation[BUILD].items = [bad]; });
   assert.throws(() => strict.forLaunch(name, NATIVE), /has an error in its checks on build 150\.0\.7871\.114 \(screen\), and requireValidatedProfiles is on/);
   // A failed measurement stays failed; off, it still launches (as failed).
-  rewrite(store, berlin.id, (r) => { r.validation[BUILD] = { status: "failed", at: "2026-10-21T09:00:00Z", pack: PACK, items: [bad] }; });
+  rewrite(store, berlin.id, (r) => { r.validation[BUILD] = measuredEntry({ status: "failed", pack: PACK, items: [bad] }); });
   assert.equal(profiles.forLaunch(name, NATIVE).status, "failed");
   assert.equal(store.get(berlin.id).validation[BUILD].status, "failed");
   // The open build's launches are never validated: refused under the switch.

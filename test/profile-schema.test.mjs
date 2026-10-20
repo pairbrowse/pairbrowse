@@ -121,10 +121,13 @@ test("a profile can't name a path, extension, proxy server, launch option, canva
   const net = problems(record({ network: "http://user:pw@proxy.example:3128" }));
   assert.deepEqual(net, ["network is a network id from config.json's network.proxies, or null, not a string."]);
   assert.deepEqual(problems(record({ network: "home-vpn" })), []);
-  // None of the forbidden names is a field of the schema at any depth.
+  // None of the forbidden names is a field of the schema at any depth, but in a measurement: the
+  // runtime's own values as evidence (E8, validation[build].graphics), never a setting.
   const fieldNames = new Set();
-  const walk = (fields) => { for (const [k, s] of Object.entries(fields)) { fieldNames.add(k); if (s.fields) walk(s.fields); if (s.each?.fields) walk(s.each.fields); if (s.entries?.value.fields) walk(s.entries.value.fields); } };
+  const measured = PROFILE_SCHEMA.validation.entries.value.fields.graphics;
+  const walk = (fields) => { for (const [k, s] of Object.entries(fields)) { if (s === measured) continue; fieldNames.add(k); if (s.fields) walk(s.fields); if (s.each?.fields) walk(s.each.fields); if (s.entries?.value.fields) walk(s.entries.value.fields); } };
   walk(PROFILE_SCHEMA);
+  assert.deepEqual(Object.keys(measured.fields).filter((k) => FORBIDDEN_KEYS.includes(k)), ["webgl", "webgpu", "canvas", "fonts"]);
   // Only graphics.require names webgl and webgpu: whether the backend must offer them (E8), a
   // requirement checked against the measured browser, never a value set; anywhere else refused.
   assert.deepEqual(FORBIDDEN_KEYS.filter((k) => fieldNames.has(k)), ["webgl", "webgpu"]);
@@ -178,14 +181,27 @@ test("provenance, validation and history keep their shapes, bounded", () => {
   refused({ ...rest, schema: 1, id: RECORD.id, kind: "config", name: "default", provenance: [prov] }, /the "default" profile comes from config\.json and has no imported provenance/);
 
   const item = { field: "locale.timezone", rule: null, class: "C", status: "applied", requested: "Europe/Berlin", measured: "Europe/Berlin", severity: "info", reason: null };
-  const entry = { status: "validated", at: "2026-10-20T10:00:00Z", pack: "b".repeat(64), runtimeKey: "c".repeat(64), graphics: { kind: "hardware" }, items: [item] };
+  // A measurement (E8): its runtime, each part's answers or null.
+  const graphics = { at: "2026-10-20T10:00:00Z", runtimeKey: "c".repeat(64), pack: "b".repeat(64),
+    runtime: { platform: "linux", arch: "x64", display: "xvfb", emulated: false, sandbox: { on: true, page: [] } },
+    backend: { kind: "software", renderer: "llvmpipe" }, webgl: { available: true }, webgl2: null, webgpu: null, canvas: null, fonts: null, media: null, screen: null, locale: null, navigator: null };
+  const entry = { status: "validated", at: "2026-10-20T10:00:00Z", pack: "b".repeat(64), runtimeKey: "c".repeat(64), graphics, items: [item] };
   assert.deepEqual(problems(record({ validation: { "150.0.7871.114": entry } })), []);
   const { runtimeKey: _r, graphics: _g, ...plain } = entry;
-  assert.deepEqual(problems(record({ validation: { "150.0.7871.114": plain } })), [], "runtimeKey and graphics are optional");
+  assert.deepEqual(problems(record({ validation: { "150.0.7871.114": { ...plain, status: "unverified" } } })), [], "runtimeKey and graphics are optional");
+  // E6: validated or failed only with a measurement of the entry's runtime key and pack.
+  refused(record({ validation: { "150.0.7871.114": plain } }), /^validation\["150\.0\.7871\.114"\] is validated only with a measurement/);
+  refused(record({ validation: { "150.0.7871.114": { ...plain, status: "failed" } } }), /is failed only with a measurement/);
+  refused(record({ validation: { "150.0.7871.114": { ...entry, runtimeKey: "d".repeat(64) } } }), /graphics is a measurement of another runtime key or pack than the entry's/);
+  refused(record({ validation: { "150.0.7871.114": { ...entry, pack: null } } }), /another runtime key or pack/);
+  assert.deepEqual(problems(record({ validation: { "150.0.7871.114": { ...entry, status: "failed", items: [{ ...item, severity: "error", status: "mismatch" }] } } })), []);
+  refused(record({ validation: { "150.0.7871.114": { ...entry, graphics: { ...graphics, runtime: { ...graphics.runtime, display: "vnc" } } } } }), /graphics\.runtime\.display is "native" or "xvfb"/);
+  refused(record({ validation: { "150.0.7871.114": { ...entry, graphics: { ...graphics, backend: { kind: "fast" } } } } }), /graphics\.backend\.kind is "hardware", "software" or "unverified"/);
+  refused(record({ validation: { "150.0.7871.114": { ...entry, graphics: { ...graphics, extra: 1 } } } }), /unknown key "extra" in validation\["150\.0\.7871\.114"\]\.graphics/);
   refused(record({ validation: { "../x": entry } }), /^validation has an entry whose key isn't a build/);
   refused(record({ validation: { "150.0.7871.114": { ...entry, status: "ok" } } }), /^validation\["150\.0\.7871\.114"\]\.status is "validated", "unverified" or "failed"/);
   refused(record({ validation: { "150.0.7871.114": { ...entry, items: [{ ...item, status: "spoofed" }] } } }), /items\[0\]\.status is "applied", "not-applied"/);
-  refused(record({ validation: { "150.0.7871.114": { ...entry, graphics: { blob: "x".repeat(20001) } } } }), /graphics is at most 20000 characters as JSON/);
+  refused(record({ validation: { "150.0.7871.114": { ...entry, graphics: { ...graphics, webgl: { blob: "x".repeat(20001) } } } } }), /graphics is at most 20000 characters as JSON/);
   refused(record({ validation: { "150.0.7871.114": { ...entry, items: [{ ...item, measured: "x".repeat(3000) }] } } }), /items\[0\]\.measured is a short JSON value/);
   // Values with no JSON text (a BigInt, a cycle) are problems, never a throw.
   refused(record({ validation: { "150.0.7871.114": { ...entry, items: [{ ...item, requested: 1n }] } } }), /items\[0\]\.requested is a short JSON value/);

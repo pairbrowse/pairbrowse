@@ -63,6 +63,10 @@ export const VALIDATION_STATUSES = ["validated", "unverified", "failed"];
 export const ITEM_STATUSES = ["applied", "not-applied", "derived", "unsupported", "matched", "mismatch", "unverified"];
 export const ITEM_CLASSES = ["C", "M", "D", "U"];
 export const ITEM_SEVERITIES = ["error", "warning", "info"];
+// A measurement's backend kinds (E3) and its parts besides runtime and backend (E8).
+export const MEASURED_BACKENDS = ["hardware", "software", "unverified"];
+export const MEASURED_PARTS = ["webgl", "webgl2", "webgpu", "canvas", "fonts", "media", "screen", "locale", "navigator"];
+const MEASURED_PART = { type: "object", open: true };
 export const HISTORY_MAX = 1000;
 export const PROVENANCE_MAX = 50;
 // The settings a person chooses (section 3.3); everything else in a record is the store's.
@@ -140,7 +144,22 @@ export const PROFILE_SCHEMA = {
     at: iso(),
     pack: { type: "string", nullable: true, pattern: SHA256, hint: "the engine pack's SHA-256 (64 hex digits)" },
     runtimeKey: { type: "string", pattern: SHA256, hint: "64 hex digits" },
-    graphics: { type: "object", open: true, maxJson: 20000 },
+    // A measurement (E8; native/validate.mjs measuredRecord's shape): the runtime it is of and each
+    // part's answers (a part null when it wasn't measured); the parts' own keys are the probe's.
+    graphics: { type: "object", maxJson: 20000, fields: {
+      at: iso(),
+      runtimeKey: { type: "string", pattern: SHA256, hint: "64 hex digits" },
+      pack: { type: "string", nullable: true, pattern: SHA256, hint: "the engine pack's SHA-256 (64 hex digits)" },
+      runtime: { type: "object", fields: {
+        platform: { values: ["macos", "linux"] },
+        arch: { values: ["arm64", "x64"] },
+        display: { values: ["native", "xvfb"] },
+        emulated: { type: "boolean" },
+        sandbox: MEASURED_PART,
+      } },
+      backend: { ...MEASURED_PART, nullable: true, fields: { kind: { values: MEASURED_BACKENDS } } },
+      ...Object.fromEntries(MEASURED_PARTS.map((k) => [k, { ...MEASURED_PART, nullable: true }])),
+    } },
     items: { type: "array", maxItems: 500, each: { type: "object", fields: {
       field: { type: "string", pattern: FIELD, hint: 'a field like "locale.timezone"' },
       rule: { ...TEXT, maxLength: 80, nullable: true },
@@ -319,6 +338,16 @@ function crossFieldProblems(p) {
   const strictest = mostRestrictive(p.provenance.map((e) => e.license));
   if (p.provenance.length && licenseRank(p.license) < licenseRank(strictest)) out.push(`license is looser than its sources'${looserWhy(strictest)}`);
   if (p.persona.source === "host" && p.persona.seed !== null) out.push("persona.seed is null when persona.source is \"host\" (this computer's own values)");
+  // E6: validated or failed only with a measurement of the entry's own runtime key and pack, and a
+  // pack to name (an error item in a validated entry is the launch's to refuse, under
+  // requireValidatedProfiles).
+  for (const [build, v] of Object.entries(p.validation)) {
+    const at = `validation["${build}"]`;
+    if (v.status === "unverified") continue;
+    if (!v.graphics || !v.runtimeKey) out.push(`${at} is ${v.status} only with a measurement (runtimeKey and graphics); without one it is "unverified"`);
+    else if (v.graphics.runtimeKey !== v.runtimeKey || v.graphics.pack !== v.pack) out.push(`${at}.graphics is a measurement of another runtime key or pack than the entry's`);
+    else if (!v.pack) out.push(`${at} is ${v.status} only with the engine pack it was measured with; without one it is "unverified"`);
+  }
   const late = p.history.find((h) => h.revision > p.revision);
   if (late) out.push(`history has revision ${late.revision}, after the record's revision ${p.revision}`);
   return out;

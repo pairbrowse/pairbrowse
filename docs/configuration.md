@@ -314,8 +314,13 @@ user's file, readable by others), the section says why and refuses a username or
 - `requireValidatedProfiles`: `false` (default). For browser profiles, which server mode brings
   (kept owner-only in `~/.pairbrowse/browser-profiles/`): `true` refuses to start a session on a
   profile that hasn't been validated on the browser build in use, or one with an error in its
-  consistency checks. Until PairBrowse measures a build (a later version), every profile is
-  `unverified`, so `true` refuses every start; the open build's starts are never validated.
+  consistency checks. A profile is validated only by a measurement of the build's engine pack on
+  this computer's runtime (its graphics, driver and display); a measurement taken with another
+  engine pack, or without a known engine pack, leaves it `unverified` again. A start compares only
+  the engine pack for now: whether the runtime has changed since the measurement is checked at
+  start in a later version, once the browser's own graphics read is taken then. Until PairBrowse
+  measures a build (a later version), every profile is `unverified`, so `true` refuses every
+  start; the open build's starts are never validated.
 
   The `default` browser profile is read from this file, never written into it: `browser` (and
   its older names) gives the browser it is for; the screened `browserArgs` give its languages

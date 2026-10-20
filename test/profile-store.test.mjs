@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { createProfileStore, changedFields } from "../scripts/profiles/store.mjs";
 import { checkProfile, SCHEMA_VERSION, SETTINGS } from "../scripts/profiles/schema.mjs";
+import { measuredEntry } from "./helpers/measured.mjs";
 import { paths, DEFAULT_CONFIG, loadConfig } from "../scripts/paths.mjs";
 import { checkConfig } from "../scripts/config-schema.mjs";
 
@@ -377,7 +378,7 @@ test("recordLaunch keeps the engine and the launch's entry without a new revisio
   // A measured entry (Phase E) is never written over by a launch.
   const file = join(store.dir, `${p.id}.json`);
   const raw = JSON.parse(readFileSync(file, "utf8"));
-  raw.validation["150.0.7871.114"] = { status: "validated", at: "2026-10-21T09:00:00Z", pack: null, items: [] };
+  raw.validation["150.0.7871.114"] = measuredEntry();
   writeFileSync(file, JSON.stringify(raw));
   assert.equal(store.recordLaunch(p.id, { build: "150.0.7871.114", entry: entry("2026-10-21T14:00:00Z") }), false);
   assert.equal(store.get(p.id).validation["150.0.7871.114"].status, "validated");

@@ -13,6 +13,7 @@ import { exportProfile, exportToFile, pairbrowseVersion } from "../scripts/profi
 import { checkImport, importInto, exportSha256 } from "../scripts/profiles/import.mjs";
 import { createProfileStore } from "../scripts/profiles/store.mjs";
 import { SETTINGS, checkProfile } from "../scripts/profiles/schema.mjs";
+import { measuredEntry } from "./helpers/measured.mjs";
 
 const RECORD = JSON.parse(readFileSync(new URL("./fixtures/profiles/record-1.json", import.meta.url), "utf8"));
 const AT = "2026-10-21T10:00:00Z";
@@ -29,7 +30,7 @@ test("round trip keeps typed fields with a new id and empty validation", () => {
   const original = store.create({ name: "berlin", locale: RECORD.locale, screen: RECORD.screen, window: RECORD.window, display: RECORD.display,
     graphics: { backend: "software", require: { webgl: 2, webgpu: false, platforms: ["linux"] } }, adBlocker: true });
   // Some evidence a launch would add: never exported.
-  const measured = { ...original, engine: RECORD.engine, validation: { "150.0.7871.114": { status: "validated", at: AT, pack: null, items: [] } } };
+  const measured = { ...original, engine: RECORD.engine, validation: { "150.0.7871.114": measuredEntry({ at: AT }) } };
   const { file, text, sha256 } = exportProfile(measured, { at: AT, version: "0.16.12" });
   assert.deepEqual(Object.keys(file), ["format", "formatVersion", "exported", "profile", "provenance", "license", "sha256"]);
   assert.equal(file.format, "pairbrowse-profile");

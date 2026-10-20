@@ -6,7 +6,8 @@
 // one it names refuses the launch, never re-stamped; the first start writes it), the engine the
 // profile ran on (another major refuses a store profile; the config-backed default is held to
 // this one, as the person's check would; another build launches unverified) and, with
-// requireValidatedProfiles, that this build's validation is "validated" with no error item; then
+// requireValidatedProfiles, that this build's validation is "validated" (measured with this engine
+// pack, native/validate.mjs entryStatus) with no error item; then
 // maps the profile to the launch's parts (profiles/map.mjs toLaunch: a field the browser can't
 // apply refuses, D11). It answers what launch.mjs passes on: the switches (after browserArgs), the
 // engine layer (engineKeys, geoip and the profile id the persona is saved under, native-engine.mjs),
@@ -30,6 +31,7 @@ import { createProfileStore } from "../../profiles/store.mjs";
 import { fromConfig, toLaunch, ENGINE_KEYS, PICKS_THIS_COMPUTER, THIS_COMPUTER_NOTE } from "../../profiles/map.mjs";
 import { PROFILE_ID } from "../../profiles/schema.mjs";
 import { cliCommand } from "../../profiles/validate.mjs";
+import { entryStatus } from "../../native/validate.mjs";
 import { takeIdentity } from "../../profiles/lock.mjs";
 import { ensureMigrated, readMigration, migrationNote } from "../../profiles/migrate.mjs";
 import { createProfileOwner } from "./profile-owner.mjs";
@@ -95,8 +97,10 @@ export function createProfiles(st, deps = {}) {
     if (repin && record.kind !== "config") {
       throw refuse(`${named} was made on engine ${record.engine.major} (build ${record.engine.build}), and this browser is engine ${engine.major} (build ${engine.build}): re-validate the profile on this build (Check on the Sessions page, or ${cliCommand(`validate ${record.id}`)}) or migrate it to another profile; nothing was started.`);
     }
+    // E6: measured evidence counts only for the engine pack it was measured with (its runtime key
+    // is compared once the browser answers, section 3.2 step 7).
     const prior = engine ? record.validation?.[engine.build] || null : null;
-    const status = prior?.status || "unverified";
+    const status = entryStatus(prior, { pack: typeof pack === "string" && SHA256.test(pack) ? pack : null });
 
     const mapped = toLaunch(record, { browserKind, platform });
     if (mapped.problem) throw refuse(mapped.problem);

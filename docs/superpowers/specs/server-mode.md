@@ -83,8 +83,9 @@ records, ids, versions, import, export, validation, binding of storage to config
 
 **Phase E (graphics).** macOS captures this Mac's own graphics once per build and hardware
 (`captureMacHost`, `native-engine.mjs:120-191`; software renderer refused at `:150`) and runs with
-it. Linux runs seed-only: NVIDIA persona strings and a 1920x1080 screen over a software renderer in a
-1366x900 display. Patch 065 (remote canvas renderer, needs an unsandboxed renderer) is unused but
+it. Linux runs seed-only: an Intel UHD 770 seed persona (WebGL strings, a desktop WebGPU limits table,
+hardware video decode) and a screen picked from a seed pool, over unmeasured software rendering in a
+1366x900 display (verified in milestone 1, section 13.1). Patch 065 (remote canvas renderer, needs an unsandboxed renderer) is unused but
 reachable through the unfiltered persona layers. WebGPU: the collector's nested `webgpu.info` is
 flattened only on the macOS capture path (`native-engine.mjs:155`); adapter limits stay the
 persona's even with real GPU strings (pn `075-webgpu-coherence.patch:56-110`). Missing: any
@@ -1288,13 +1289,73 @@ Implementation conditions (from the user):
   proxy separation, graphics validation, mobile interactive hand-off.
 - Fix PairBrowse's own avoidable compatibility problems and report them apart from website-required
   verification. Never bypass CAPTCHA, bot checks, authentication or payment authorization.
-- Verify that Linux today reports an NVIDIA-like persona over software rendering, and correct it so
+- Verify that Linux today reports a hardware-like persona over software rendering, and correct it so
   measured diagnostics are accurate.
 - Start with dependency-ready work; never skip prerequisite investigations or security tests to reach
   Phase B sooner.
 - Small, reviewable commits; run the relevant tests after each; a phase is complete only when its
   acceptance criteria pass.
 - Update this spec and `docs/security.md` whenever implementation findings differ from the plan.
+
+### 13.1 Milestone 1 findings (2026-10-20)
+
+**Linux persona (condition 3): partly confirmed.** Read from code, not yet run live (no Linux native
+build is installed locally; the measurement lands with spike E-S1, step 39).
+- Pages on Linux see a made-up hardware persona: every seed persona is Intel UHD 770 (pn
+  `002-persona-profile.patch:120-135, 567-570`), rewritten on Linux to `ANGLE (Intel, Mesa Intel(R)
+  UHD Graphics 770 ...)` with WebGPU vendor intel, architecture gen-12-lp (`002:483-491, 671-673,
+  755-780`), a desktop WebGPU limits table (`002:587-623`) and hardware video decode claims
+  (`002:625-637`). The NVIDIA strings in pn `070` and `001` are reached only with an empty persona
+  string, which a seed persona never has, so the earlier "NVIDIA" wording was wrong.
+- The screen is not fixed at 1920x1080: the seed picks it from a weighted pool (`002:72-82,
+  559-565`), and it wins over the real screen whenever `--fingerprint` is set (`140:221-290`). The
+  real screen is the Xvfb size (`virtualScreen`, default 1366x900).
+- Helper path: `native-engine.mjs` `resolveFingerprint` keeps the bare `sha256(directory)` seed on
+  Linux; host capture is macOS only.
+- Fix (decision D-AP2, E2; spec steps 41 and 44, helper only): on Linux launch with
+  `disableGpuFingerprint: true` and `fingerprintNoise: false` so WebGL strings, limits, extensions
+  and WebGPU vendor and architecture report the real backend (pn `002:740-748`, `955:155-165`), and
+  pass the real Xvfb geometry as the screen overrides. Remaining after that: WebGPU limits stay the
+  persona table until patch 961; media codecs, CPU cores, memory and voices stay seed-derived and
+  are reported as derived, never measured. Legacy `gpuVendor`/`gpuRenderer` get the U6 warning.
+
+**Card protections (U7): traced before B13 lands.**
+- Today nothing stops the host's own agent from typing a card number: `browser_type`,
+  `browser_fill_form`, `browser_press_key` digit by digit, `browser_drop` with text data, a secret
+  holding a card, or a fast-mode fill into a main-frame card field all go through. The only payment
+  protection is at the click: the Pay class (`rules/clicks.mjs` `paySignal`, `clickRule`; form scan
+  in `daemon/page.mjs:133-188`), the Enter/Space check (`refuse.mjs` `browserToolProblem`) and the
+  dialog OK rule. Masking (`policy.mjs` `maskCards`, `maskForAgent`) changes only what is shown, and
+  for agents only joiners' agents. Fast mode skips child frames holding `cc-*` inputs
+  (`runner/locate.mjs` `formRoots`) but fills the main frame. `facts remember` and fast mode's
+  `seenInForm` can store a card number under a neutral label.
+- Compatibility impact of B13 (every session, every app, every permission mode): a developer can no
+  longer have the agent fill test cards on their own checkout (localhost, Stripe/Adyen/Braintree
+  test mode, the `pairbrowse-test-site` checkout scope); the person types them or the step is handed
+  over. Every field inside an embedded card frame becomes person-only (Link email, billing address
+  inside the provider's frame). Cards from chat, facts or secrets are refused. A joiner's agent can
+  no longer fill a card (`skills/pairbrowse/SKILL.md:119-124` changes). Four of our tests that set up
+  pay cases by typing a card through an agent tool move to `page.fill`
+  (`test/integration/click-flows.test.mjs:167`, `shared-rules.test.mjs:143`, `join.test.mjs:275`,
+  `fastmode-forms.test.mjs:145`). Unchanged: the Pay click rule, masking, covers, reading card pages,
+  name-on-card fields, and the person typing in their own window or a hand-off. No test-card
+  exception (U7).
+- Corrections to B13 and step 22: the check lives in `browserToolProblem` (`refuse.mjs`, beside the
+  secret-frame check, before `rewrite.mjs` so both drivers and the native humanized fill are covered)
+  and in `runner/steps/fill.mjs`, not in the pure `tabRefusal`. It also covers `browser_drop` data,
+  `browser_press_key` digits and Cmd/Ctrl+V into a focused card field, secrets resolved by name,
+  `pairbrowse_facts remember` and `seenInForm`, and `browser_select_option` on `cc-exp-*`.
+- Detection: refuse `cc-number`, `cc-csc`, `cc-exp`, `cc-exp-month`, `cc-exp-year`; allow
+  `cc-name`, `cc-given-name`, `cc-family-name`, `cc-additional-name`, `cc-type` (as `sensitiveHints`).
+  Frame rule: a frame holding those inputs, or an `allow="payment"` frame cross-origin to the page.
+  Value rule only on card-shaped runs (as `maskRun`) with a Luhn and card-network prefix and length
+  check, to spare IMEIs, EAN/ISBN codes and order or tracking numbers (Luhn alone passes about 10% of
+  random digit strings). The refusal names the signal that fired. Gift cards count as payment
+  credentials. Not detected, documented: contenteditable, closed shadow roots, canvas widgets, a card
+  split over unlabeled boxes.
+- Docs on landing: a new `docs/security.md` row ("Card details are entered by a person, never by an
+  agent, in every session and app"), rows on the Pay click and masking updated, a plain-language
+  CHANGELOG entry, SKILL.md and the test-site skill updated.
 
 ## 14. Definition of done
 

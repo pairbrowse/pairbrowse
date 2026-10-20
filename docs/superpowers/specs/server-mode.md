@@ -1551,7 +1551,10 @@ it depends on.
    "after a payment hand-off ends, an agent's click on the site's Pay button still needs the Pay:
    name" (the Pay rule itself is unchanged; landed at the Phase B gate in `test/shared-rules.test.mjs`
    on the grant table, `tabRefusal`, `clickRule` and `decide`), the integration test of the full path
-   (step 46's harness).
+   (landed at the Phase B gate on the existing live harness, not step 46's: `test/integration/your-turn.test.mjs`
+   with a loopback webhook, Away on, the person's side as plain requests to the view key, so one
+   browser; T-B18 is reported for the touch half, `dispatchTouchEvent` alone; select and autofill
+   lists in frames are not measured).
 23. `skills/pairbrowse/SKILL.md` and `core.md` text (B15). -> 22
    Landed as: SKILL.md "Hand-offs and waiting" replaces the 20-loop with: `step` on the status,
    leave the tab (the B9 refusals; the next status ends the hand-off), `browser_wait_for` with

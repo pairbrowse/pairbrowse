@@ -56,6 +56,8 @@ const ALLOWED = new Set([
   "serve -> serve/connection", "serve -> serve/turns", "serve -> serve/tools/index", "serve -> serve/rewrite",
   "serve -> serve/collaboration", "serve -> serve/result", "serve -> serve/departures",
   "sharing -> capture", "sharing -> tablabels", "sharing -> where", "sharing -> tunnel-pool",
+  // The grant table keeps its audit lines' pages as the trail does and its words from the messages' lists.
+  "grants -> audit", "grants -> notify/message",
   // A part's own folder reaching back to a shared piece.
   "browser/downloads -> toolstab", "browser/launch -> exec-contexts", "browser/supervise -> where",
   "join/agents -> linkwait", "join/agents -> remote-agents", "join/mirror -> presence",

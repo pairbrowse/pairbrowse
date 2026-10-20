@@ -504,9 +504,9 @@ design safe whether or not a provider honors the preview setting.
 Message: `{ kind: "turn" | "reminder" | "ended", id, action, host, link | null, expiresAt, reason? }`.
 
 Modules:
-- `scripts/daemon/grants.mjs` `createGrants({ now, mono, audit, log })`: `mint`, `redeem`, `matchView`,
-  `matchRedeem`, `inScope`, `addToScope`, `end`, `endWhere`, `hold`, `held`, `release`, `open()`
-  (no keys), `onEnd`, `ended(page)`, `sweep()`. Ids 8 hex, keys 64 hex, wall and monotonic expiry as
+- `scripts/daemon/grants.mjs` `createGrants({ now, mono, audit, log, timers })`: `mint`, `redeem`, `matchView`,
+  `matchRedeem`, `redeemKey`, `openStream`, `inScope`, `forPage`, `addToScope`, `closed`, `end`, `endWhere`,
+  `hold`, `held`, `release`, `open()` (no keys), `onEnd`, `ended(page)`, `sweep()`. Ids 8 hex, keys 64 hex, wall and monotonic expiry as
   `invites.mjs`. Memory only for keys.
 - `scripts/liveview/grants.mjs`: redeem handler, stream gate, guest filters `forTurn(event, data,
   grant)`. Dispatcher (`scripts/liveview.mjs:567-599`) matches owner key, pages key, invites, then
@@ -1248,8 +1248,9 @@ it depends on.
    `O_APPEND | O_NOFOLLOW | O_NONBLOCK` (a pipe swapped in fails ENXIO instead of blocking the helper),
    must be a regular file of the helper's uid, is put back to 0600 when found wider, and moves to
    `audit.jsonl.1` (one older generation, made 0600 first, only when the helper's uid owns it) before
-   a line would take it past 1 MiB. Not wired into `daemon.mjs` yet: its first user, `createGrants`,
-   makes it (step 17), and `docs/configuration.md`'s paragraph on the trail lands with that step.
+   a line would take it past 1 MiB. Not wired into `daemon.mjs` yet: the composition root makes it with
+   the grant table and `yourturn.mjs` (step 21, which frees the lines `daemon.mjs`'s budget needs), and
+   `docs/configuration.md`'s paragraph on the trail lands with that step.
 15. Reserved secrets, `loadSecrets` owner and symlink checks, atomic `writeSecrets`, masked
     `daemon/logfile.mjs` (B6, C3). -> 14
    Landed as: `scripts/rules/secrets.mjs` `reservedSecret(name)` (`PAIRBROWSE_` then capitals,
@@ -1310,6 +1311,36 @@ it depends on.
    pattern before they reach an address. Not wired into `daemon.mjs` yet: `yourturn.mjs` (step 21)
    makes the notifier. Security row B-3 lands here with "nothing sends them yet".
 17. `daemon/grants.mjs` (B2, B3, B4). -> 14
+   Landed as: `createGrants({ now, mono, audit, log, timers })`. `mint({ session, page, action,
+   minutes | expiresAt, replacement })` answers `{ id, redeemKey, expiresAt }` (the only time the
+   redeem key leaves the table; `minutes` a whole number 1 to 120, default 15 (`GRANT_MINUTES`);
+   `expiresAt`, a replaced link's deadline (B16), within 120 minutes; `action` one of `ACTIONS`;
+   audit `minted` with the action, plus `replacement`); a grant already open on that page ends
+   (`agent`), the page leaves any other live grant's scope (a pop-up handed over on its own) and a
+   hold there is released, so a tab has one grant at a time. Keys are kept only as
+   SHA-256 hashes compared in constant time against every grant (the redeem key itself only until
+   it is used, for the one reminder: `redeemKey(id)`); hashes of used and ended keys stay until the
+   grant's own expiry and a key found among them audits `reuse` (`redeem-key`, `view-key`) and
+   answers null like an unknown key. `matchRedeem(key, { session })` never uses the key (B-AP1);
+   `redeem(key, { session })` answers `{ id, viewKey, view }` once and audits `redeemed`;
+   `matchView(key, { session })`; each ends the grant (`session-switched`) when `session` is not
+   the grant's, and throws when `session` is not a session name (a missed argument ends nothing). `openStream(id)` answers `{ close() }` while no stream is open, else null with audit
+   `stream-refused` `second-stream` (the stream gate of step 19 uses it). Scope: `inScope(page,
+   id?)`, `forPage(page)`, `addToScope(opener, page)` (only an opener inside a live scope adds),
+   and `closed(page)` (added: the handed-over tab closing ends its grant with `tab-closed`; any other
+   scope tab only leaves the scope). `end(id, reason)` and `endWhere(test, reason)` take the B15
+   reasons only and audit `ended`; `hold(page, { session })`, `held(page)`, `release(page |
+   { session })`; `open()` lists `{ id, session, action, page, scope, createdAt, expiresAt,
+   redeemed, streaming }`; `onEnd(fn(view, reason))` (the view as the grant was when it
+   ended, so `redeemed` tells a link never opened from one opened but not finished); `ended(page)` a promise of `{ id, reason }`
+   or null when no grant covers the tab. Expiry on the wall and monotonic clocks as invites, read
+   at every call (`sweep`) and by a timer per grant (unref'd), so a waiter wakes at the deadline
+   with nobody calling. `RIGHTS` (`liveview/invites.mjs`) gains `turn` (`page, events, thumb,
+   state, input, turn`) and `redeem` (`page`); the refusal of `POST pause` to role turn lands with
+   the gate (step 19). New structure edges `grants -> audit` (`tabPlace`) and `grants ->
+   notify/message` (`ACTIONS`, `END_REASONS`). Not wired into `daemon.mjs` yet (step 21). Security
+   row B-1 lands here for the table, with "nothing makes one yet" and `test/grants.test.mjs` only;
+   `test/liveview-grants.test.mjs` joins it in step 19.
 18. `char` input and fuzz (B8).
 19. Live view grant server: redeem page, stream gate, `routes/turn.mjs`, pinning, filters, events
     (B-AP1, B3, B4, B5). -> 17, 18

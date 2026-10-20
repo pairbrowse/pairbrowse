@@ -157,9 +157,16 @@ export function createInvites({ now = () => Date.now(), mono = () => performance
 // diagnostics, with Open, Reveal and Delete by id) is the owner's alone too, as is "capture" (the
 // browser's own capture page answering the helper: liveview/capture.mjs), as is "activity" (the
 // session's activity log, GET activity.json: the whole history, where guests get the latest lines).
+// "turn" and "redeem" are a hand-off grant's (daemon/grants.mjs, spec server-mode B2), never an
+// invite's: "redeem" (the link as delivered) only reaches its landing page; "turn" (the view key
+// it gives) sees and drives the handed-over tabs and reaches the turn routes ("turn"), and never
+// tab, profile, approve, invite, tools, session or config. The live view's grant gate (spec step
+// 19, not built yet) refuses it POST pause too, though pause needs only input.
 const RIGHTS = {
   owner: new Set(["page", "events", "thumb", "state", "input", "tab", "profile", "approve", "session", "record", "journal", "invite", "layout", "strip", "timeline", "config", "outline", "tools", "capture", "activity"]),
   drive: new Set(["page", "events", "thumb", "state", "input", "tab"]),
   watch: new Set(["page", "events", "thumb", "state"]),
+  turn: new Set(["page", "events", "thumb", "state", "input", "turn"]),
+  redeem: new Set(["page"]),
 };
 export const roleMay = (role, right) => Object.hasOwn(RIGHTS, role) && RIGHTS[role].has(right);

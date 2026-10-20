@@ -1,5 +1,7 @@
 // A proxied session in a real helper and browser (spec server-mode Phase C), as an agent uses it.
-// Here: the DNS leak test (C12), and the rechecks of a running session's exit (C8, at the end). The helper starts with PAIRBROWSE_TEST_NETLOG=1, so the browser
+// Here: the DNS leak test (C12), the rechecks of a running session's exit (C8), two sessions on two
+// proxies with their exits measured and kept (C4, C9), and failing closed before any saved tab at a
+// start and after a crash (C7). For the leak test the helper starts with PAIRBROWSE_TEST_NETLOG=1, so the browser
 // writes its NetLog into the test home (daemon/browser/launch.mjs withNetLog), and an agent opens a
 // page whose names are new for each run: its own, an image's, a dns-prefetch, a preconnect, a
 // prefetch, a WebSocket and a STUN server's. In strict mode, through an http: or a socks5: proxy,
@@ -10,14 +12,15 @@
 import "../helpers/home.mjs";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, rmSync, existsSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, existsSync, writeFileSync, readdirSync, statSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { session } from "../helpers/live.mjs";
 import { text, until } from "../helpers/util.mjs";
 import { helperHome, startHelper } from "../helpers/daemon.mjs";
-import { httpProxy, socks5Proxy, traceServer, stunResponder } from "../helpers/proxies.mjs";
+import { httpProxy, socks5Proxy, traceServer, stunResponder, closedPort } from "../helpers/proxies.mjs";
 import { readNetLog, resolvedHosts, dnsLeaks } from "../helpers/netlog.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
@@ -243,4 +246,182 @@ test("rechecks: proxy killed mid-session: agents paused, told once, nothing sent
     // The proxy down: nothing reached the exit's server without it (the stub was its only way there).
     assert.equal(s.trace.state.hosts.length, asked, "no request went around the proxy");
   } finally { await s.done(); }
+});
+
+// Each session on its own proxy (C4, C9): a helper with two stub proxies, each in front of its own
+// page server that answers the check address with that proxy's exit. The default session uses
+// "one" and a named session "two"; an agent opens a page in each. A page's name can't be looked up
+// on this computer (strict mode, and `.test` names), so a page that loads came through the proxy
+// its session names. Each launch's check is kept in that session's network.json with the
+// helper's and the browser's reads of the same exit; nothing else in the home holds the exit
+// address (the browser profile, the tabs, the log). The browser's own traffic to 127.0.0.1 (the
+// helper's pages, a loopback page an agent opens) goes around the proxy: no proxy saw a loopback
+// request.
+
+const OTHER = "192.0.2.30";
+
+// A page server for one proxy: the check address answers ip, every other path a small page.
+async function exitSite(ip) {
+  const asked = [];
+  const server = createServer((req, res) => {
+    const path = new URL(req.url, "http://any").pathname;
+    asked.push(`${req.headers.host}${path}`);
+    if (path === "/cdn-cgi/trace") { res.writeHead(200, { "content-type": "text/plain" }); return res.end(`ip=${ip}\nloc=US\n`); }
+    res.writeHead(200, { "content-type": "text/html", "cache-control": "no-store" });
+    res.end(`<!doctype html><title>Page ${path}</title><p>${path}</p>`);
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  return { port: server.address().port, asked, close: () => new Promise((r) => { server.closeAllConnections?.(); server.close(() => r()); }) };
+}
+
+// Every file under dir (links not followed).
+function filesUnder(dir) {
+  const out = [];
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, e.name);
+    if (e.isDirectory()) out.push(...filesUnder(p));
+    else if (e.isFile()) out.push(p);
+  }
+  return out;
+}
+
+const loopbackTarget = (t) => /(^|\/\/|@)(127\.|localhost|\[::1\])/i.test(String(t || ""));
+
+test("two sessions on two proxies: each page through its own; both exits measured, kept in network.json only; loopback goes around", { skip, timeout: 300_000 }, async () => {
+  const siteOne = await exitSite(EXIT), siteTwo = await exitSite(OTHER);
+  const direct = await traceServer({ ip: OWN, loc: "DE" });
+  const stun = await stunResponder({ mapped: OWN });
+  const one = await httpProxy({ upstream: siteOne.port }), two = await socks5Proxy({ upstream: siteTwo.port });
+  stubs.push(siteOne, siteTwo, direct, stun, one, two);
+  const network = { proxies: { one: { server: `http://127.0.0.1:${one.port}` }, two: { server: `socks5://127.0.0.1:${two.port}` } }, sessions: { default: "one", work: "two" } };
+  const home = helperHome(runtime, { prefix: "pb-proxy2-", config: { sessionPicker: false, network } });
+  const env = { PAIRBROWSE_TEST_NET_CHECK: JSON.stringify({ checkUrl: `http://trace-${randomBytes(3).toString("hex")}.test/cdn-cgi/trace`, directUrl: `http://127.0.0.1:${direct.port}/cdn-cgi/trace`, stun: `stun:127.0.0.1:${stun.port}`, ms: 15_000 }) };
+  const log = () => { try { return readFileSync(join(home, "daemon.log"), "utf8"); } catch { return ""; } };
+  const h = await startHelper(home, { env });
+  const id = randomBytes(3).toString("hex");
+  try {
+    const a = await session(h.socketPath, "t");
+    try {
+      const first = await a.tool("browser_navigate", { url: `http://one-${id}.test/a` }, 120_000);
+      assert.ok(!first.result?.isError, `the default session's page opens: ${text(first).slice(0, 400)}\n${log().slice(-2000)}`);
+      assert.ok(siteOne.asked.includes(`one-${id}.test/a`) && !siteTwo.asked.some((s) => s.startsWith(`one-${id}`)), "through proxy one only");
+      assert.ok(one.log.some((l) => l.target === `http://one-${id}.test/a`));
+      // A loopback page loads directly (the proxy can't reach this computer's 127.0.0.1 for it).
+      const local = await a.tool("browser_navigate", { url: `http://127.0.0.1:${direct.port}/local` }, 60_000);
+      assert.ok(!local.result?.isError, `a loopback page opens around the proxy: ${text(local).slice(0, 300)}`);
+      assert.ok(direct.state.urls.includes("/local"), "it reached this computer's server");
+      const made = text(await a.tool("pairbrowse_session", { action: "new", name: "work" }, 120_000));
+      assert.match(made, /work/, made);
+      const second = await a.tool("browser_navigate", { url: `http://two-${id}.test/b` }, 120_000);
+      assert.ok(!second.result?.isError, `the work session's page opens: ${text(second).slice(0, 400)}\n${log().slice(-2000)}`);
+      assert.ok(siteTwo.asked.includes(`two-${id}.test/b`) && !siteOne.asked.some((s) => s.startsWith(`two-${id}`)), "through proxy two only");
+      assert.ok(two.log.some((l) => l.atyp === 3 && l.host === `two-${id}.test`), "the name went to the SOCKS5 proxy");
+    } finally {
+      a.sock.destroy();
+    }
+    await h.stop();
+    // Each session's launch check: the helper's and the browser's reads agree on its own exit.
+    for (const [file, ip, proxy] of [[join(home, "network.json"), EXIT, "one"], [join(home, "sessions", "work.network.json"), OTHER, "two"]]) {
+      const kept = JSON.parse(readFileSync(file, "utf8"));
+      const check = kept.checks.find((c) => c.kind === "launch");
+      assert.ok(check, `${file} has the launch check`);
+      assert.deepEqual([check.proxy, check.verdict, check.helper?.ip, check.browser?.ip, check.sameAsDirect], [proxy, "ok", ip, ip, false], JSON.stringify(check));
+      assert.equal(check.webrtc?.verdict, "ok", "WebRTC showed no address but the exit");
+      assert.ok(!JSON.stringify(kept).includes(OWN), "this computer's own exit is never kept");
+      if (process.platform !== "win32") assert.equal(statSync(file).mode & 0o777, 0o600);
+    }
+    // The exits are kept nowhere else: not in either browser profile, tabs, people or the logs.
+    const holders = filesUnder(home).filter((f) => !f.endsWith("network.json")).filter((f) => { const b = readFileSync(f); return b.includes(EXIT) || b.includes(OTHER); });
+    assert.deepEqual(holders, [], "no other file holds an exit address");
+    for (const p of [one, two]) assert.deepEqual(p.log.filter((l) => loopbackTarget(l.target ?? l.host)), [], "no loopback request went to a proxy");
+  } finally {
+    await h.stop();
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+// Fail closed before any saved tab (C7, section 3.2): the saved tab is a loopback page, which
+// would load around the proxy, so a tab that opened at all would show at its server. A proxy that
+// doesn't answer at the start, and one that goes down while the browser runs, then the browser
+// killed: either way the check fails, the browser closes, the agent's call is refused with the
+// reason, and the saved tab is never asked for.
+
+// The browser process under the helper: the helper's child that isn't a node process.
+function browserPid(helperPid) {
+  const rows = execFileSync("ps", ["-axo", "pid=,ppid=,command="], { encoding: "utf8" }).trim().split("\n").map((l) => l.trim().match(/^(\d+)\s+(\d+)\s+(.*)$/)).filter(Boolean);
+  const kid = rows.find((r) => Number(r[2]) === helperPid && !/node/.test(r[3]) && !/--type=/.test(r[3]));
+  return kid ? Number(kid[1]) : 0;
+}
+
+async function savedTabHelper({ proxyPort, prefix }) {
+  const saved = await exitSite(OWN);
+  const direct = await traceServer({ ip: OWN, loc: "DE" });
+  const stun = await stunResponder({ mapped: OWN });
+  stubs.push(saved, direct, stun);
+  const network = { proxies: { stub: { server: `http://127.0.0.1:${proxyPort}` } }, default: "stub" };
+  const home = helperHome(runtime, { prefix, config: { sessionPicker: false, network } });
+  writeFileSync(join(home, "tabs.json"), JSON.stringify({ tabs: [{ url: `http://127.0.0.1:${saved.port}/saved`, title: "Saved" }], active: 0 }));
+  const env = { PAIRBROWSE_TEST_NET_CHECK: JSON.stringify({ checkUrl: `http://trace-${randomBytes(3).toString("hex")}.test/cdn-cgi/trace`, directUrl: `http://127.0.0.1:${direct.port}/cdn-cgi/trace`, stun: `stun:127.0.0.1:${stun.port}`, ms: 5000 }) };
+  const log = () => { try { return readFileSync(join(home, "daemon.log"), "utf8"); } catch { return ""; } };
+  return { saved, home, env, log };
+}
+
+const REFUSED = /doesn't start: network "stub" failed its check before any saved tab opened, so the browser closed/;
+
+test("an unreachable proxy: the browser closes before the saved tab opens, and the agent hears why", { skip, timeout: 240_000 }, async () => {
+  const s = await savedTabHelper({ proxyPort: await closedPort(), prefix: "pb-proxydown-" });
+  const h = await startHelper(s.home, { env: s.env });
+  try {
+    const a = await session(h.socketPath, "d");
+    try {
+      const r = await a.tool("browser_snapshot", {}, 120_000);
+      assert.match(text(r), REFUSED, text(r).slice(0, 600));
+      assert.equal(browserPid(h.daemon.pid), 0, "no browser left running");
+      assert.deepEqual(s.saved.asked, [], "the saved tab was never asked for");
+      const status = text(await a.tool("pairbrowse_status", { kind: "claude", text: "Checking" }, 60_000));
+      assert.match(status, /network "stub"/, status);
+      assert.ok(!status.includes(EXIT) && !status.includes(OWN), "status names no address");
+    } finally { a.sock.destroy(); }
+    assert.equal(JSON.parse(readFileSync(join(s.home, "network.json"), "utf8")).checks.at(-1).verdict, "failed");
+  } finally {
+    await h.stop();
+    rmSync(s.home, { recursive: true, force: true });
+  }
+});
+
+test("the browser killed in a proxied session with its proxy down: the check runs before restore and the tabs stay closed", { skip, timeout: 240_000 }, async () => {
+  const site = await exitSite(EXIT);
+  const proxy = await httpProxy({ upstream: site.port });
+  stubs.push(site, proxy);
+  // The proxy's upstream answers the check with the exit; the saved tab's server is another one.
+  const s = await savedTabHelper({ proxyPort: proxy.port, prefix: "pb-proxykill-" });
+  const h = await startHelper(s.home, { env: s.env });
+  try {
+    const a = await session(h.socketPath, "k");
+    const nav = await a.tool("browser_navigate", { url: `http://page-${randomBytes(3).toString("hex")}.test/` }, 120_000);
+    assert.ok(!nav.result?.isError, `the session starts through the proxy: ${text(nav).slice(0, 400)}\n${s.log().slice(-2000)}`);
+    await until("the saved tab restored on the healthy start", () => s.saved.asked.length > 0, 20_000, 200);
+    await new Promise((r) => setTimeout(r, 2500)); // the tabs file's debounce
+    const asked = s.saved.asked.length;
+    await proxy.close();
+    // A crash under a connected agent (the helper stays up; the agent's bridge would reconnect).
+    const pid = browserPid(h.daemon.pid);
+    assert.ok(pid, "the browser process is found");
+    process.kill(pid, "SIGKILL");
+    await until("the helper sees the browser gone", () => browserPid(h.daemon.pid) === 0, 20_000, 200);
+    await new Promise((r) => setTimeout(r, 1500));
+    a.sock.destroy();
+    assert.equal(h.daemon.exitCode, null, `the helper is still up: ${s.log().slice(-1500)}`);
+    const b = await session(h.socketPath, "k2");
+    try {
+      const r = await b.tool("browser_tabs", { action: "list" }, 120_000);
+      assert.match(text(r), REFUSED, text(r).slice(0, 600));
+      assert.equal(browserPid(h.daemon.pid), 0, "the browser closed again");
+      assert.equal(s.saved.asked.length, asked, "no saved tab opened after the crash");
+    } finally { b.sock.destroy(); }
+    assert.match(s.log(), /failed its check/);
+  } finally {
+    await h.stop();
+    rmSync(s.home, { recursive: true, force: true });
+  }
 });

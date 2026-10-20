@@ -90,7 +90,8 @@ export function readViewerInput(ev, { frame = null, role = "owner" } = {}) {
     const ch = charOf(ev.text, m);
     return ch ? { type: "char", text: ch, modifiers: m } : null;
   }
-  if (ev.type === "nav" && NAV.has(ev.action)) return ev.action === "go" ? (typeof ev.url === "string" && ev.url.length <= 2048 ? { type: "nav", action: "go", url: ev.url } : null) : { type: "nav", action: ev.action };
+  // A hand-off's viewer (role turn) never types an address: back, forward and reload only.
+  if (ev.type === "nav" && NAV.has(ev.action)) return ev.action === "go" ? (role !== "turn" && typeof ev.url === "string" && ev.url.length <= 2048 ? { type: "nav", action: "go", url: ev.url } : null) : { type: "nav", action: ev.action };
   if (ev.type === "viewport") return role === "owner" ? { type: "viewport", on: ev.on === true, w: Number(ev.w) || 0, h: Number(ev.h) || 0, dpr: Number(ev.dpr) || 1 } : null;
   if (ev.type === "command" && Object.hasOwn(COMMANDS, ev.command)) return ev.command === "cut" && role !== "owner" ? null : { type: "command", command: ev.command, modifiers: m };
   if (ev.type === "key" && Object.hasOwn(KEYS, ev.key)) return ev.key === "Delete" && m & 8 && role !== "owner" ? null : { type: "key", key: ev.key, modifiers: m };
@@ -181,7 +182,7 @@ export function createInputReplayer() {
         if (ev.action === "back") await page.goBack({ timeout: NAV_TIMEOUT_MS.back }).catch(() => {});
         else if (ev.action === "forward") await page.goForward({ timeout: NAV_TIMEOUT_MS.forward }).catch(() => {});
         else if (ev.action === "reload") await page.reload({ timeout: NAV_TIMEOUT_MS.reload }).catch(() => {});
-        else if (ev.action === "go") {
+        else if (ev.action === "go" && role !== "turn") {
           // Same rule as Claude's navigation: web pages only. Invited people can't open addresses on
           // this computer's network (your router, local servers) through your browser.
           const url = addressToUrl(ev.url);

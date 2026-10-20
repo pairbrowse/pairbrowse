@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en" data-scheme="system">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex">
+<title>PairBrowse hand-off</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/liveview-redeem.css">
+</head>
+<body class="redeem" data-expires="{{expires}}">
+  <main class="card">
+    <p class="brand">PairBrowse</p>
+    <h1 id="step">{{sentence}}</h1>
+    <p class="why">An agent working in PairBrowse handed this step to you. Take over to see the tab and finish it yourself; the agent waits until you are done.</p>
+    <p class="until">This link works until <time id="until">{{clock}}</time>, once.</p>
+    <button class="take" id="take" type="button">Take over</button>
+    <p class="problem" id="problem" role="alert" hidden></p>
+  </main>
+  <script type="module" src="assets/liveview-redeem.js"></script>
+</body>
+</html>

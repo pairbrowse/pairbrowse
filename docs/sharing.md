@@ -56,7 +56,7 @@ usual ssh login to this computer>`. They keep it open and open the link in their
 need an SSH login to this computer, which is far more access than the link: use this only with
 people who have one anyway.
 
-Under the names in `liveViewHosts` only invite links work; your own live view link keeps
+Under the names in `liveViewHosts` only invite and hand-off links work; your own live view link keeps
 working on this computer and through an SSH tunnel.
 
 ## The join prompt in your tab

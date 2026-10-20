@@ -1,0 +1,19 @@
+/* The landing page of a hand-off link: one card, phone first, no horizontal scroll. */
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body.redeem {
+  display: grid; place-items: center; padding: 16px;
+  color: var(--ink); background: var(--bg); font: var(--fs-3)/1.45 var(--sans); -webkit-font-smoothing: antialiased;
+}
+.card { width: 100%; max-width: 420px; padding: 24px 20px; border-radius: 14px; background: var(--panel); box-shadow: var(--shadow-raised); overflow-wrap: anywhere; }
+.brand { margin: 0 0 12px; color: var(--ink-soft); font-size: var(--fs-1); font-weight: 650; letter-spacing: 0.02em; }
+h1 { margin: 0 0 12px; font-size: var(--fs-5); line-height: 1.25; }
+.why, .until { margin: 0 0 12px; color: var(--ink-soft); }
+.take {
+  width: 100%; min-height: 48px; margin-top: 8px; border: 0; border-radius: 10px;
+  background: var(--accent-fill); color: #fff; font: inherit; font-weight: 650; cursor: pointer;
+}
+.take:hover { background: var(--accent-fill-hover); }
+.take:focus-visible { outline: none; box-shadow: var(--glow-focus); }
+.take:disabled { opacity: 0.6; cursor: default; }
+.problem { margin: 12px 0 0; color: var(--bad-ink); }

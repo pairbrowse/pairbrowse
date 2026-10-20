@@ -161,9 +161,13 @@
   codes, passwords, card details or page text. Link previews are turned off where the service
   allows (Telegram, Discord, Slack). Messages go straight from the helper, never through a browser
   session's proxy, never following a redirect, each try bounded to 10 s with one retry after 5 s on
-  a server or network error. The hand-off flow that sends them (the link and the phone viewer), and
-  the Away switch in the side panel and Settings, come in a later version; until then these keys are
-  read and checked only.
+  a server or network error. A hand-off link reaches the live view the way invite links do: through
+  a `liveViewHosts` name with `inviteBaseUrl` (a tailnet works on a phone with its app) or an SSH
+  tunnel to this computer, never the join-code port. Opening it shows a page with the step, the
+  site and the expiry and a "Take over" button; opening it uses nothing up (a chat app's link
+  preview is harmless), and only the tap does, once. The live view's side of this is built; the
+  hand-off flow that makes and sends links (and the phone viewer), and the Away switch in the side
+  panel and Settings, come in a later version; until then these keys are read and checked only.
 - `reportUrl`: where a problem report you send yourself goes (default
   `https://pairbrowse.com/api/report`): an https address with no user, query or fragment.
   `null`: no report is ever sent, and Settings doesn't offer it.
@@ -183,8 +187,8 @@
   in a saved profile stops with an error naming it.
 - `downloadsDir`: where site downloads and recordings are saved (default: your Downloads folder): an ordinary folder inside your home folder, checked as Settings checks it when the file is read and again at every save; one that fails is not used.
 - `liveViewPort`: a fixed live view port (default: a random one each start).
-- `liveViewHosts`: extra host names the live view answers to, for invite links only, such as
-  your Tailscale name. Plain host names only. It still listens on `127.0.0.1` only.
+- `liveViewHosts`: extra host names the live view answers to, for invite and hand-off links only,
+  such as your Tailscale name. Plain host names only. It still listens on `127.0.0.1` only.
 - `inviteBaseUrl`: where invite links point, such as `https://myhost.tail1234.ts.net`. Its host
   must be in `liveViewHosts`. See [Invite someone to watch or co-drive](sharing.md#invite-someone-to-watch-or-co-drive).
 - `joinHosts`: https host names, besides `*.trycloudflare.com`, you accept in join codes (a host's

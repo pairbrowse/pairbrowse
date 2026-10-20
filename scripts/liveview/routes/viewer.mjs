@@ -17,7 +17,9 @@ const PAGE_KINDS = new Set(PAGE_KIND_LIST);
 // sessionInfo, devState, board, driving, activity; and captureOk, clickApprovals,
 // collaborationChanged, stopIfIdle, follow, tabsInfo, forGuest, ownerSession, collaborationNow,
 // approvals, joinHost, layoutNow, watchPages, agentTabs, pauseState, recordState, personTab,
-// getContext, currentUrl, humanPost, onPause.
+// getContext, currentUrl, humanPost, onPause; turn: the hand-off grant gate (liveview/grants.mjs),
+// for a hand-off's guest (role turn: its one stream, its own tabs' pictures as they are; role
+// redeem: the landing page alone).
 export function createViewerRoutes(lv) {
   async function events({ req, res, invite, byPages }) {
     // ?panel: status, activity and profile only (the PairBrowse side panel): no page stream.
@@ -26,6 +28,10 @@ export function createViewerRoutes(lv) {
     const q = new URL(req.url, "http://x").searchParams;
     const kind = !invite && PAGE_KINDS.has(q.get("page")) ? q.get("page") : null;
     if (kind === "capture" && !lv.captureOk(req, byPages)) return plain(res, 403);
+    // A hand-off's view key holds one stream at a time (a dropped one may come back).
+    const turn = invite?.role === "turn";
+    if (turn && !lv.turn.openStream(res, invite)) return json(res, 409, { error: "This hand-off is open somewhere else. Close it there, or wait a moment and try again." });
+    if (turn) await lv.turn.watch();
     res.writeHead(200, { ...SECURITY_HEADERS, "content-type": "text/event-stream", connection: "keep-alive" });
     const viewer = !q.has("panel") && !kind;
     lv.clients.add(res);
@@ -46,11 +52,11 @@ export function createViewerRoutes(lv) {
     });
     if (viewer) await lv.follow();
     const tabs = await lv.tabsInfo();
-    res.write(sse("tabs", invite ? lv.forGuest("tabs", tabs) : tabs));
+    res.write(sse("tabs", invite ? lv.forGuest("tabs", tabs, invite) : tabs));
     res.write(sse("status", lv.status));
     res.write(sse("session", invite ? lv.forGuest("session") : lv.ownerSession()));
     res.write(sse("collaboration", lv.collaborationNow()));
-    res.write(sse("activity", invite ? lv.forGuest("activity", lv.activity) : lv.activity));
+    res.write(sse("activity", invite ? lv.forGuest("activity", lv.activity, invite) : lv.activity));
     if (!invite) res.write(sse("join", lv.approvals.open()));
     if (!invite && lv.devState) res.write(sse("dev", lv.devState));
     if (!invite && lv.joinHost) res.write(sse("joinhost", lv.joinHost.state()));
@@ -62,6 +68,12 @@ export function createViewerRoutes(lv) {
     if (paused) res.write(sse("pause", invite ? lv.forGuest("pause", paused) : paused));
     if (!invite && lv.recordState()) res.write(sse("record", lv.recordState()));
     if (viewer && lv.lastFrame && !invite) res.write(sse("frame", lv.lastFrame));
+    // A hand-off's first picture: its own tab's, as it is; then its turn event.
+    if (turn) {
+      const f = viewer ? lv.turn.frameFor(invite) : null;
+      if (f && !lv.personTab(lv.lastFrameFrom)) res.write(sse("frame", f));
+      return lv.turn.started(res, invite);
+    }
     // A guest's first picture with card fields covered (covers.mjs), or none.
     if (viewer && lv.lastFrame && invite && !lv.personTab(lv.lastFrameFrom)) {
       const from = lv.lastFrameFrom;
@@ -81,8 +93,16 @@ export function createViewerRoutes(lv) {
     let data, from;
     const shown = lv.shown;
     if (invite && lv.personTab(shown?.page)) return plain(res, 404); // a person's own tab: never to guests
-    if (shown) { ({ data } = await still(shown.cdp)); from = shown.page; }
-    else {
+    // A hand-off's still: only of its own tabs, as they are (the person sees the field they type into).
+    const turn = invite?.role === "turn";
+    const turnPage = turn ? lv.turn.stillOf(invite) : null;
+    if (turn && !turnPage) return json(res, 409, { error: "That tab isn't on screen. Go back to the hand-off's tab." });
+    if (shown && (!turn || shown.page === turnPage)) { ({ data } = await still(shown.cdp)); from = shown.page; }
+    else if (turn) {
+      const cdp = await turnPage.context().newCDPSession(turnPage);
+      try { ({ data } = await still(cdp)); } finally { cdp.detach().catch(() => {}); }
+      from = turnPage;
+    } else {
       const ctx = await lv.getContext();
       const url = await lv.currentUrl();
       if (hiddenFromLiveView(url)) return plain(res, 404); // never the browser's own pages
@@ -94,7 +114,7 @@ export function createViewerRoutes(lv) {
       from = page;
     }
     // A guest's still with card fields covered (covers.mjs); none when they can't be.
-    if (invite) {
+    if (invite && !turn) {
       data = await lv.coverImage(from, data);
       if (!data) return plain(res, 503);
     }
@@ -108,30 +128,35 @@ export function createViewerRoutes(lv) {
     if (ev === null || typeof ev !== "object") return json(res, 400, { error: NOT_JSON });
     // Moving tabs around the strip is the owner's (a drive guest switches, opens and closes them).
     if (route === "tab" && ev?.order !== undefined && role !== "owner") return plain(res, 403);
+    // A hand-off's input reaches only its own tabs: another one on screen is refused, said and audited.
+    if (role === "turn" && !lv.turn.onScreen(invite)) { lv.turn.refused(invite, "input-refused", "out-of-scope"); return json(res, 409, { error: "That tab isn't on screen. Go back to the hand-off's tab." }); }
     await lv.humanPost(route, ev, role, invite ? `${invite.label} (by hand)` : null, invite?.id || null);
     res.writeHead(204, SECURITY_HEADERS);
     res.end();
   }
 
   return [
-    { method: "GET", path: "", right: "page", handler: ({ req, res, role }) => serveViewer(req, res, { role }) },
+    // The page; a hand-off link before its tap (role redeem) gets its landing page instead.
+    { method: "GET", path: "", right: "page", handler: ({ req, res, role, invite }) => (role === "redeem" ? lv.turn.landing(req, res, invite) : serveViewer(req, res, { role })) },
     { method: "GET", path: "assets", right: "page", handler: ({ res, rest }) => serveAsset(res, rest) },
     { method: "GET", path: "events", right: "events", handler: events },
     // A small still of the page and a status summary, for panes that can't hold a live stream
     // (the Claude app's plugin panes). Same key, same checks.
     { method: "GET", path: "thumb.jpg", right: "thumb", handler: thumb },
     { method: "GET", path: "state.json", right: "state", handler: async ({ res, invite }) => {
+      if (invite?.role === "turn") await lv.turn.watch(); // tabs it opens join its scope
       const tabs = withoutIcons(await lv.tabsInfo());
       const recent = lv.activity.slice(-STATE_ACTIVITY);
       const lastFrame = lv.lastFrame;
-      json(res, 200, { status: lv.status, session: lv.sessionInfo, collaboration: lv.collaborationNow(), tabs: invite ? lv.forGuest("tabs", tabs) : tabs, activity: invite ? lv.forGuest("activity", recent) : recent, frame: lastFrame ? { w: lastFrame.w, h: lastFrame.h } : null });
+      json(res, 200, { status: lv.status, session: lv.sessionInfo, collaboration: lv.collaborationNow(), tabs: invite ? lv.forGuest("tabs", tabs, invite) : tabs, activity: invite ? lv.forGuest("activity", recent, invite) : recent, frame: lastFrame ? { w: lastFrame.w, h: lastFrame.h } : null });
     } },
     { method: "POST", path: "input", right: "input", handler: human },
     { method: "POST", path: "tab", right: "tab", handler: human },
     // "Pause agents" and "Resume" (the side panel, a drive guest's viewer): people only, anyone
     // who may drive. who: the guest's name (null: the owner). With `who` in the body: "Pause this
-    // agent" / "Resume this agent" for the agent of that name, the owner's only.
+    // agent" / "Resume this agent" for the agent of that name, the owner's only. Never a hand-off's.
     { method: "POST", path: "pause", right: "input", handler: async ({ req, res, invite, role }) => {
+      if (role === "turn") return plain(res, 403);
       const op = await readJsonBody(req, res, BODY_MAX.approve);
       if (op === undefined) return;
       if (op && typeof op === "object" && op.who !== undefined) {

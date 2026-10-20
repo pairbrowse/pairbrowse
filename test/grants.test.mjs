@@ -279,3 +279,19 @@ test("a key matched without the session open now throws and ends nothing", () =>
   assert.deepEqual(lines().map((l) => l.kind), ["minted"]);
   assert.ok(grants.redeem(g.redeemKey, { session: "default" }));
 });
+
+test("match finds either key in one pass, a used one audited once; refused audits only a live grant's stream or input", () => {
+  const { grants, lines } = setup();
+  const page = pageAt("https://example.com/login");
+  const g = grants.mint({ session: "default", page, action: "login" });
+  assert.deepEqual([grants.match(g.redeemKey, { session: "default" }).role, grants.open()[0].redeemed], ["redeem", false], "matching uses nothing up");
+  const r = grants.redeem(g.redeemKey, { session: "default" });
+  assert.equal(grants.match(r.viewKey, { session: "default" }).role, "turn");
+  assert.equal(grants.match(g.redeemKey, { session: "default" }), null);
+  assert.equal(lines().filter((l) => l.kind === "reuse").length, 1, "one reuse line for one try");
+  assert.throws(() => grants.match(r.viewKey, {}), /session/);
+  assert.equal(grants.refused(g.id, "input-refused", "out-of-scope"), true);
+  assert.equal(grants.refused(g.id, "ended", "done"), false, "only stream and input refusals");
+  assert.equal(grants.refused("00000000", "stream-refused", "other-origin"), false);
+  assert.deepEqual(lines().filter((l) => l.kind === "input-refused").map((l) => [l.grant, l.detail]), [[g.id, "out-of-scope"]]);
+});

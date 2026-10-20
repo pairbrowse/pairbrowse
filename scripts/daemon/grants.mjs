@@ -90,12 +90,12 @@ export function createGrants({ now = () => Date.now(), mono = () => performance.
   // The live grant whose key (redeem or view) is given, read against every grant so timing doesn't
   // tell which one came close. A grant of another session than the one open now ends; a caller
   // that names no session throws, so a missed argument never ends a grant.
-  function find(given, field, session) {
+  function find(given, fields, session) {
     if (!validName(session)) throw new Error("a grant key is matched against the session open now");
     sweep();
     if (typeof given !== "string" || !KEY.test(given)) return null;
     let found = null;
-    for (const g of live.values()) if (sameKey(given, g[field])) found = g;
+    for (const g of live.values()) for (const field of fields) if (sameKey(given, g[field])) found = g;
     if (!found) { reused(given); return null; }
     if (session !== found.session) { finish(found, "session-switched"); return null; }
     return found;
@@ -153,10 +153,16 @@ export function createGrants({ now = () => Date.now(), mono = () => performance.
       return { id, redeemKey, expiresAt: end };
     },
     // The grant a redeem key belongs to, unused, without using it (the landing page), or null.
-    matchRedeem(key, { session } = {}) { const g = find(key, "redeemHash", session); return g ? view(g) : null; },
+    matchRedeem(key, { session } = {}) { const g = find(key, ["redeemHash"], session); return g ? view(g) : null; },
+    // Either key in one pass (the live view's dispatcher): { role: "redeem" | "turn", view }, or
+    // null, a used key audited once as reuse.
+    match(key, { session } = {}) {
+      const g = find(key, ["redeemHash", "viewHash"], session);
+      return g ? { role: sameKey(key, g.redeemHash) ? "redeem" : "turn", view: view(g) } : null;
+    },
     // Uses the redeem key up: { id, viewKey, view } once, then null for that key (audited as reuse).
     redeem(key, { session } = {}) {
-      const g = find(key, "redeemHash", session);
+      const g = find(key, ["redeemHash"], session);
       if (!g) return null;
       keep(g.redeemHash, "redeem-key", g);
       g.redeemKey = null; g.redeemHash = null; g.redeemed = true;
@@ -167,7 +173,16 @@ export function createGrants({ now = () => Date.now(), mono = () => performance.
       return { id: g.id, viewKey, view: view(g) };
     },
     // The grant a view key belongs to, or null.
-    matchView(key, { session } = {}) { const g = find(key, "viewHash", session); return g ? view(g) : null; },
+    matchView(key, { session } = {}) { const g = find(key, ["viewHash"], session); return g ? view(g) : null; },
+    // A live grant's stream, input or other request refused by the live view (audit
+    // stream-refused, input-refused or request-refused, detail from the audit's words): whether
+    // the grant is live.
+    refused(id, kind, detail) {
+      const g = live.get(String(id ?? ""));
+      if (!g || !["stream-refused", "input-refused", "request-refused"].includes(kind)) return false;
+      record(kind, g, detail);
+      return true;
+    },
     // The redeem key while it is unused (the one reminder carries the link again), else null.
     redeemKey(id) { sweep(); return live.get(String(id ?? ""))?.redeemKey ?? null; },
     // The grant's one event stream: { close() } while none is open, else null (audited). A

@@ -6,7 +6,7 @@
 // URL carries a random 256-bit key generated at start. Requests with another Host or a
 // cross-site Origin are refused, so other websites (including the pages open in PairBrowse)
 // can't reach it. Invite links (createInvites) carry keys of their own with fewer rights, and
-// the host names you add in liveViewHosts (say, for Tailscale) take invite links only.
+// the host names you add in liveViewHosts (say, for Tailscale) take invite and hand-off links only.
 //
 // This file coordinates; the parts live in scripts/liveview/: http (checks, headers, the page),
 // invites, input (replaying a viewer's input), joiner-server (the port the sharing tunnel
@@ -37,6 +37,8 @@ import { createSessionRoutes } from "./liveview/routes/sessions.mjs";
 import { createPagesRoutes } from "./liveview/routes/pages.mjs";
 import { createOwnerRoutes, inviteItems } from "./liveview/routes/owner.mjs";
 import { createViewerRoutes } from "./liveview/routes/viewer.mjs";
+import { createTurnRoutes } from "./liveview/routes/turn.mjs";
+import { createTurnGate, TURN_ROLES } from "./liveview/grants.mjs";
 import { NO_CAPTURE_SHARE, targetIdOf } from "./daemon/capture.mjs";
 import { createActivityLog } from "./daemon/activitylog.mjs";
 import { createApprovalShare } from "./liveview/approval-share.mjs";
@@ -120,7 +122,8 @@ const sharedDefaults = { readForm: async () => null, applyForm: async () => {}, 
 // passed its checks, but the pages' own reports (OWN_REPORTS) and the live view's input (replayed
 // into a tab, heard there through onHumanInput).
 // covers: card fields covered in what guests see (liveview/guest-frames.mjs), or null.
-export async function startLiveView({ covers = null, activityLog = null, reporter = null, tools = null, onPagesKey = () => {}, onPersonInput = () => {}, sessionOps = null, outlines = null, mask = (t) => t, timeline = null, layoutDefaults = null, settings = null, extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
+// grants: hand-off grants (daemon/grants.mjs; their keys, landing page and stream: liveview/grants.mjs), or null.
+export async function startLiveView({ grants = null, covers = null, activityLog = null, reporter = null, tools = null, onPagesKey = () => {}, onPersonInput = () => {}, sessionOps = null, outlines = null, mask = (t) => t, timeline = null, layoutDefaults = null, settings = null, extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
   guestPort: wantGuestPort = 0, tunnelHost = () => null, approvals = createApprovals(), onJoinRequest = () => {}, tabMeta = () => ({}), secretDomains = () => [], onJoinerPerson = () => {}, onJoinerActivity = () => {}, shared: sharedGiven = {},
   onPause = () => ({}), pauseState = () => null, onRecord = async () => ({}), recordState = () => null, picker = null, devShare = null, devPanel = null, joinHost = null, relays = () => [], screens = null, remoteAgents = null, onReplay = () => () => {}, journal = null, makeInvite = null,
   clickApprovals = null, capture = null }) {
@@ -158,8 +161,10 @@ export async function startLiveView({ covers = null, activityLog = null, reporte
   const humanQueue = serially(); // people's input, in order
   const replayer = createInputReplayer();
   // The picture: the tab on screen, its screencast, following Claude's tab (liveview/cast.mjs).
-  const cast = createCast({ getContext, currentUrl, personTab: (p) => personTab(p), replayer, broadcast: (e, d) => broadcast(e, d), tabsInfo: () => tabsInfo(), viewers, watching: () => watching(), isClosed: () => closed, log });
+  const cast = createCast({ getContext, currentUrl, personTab: (p) => personTab(p), replayer, broadcast: (e, d) => broadcast(e, d), tabsInfo: () => tabsInfo(), viewers, watching: () => watching(), isClosed: () => closed, log, pinned: () => turnGate.pinned() });
   const { show, follow, stopIfIdle } = cast;
+  // Hand-off grants' keys, landing page and stream (liveview/grants.mjs).
+  const turnGate = createTurnGate({ grants, sessionName: () => sessionInfo.name, idOf: (p) => idOf(p), getContext, cast, linkGuests, clients, viewers, inviteOrigin, invites, onChanged: () => collaborationChanged(), log });
   const iconFor = createIcons();
   const kinds = new Map(); // event stream -> the browser page's kind (?page=), owner streams only
   const tabOrder = { sig: "", order: null }; // the tab strip's last report (POST tab-order); gone with this live view
@@ -196,7 +201,7 @@ export async function startLiveView({ covers = null, activityLog = null, reporte
     return Promise.all(webPages(ctx.pages()).map(async ([p, i]) => {
       let meta = {};
       try { meta = tabMeta(p) || {}; } catch {}
-      return { i, title: (await ownTitle(p)) || p.url(), url: p.url(), icon: await iconFor(p), shown: p === cast.state.shown?.page, claude: p === cast.state.followedPage,
+      return { id: idOf(p), i, title: (await ownTitle(p)) || p.url(), url: p.url(), icon: await iconFor(p), shown: p === cast.state.shown?.page, claude: p === cast.state.followedPage,
         agent: meta.agent || null, person: meta.person || null, waiting: !!meta.waiting, last: meta.last || null, ...personal(p) };
     }));
   };
@@ -239,9 +244,11 @@ export async function startLiveView({ covers = null, activityLog = null, reporte
   const guestPause = (p) => { if (!p || typeof p !== "object") return p; const { perAgent, agents, ...rest } = p; return rest; };
   // An event as an invite link's guest gets it: addresses without query strings (like joiners),
   // never a person's own tab, the session without the owner's fields, the pause without "Pause
-  // this agent". broadcast, the events stream's first writes and state.json all use it.
-  const forGuest = (event, data) => event === "tabs" ? guestList(data) : event === "activity" ? guestActivity(data)
+  // this agent". broadcast, the events stream's first writes and state.json all use it. A
+  // hand-off's guest (role turn) gets its scope tabs' only (liveview/grants.mjs).
+  const forGuestAll = (event, data) => event === "tabs" ? guestList(data) : event === "activity" ? guestActivity(data)
     : event === "session" ? guestSession() : event === "pause" ? guestPause(data) : data;
+  const forGuest = (event, data, guest) => guest?.role === "turn" ? turnGate.forTurn(event, forGuestAll(event, data), guest) : forGuestAll(event, data);
   // The session as a guest sees it: without this helper's instance name (the owner's own label).
   const guestSession = () => { const { instance: _instance, ...rest } = sessionInfo; return rest; };
   const guestFrames = createGuestFrames({ covers, viewers, linkGuests, shownPage: () => cast.state.shown?.page, personTab });
@@ -250,7 +257,7 @@ export async function startLiveView({ covers = null, activityLog = null, reporte
     const msg = sse(event, data);
     if (event === "frame") guestFrames.frame(data, cast.state.lastFrameFrom);
     for (const res of event === "frame" ? viewers : OWNER_ONLY.has(event) ? owners : clients) {
-      if (event === "frame" && linkGuests.has(res)) continue; // toGuests, covered
+      if (event === "frame" && linkGuests.has(res) && !turnGate.frameTo(res)) continue; // toGuests, covered; a hand-off's own tabs as they are
       if (PAGES_ONLY.has(event) && !kinds.has(res)) continue;
       if (PAGE_EVENT_KIND.has(event) && kinds.get(res) !== PAGE_EVENT_KIND.get(event)) continue;
       // A reader that stopped reading (a laptop asleep with the connection still open) would
@@ -258,8 +265,9 @@ export async function startLiveView({ covers = null, activityLog = null, reporte
       if (res.writableLength > STALLED_BYTES) { res.destroy(); continue; }
       if (event === "frame" && res.writableLength > FRAME_SKIP_BYTES) continue;
       if (event === "frame" && linkGuests.has(res) && personTab(cast.state.lastFrameFrom)) continue; // a person's own tab: never to guests
-      res.write(linkGuests.has(res) ? sse(event, forGuest(event, data)) : msg);
+      res.write(linkGuests.has(res) ? sse(event, forGuest(event, data, linkGuests.get(res))) : msg);
     }
+    if (event === "tabs") turnGate.changed().catch(() => {});
   };
   const collaborationChanged = () => { broadcast("collaboration", collaborationNow()); agentTabsChanged(); };
   // The session as the owner's streams get it: with whether it can be renamed and saved now, and
@@ -506,6 +514,7 @@ export async function startLiveView({ covers = null, activityLog = null, reporte
       if (!batch.length) return;
       return humanQueue(async () => {
         if (role !== "owner" && personTab(cast.state.shown?.page)) return; // a person's own tab: never a guest's input
+        if (role === "turn" && !turnGate.onScreen(inviteKey)) return; // a hand-off's input: its own tabs only
         // Only moving the pointer (or the wheel) changes nothing an agent's refs point at.
         if (batch.some((one) => one?.type !== "viewport")) await onHumanInput(cast.state.shown?.page || null, who, batch.some((one) => !["viewport", "wheel"].includes(one?.type) && !(one?.type === "mouse" && one.action === "mouseMoved")));
         const done = onReplay(who);
@@ -549,34 +558,33 @@ export async function startLiveView({ covers = null, activityLog = null, reporte
     get board() { return board; }, get driving() { return driving; },
     captureOk, collaborationChanged, stopIfIdle, follow, tabsInfo, forGuest, ownerSession, collaborationNow, layoutNow,
     watchPages, agentTabs, pauseState, recordState, personTab, getContext, currentUrl, humanPost, onPause, coverFrame, coverImage,
+    get turn() { return turnGate; },
   };
   const ROUTES = [
     ...createViewerRoutes(lv),
+    ...createTurnRoutes(turnGate),
     ...createOwnerRoutes({ approvals, clickApprovals, joiners, push, stopJoinerKey, collaborationChanged, log, devPanel, joinHost, profile, journal, invites, makeInvite, broadcast, onRecord, tools, mask, recordState }),
     ...createSessionRoutes({ picker, sessionOps, broadcast, ownerSession, linkGuests, layouts, joinersNow, recordState, clickApprovals }),
     ...createPagesRoutes({ history, layoutNow, layouts, sessionName: () => sessionInfo.name, broadcast, settings, reporter, outlines, webPages, getContext, idOf, mask, watchPages, tabsStrip, agentTabs, tabOrder, capture, captureOk }),
     ...timelineRoutes.routes,
     ...toolRoutes.routes,
   ];
-
-
-
-
-
   const browserPageOrigin = (o) => !!o && BROWSER_PAGE_ORIGINS.includes(o) && extraOrigins.includes(o);
   const server = http.createServer(async (req, res) => {
     if (!hostOk(req.headers.host, hosts)) return plain(res, 403); // blocks DNS-rebinding
     const { key: given, route, rest } = pathParts(req);
     // The owner's key works only under a loopback name (this computer, or an SSH tunnel); the
-    // extra host names take invite links only. Unknown, expired and revoked keys look the same.
+    // extra host names take invite and hand-off links only. Unknown, expired and revoked keys look the same.
     const mine = keyOk(given, key);
     const byPages = !mine && keyOk(given, pagesKey);
     const ownerKey = mine || byPages;
     // Join code keys work only through the sharing tunnel's port (joiner-server.mjs), after approval.
     const matched = ownerKey ? null : invites.match(given);
-    const invite = matched?.share === "code" ? null : matched;
+    // Hand-off grant keys last (liveview/grants.mjs): the guest a redeem or view key acts as.
+    const invite = (matched?.share === "code" ? null : matched) || (ownerKey || matched ? null : turnGate.match(given));
     const role = ownerKey ? (hostOk(req.headers.host) ? "owner" : null) : invite?.role || null;
     if (!role) return plain(res, 404);
+    if (turnGate.refusedOrigin(invite, req)) return plain(res, 403);
     // The browser's pages used their key: its file has done its job (the browser read it at start).
     if (byPages && role === "owner") try { onPagesKey(); } catch {}
     const origin = req.headers.origin;
@@ -588,7 +596,7 @@ export async function startLiveView({ covers = null, activityLog = null, reporte
       res.writeHead(204, { ...SECURITY_HEADERS, "access-control-allow-methods": "GET, POST, DELETE", "access-control-allow-headers": "content-type", "access-control-max-age": "600" });
       return res.end();
     }
-    if (req.method !== "GET" && !originOk(origin) && !(role === "owner" && extraOrigins.includes(origin)) && !(role === "drive" && inviteOrigin && origin === inviteOrigin)) return plain(res, 403);
+    if (req.method !== "GET" && !originOk(origin) && !(role === "owner" && extraOrigins.includes(origin)) && !((role === "drive" || TURN_ROLES.has(role)) && inviteOrigin && origin === inviteOrigin)) return plain(res, 403);
     const r = ROUTES.find((x) => x.method === req.method && x.path === route);
     if (!r) return plain(res, 404);
     if (!roleMay(role, r.right)) return plain(res, 403);
@@ -661,6 +669,7 @@ export async function startLiveView({ covers = null, activityLog = null, reporte
 
   async function tick() {
     invites.sweep();
+    await turnGate.tick().catch((e) => log("turn", e?.message || e));
     if (watching()) { await follow(); broadcast("tabs", await tabsInfo()); }
   }
   const timer = setInterval(() => tick().catch((e) => log("liveview", e?.message || e)), TICK_MS);
@@ -680,6 +689,8 @@ export async function startLiveView({ covers = null, activityLog = null, reporte
     // null for a build whose capture page reads none. Returns the key.
     newCaptureKey(on = true) { captureKey = on ? randomBytes(32).toString("base64url") : null; return captureKey; },
     follow,
+    // A grant was just made (its tab's new pop-ups join its scope from now on; each tick checks too).
+    watchGrants: () => turnGate.watch().catch((e) => log("turn", e?.message || e)),
     reconnecting: (except) => push.reconnecting(except),
     // The badge state, mirrored in the viewer's own frame (pages can't fake it there).
     setStatus(next) {
@@ -768,7 +779,7 @@ export async function startLiveView({ covers = null, activityLog = null, reporte
     close: () => {
       closed = true;
       clearInterval(timer);
-      stopEnded(); stopApprovals(); stopRoles(); stopTimeline(); stopOutlines(); stopClickApprovals();
+      stopEnded(); stopApprovals(); stopRoles(); stopTimeline(); stopOutlines(); stopClickApprovals(); turnGate.close();
       for (const stop of stopTools) stop();
       server.close();
       for (const r of clients) r.end();

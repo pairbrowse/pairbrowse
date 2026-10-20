@@ -17,13 +17,14 @@ import { dirname } from "node:path";
 import { validName } from "../sessions.mjs";
 
 export const AUDIT_MAX_BYTES = 1024 * 1024;
-export const KINDS = ["minted", "notified", "notify-failed", "reminded", "redeemed", "reuse", "stream-refused", "input-refused", "ended"];
+export const KINDS = ["minted", "notified", "notify-failed", "reminded", "redeemed", "reuse", "stream-refused", "input-refused", "request-refused", "ended"];
 // The hand-off channels (B6). A sender added to the notify table passes its type through
 // createAudit's `channels`, so the composition root hands the table's types over.
 export const CHANNEL_TYPES = ["webhook", "ntfy", "telegram", "discord", "slack"];
 // Each kind's words. minted: the action kind (B7) and "replacement" for a link reissued after a
 // restart (B16); notified, notify-failed: the channels; reminded: the channels and whether the
-// redeem key was spent already; reuse: which key; stream-refused, input-refused: why; ended: the
+// redeem key was spent already; reuse: which key; stream-refused, input-refused, request-refused (any
+// other request on a grant key, such as the landing page): why; ended: the
 // grant's end reason (B15). Kinds not listed take no detail. "channels" stands for CHANNEL_TYPES.
 export const DETAILS = {
   minted: ["captcha", "2fa", "payment", "login", "other", "replacement"],
@@ -33,6 +34,7 @@ export const DETAILS = {
   reuse: ["redeem-key", "view-key"],
   "stream-refused": ["second-stream", "other-origin", "other-session", "expired"],
   "input-refused": ["out-of-scope", "not-allowed", "expired"],
+  "request-refused": ["other-origin"],
   ended: ["done", "cleared", "agent", "tab-closed", "session-switched", "revoked", "expired", "browser-restarted", "helper-stopped"],
 };
 const FIELDS = new Set(["kind", "grant", "session", "tab", "detail"]);

@@ -71,6 +71,7 @@ export function createInvites({ now = () => Date.now(), mono = () => performance
     ended(gone);
   };
   const roleListeners = new Set(); // called with an invite's id when its role changed
+  const allListeners = new Set(); // called when every invite is revoked at once (hand-offs end too)
   const publicView = ({ id, role, approve, label, share, mode, createdAt, expiresAt }) => ({ id, role, approve: approve === true, label, share, mode, createdAt, expiresAt });
   return {
     // share: "link" (a live view link, reached through an SSH tunnel or liveViewHosts) or "code"
@@ -117,7 +118,14 @@ export function createInvites({ now = () => Date.now(), mono = () => performance
       if (had) ended([String(id)]);
       return had;
     },
-    revokeAll() { const ids = [...all.keys()]; all.clear(); ended(ids); return ids.length; },
+    revokeAll() {
+      const ids = [...all.keys()];
+      all.clear();
+      ended(ids);
+      for (const fn of allListeners) try { fn(); } catch {}
+      return ids.length;
+    },
+    onRevokeAll(fn) { allListeners.add(fn); return () => allListeners.delete(fn); },
     // The invite this key belongs to, if it's still valid. Compares against every invite, in
     // constant time each, so timing doesn't tell which one (or whether any) came close.
     match(given) {
@@ -160,8 +168,8 @@ export function createInvites({ now = () => Date.now(), mono = () => performance
 // "turn" and "redeem" are a hand-off grant's (daemon/grants.mjs, spec server-mode B2), never an
 // invite's: "redeem" (the link as delivered) only reaches its landing page; "turn" (the view key
 // it gives) sees and drives the handed-over tabs and reaches the turn routes ("turn"), and never
-// tab, profile, approve, invite, tools, session or config. The live view's grant gate (spec step
-// 19, not built yet) refuses it POST pause too, though pause needs only input.
+// tab, profile, approve, invite, tools, session or config. The live view refuses it POST pause too
+// (routes/viewer.mjs), though pause needs only input.
 const RIGHTS = {
   owner: new Set(["page", "events", "thumb", "state", "input", "tab", "profile", "approve", "session", "record", "journal", "invite", "layout", "strip", "timeline", "config", "outline", "tools", "capture", "activity"]),
   drive: new Set(["page", "events", "thumb", "state", "input", "tab"]),

@@ -33,8 +33,9 @@ export async function release(cdp) {
 // getContext(), currentUrl(): as startLiveView's. personTab(page): a person's own tab. replayer:
 // the input replayer (attach, startCast, resetFit). broadcast(event, data), tabsInfo(): the live
 // view's. viewers: the streams that show the page; watching(): someone does. isClosed(): the live
-// view is closing. log(...): daemon.log.
-export function createCast({ getContext, currentUrl, personTab, replayer, broadcast, tabsInfo, viewers, watching, isClosed, log }) {
+// view is closing. log(...): daemon.log. pinned(): the tabs the picture is held to while a hand-off
+// viewer watches (spec server-mode B4: a grant's scope, its handed-over tab first), or null.
+export function createCast({ getContext, currentUrl, personTab, replayer, broadcast, tabsInfo, viewers, watching, isClosed, log, pinned = () => null }) {
   const state = {
     shown: null, // the tab on screen: { page, cdp }
     lastFrame: null,
@@ -118,11 +119,23 @@ export function createCast({ getContext, currentUrl, personTab, replayer, broadc
   }
 
   // Follow the tab Claude is working in, whenever that changes. Between changes, the tab you
-  // picked in the viewer stays put.
+  // picked in the viewer stays put. Pinned to a hand-off's tabs, the picture stays on them while
+  // the agent's tab changes elsewhere, and comes back to them when what was shown goes away.
   async function follow() {
     try {
       const ctx = await getContext();
       const url = await currentUrl();
+      const pin = (pinned() || []).filter((p) => !p.isClosed?.());
+      if (pin.length) {
+        const stay = state.shown ? pin.includes(state.shown.page) : state.switching > 0;
+        // No address recorded: once the pin goes, the next follow() shows the agent's tab again
+        // even if its address never changed. The tab list still marks the agent's tab.
+        state.followed = undefined;
+        const at = url && ctx.pages().find((p) => p.url() === url);
+        if (at && !hiddenFromLiveView(at.url())) state.followedPage = at;
+        if (!stay) await show(pin[0]);
+        return;
+      }
       if ((state.shown || state.switching) && url === state.followed) return;
       state.followed = url;
       // The browser's own pages are never shown; followedPage stays the agents' page (a browser

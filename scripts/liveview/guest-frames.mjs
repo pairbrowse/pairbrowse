@@ -33,7 +33,8 @@ export function createGuestFrames({ covers = null, viewers, linkGuests, shownPag
       if (!covered) return;
       const msg = sse("frame", covered);
       for (const res of viewers) {
-        if (!linkGuests.has(res) || res.destroyed) continue;
+        // A hand-off's own stream (role turn) gets its tabs' frames as they are (liveview/grants.mjs).
+        if (!linkGuests.has(res) || linkGuests.get(res).role === "turn" || res.destroyed) continue;
         // A reader that stopped reading is cut, one far behind skips frames (as broadcast does).
         if (res.writableLength > STALLED_BYTES) { res.destroy(); continue; }
         if (res.writableLength > FRAME_SKIP_BYTES) continue;

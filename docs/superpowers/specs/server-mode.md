@@ -105,6 +105,7 @@ requested-vs-measured record, Linux and GPU-host tests.
 | `scripts/daemon/audit.mjs` (new) | append-only `audit.jsonl` for grants, network, profiles | B (used by C, D) |
 | `scripts/daemon/grants.mjs` (new) | grant table: mint, redeem, scope, end, hold | B |
 | `scripts/liveview/grants.mjs`, `scripts/liveview/routes/turn.mjs` (new) | redeem page, view-key stream gate, turn routes | B |
+| `scripts/liveview-redeem.html`, `.js`, `.css` (new) | a hand-off link's landing page | B |
 | `scripts/liveview-turn.js` (new viewer asset) | phone-first turn viewer | B |
 | `scripts/daemon/notify/` (new) | sender interface: webhook, ntfy, Telegram, Discord, Slack | B (used by C) |
 | `scripts/daemon/yourturn.mjs` (new) | hand-off lifecycle, reminders, payment isolation, compatibility vs verification | B |
@@ -356,7 +357,8 @@ by the person. On no response: progress saved, exactly one reminder, safe stop.
   the first tap wins); the status result then tells the agent the person must open the live view
   another way.
 - **B8. Phone-first turn viewer** (`scripts/liveview-turn.js`, loaded by `liveview.js` with a
-  same-origin dynamic import only for roles turn and redeem, so `liveview.js` stays under 800 lines):
+  same-origin dynamic import only for role turn, so `liveview.js` stays under 800 lines; role redeem
+  gets its own landing page, step 19):
   - A visible "Type here" box (`<input autocomplete="off" autocapitalize="off" spellcheck="false"
     enterkeyhint="done">`) opens the on-screen keyboard. Its `beforeinput` maps `insertText` to one
     `char` event per character (a `text` event above 32 characters), `deleteContentBackward` to
@@ -462,7 +464,7 @@ by the person. On no response: progress saved, exactly one reminder, safe stop.
 - **B17. Audit.** `scripts/daemon/audit.mjs` `createAudit({ file, now, log })` appends `{ t, kind,
   grant, session, tab, detail }` to `paths.audit` (`~/.pairbrowse/audit.jsonl`, 0600, rotated at 1 MB).
   Kinds: `minted, notified, notify-failed, reminded, redeemed, reuse, stream-refused, input-refused,
-  ended`. `tab` is origin and path only; `detail` from a fixed vocabulary; unknown fields refused.
+  request-refused, ended`. `tab` is origin and path only; `detail` from a fixed vocabulary; unknown fields refused.
 - **B18. Desktop unchanged** with `handoff.enabled` false, apart from the card-field rule of B13. The `char` key and one-in-flight posting stay
   turn-only in this phase.
 
@@ -519,7 +521,7 @@ Modules:
   from `inviteOrigin`. A turn stream joins `linkGuests` with `{ role: "turn", grant }` (the approval
   card rule, `scripts/daemon/approvals.mjs:11-12`, applies) but skips covers for scope frames (B8).
 - `scripts/liveview/routes/turn.mjs`: `POST redeem` (role redeem), `POST turn-done`, `POST turn { show }`,
-  `POST turn-fill-card` (B12), `POST turn-revoke` (owner, from the Tools tab).
+  `POST turn-revoke` (owner, from the Tools tab); `POST turn-fill-card` (B12) joins it in step 45.
 - `scripts/liveview/input.mjs`: `char` in `readViewerInput` and `replay`.
 - `ui/events.js`: `turn` (`{ id, action, host, expiresAt, scope, state }`) and `turn-ended` (`{ reason }`),
   to the grant's stream only.
@@ -545,8 +547,8 @@ stream opens, cast pins, tab comes to front; person acts; Done, cleared or agent
 Errors: every channel fails (grant stays until expiry, status "Couldn't reach any hand-off channel
 (<types>): tell the user directly", audit `notify-failed`); enabled with no usable channel (no grant,
 status warning); spent, expired, ended or other-session key (404, indistinguishable; audit `reuse` by
-spent hash); second stream (409 "This hand-off is open somewhere else."); out-of-scope input (409
-"That tab isn't on screen.").
+spent hash); second stream (409 "This hand-off is open somewhere else.", plus its next step); out-of-scope input (409
+"That tab isn't on screen.", plus its next step).
 
 ### Migration
 None for state. `handoff` defaults keep today's behavior, except one rule that applies everywhere:
@@ -1248,7 +1250,7 @@ it depends on.
    extended through `channels` so a new sender stays one file plus its table entry) and `no-link`,
    `no-channel`, `already-opened`; `reuse` `redeem-key`, `view-key`; `stream-refused`
    `second-stream`, `other-origin`, `other-session`, `expired`; `input-refused` `out-of-scope`,
-   `not-allowed`, `expired`; `ended` the B15 reasons; `redeemed` none. The name must be missing or
+   `not-allowed`, `expired`; `request-refused` `other-origin` (step 19); `ended` the B15 reasons; `redeemed` none. The name must be missing or
    a regular file (`lstat` first: a link, pipe or folder refuses the line); the file is opened
    `O_APPEND | O_NOFOLLOW | O_NONBLOCK` (a pipe swapped in fails ENXIO instead of blocking the helper),
    must be a regular file of the helper's uid, is put back to 0600 when found wider, and moves to
@@ -1351,6 +1353,48 @@ it depends on.
     yet" (the type box, and its "keeps nothing", come with the turn viewer, step 20).
 19. Live view grant server: redeem page, stream gate, `routes/turn.mjs`, pinning, filters, events
     (B-AP1, B3, B4, B5). -> 17, 18
+   Landed as: `startLiveView({ grants })` (null: no grant key ever matches). `scripts/liveview/grants.mjs`
+   `createTurnGate(...)`: the dispatcher matches the owner's key, the pages' key, invites, then
+   grants (`grants.match(key, { session })`, added: both keys in one pass, so a used key audits
+   `reuse` once), as a guest `{ id: "turn-<id>" | "redeem-<id>", grant, role, label: "Hand-off" }`;
+   only on the owner's port, under loopback or `liveViewHosts` names (B5). A grant-key request
+   with an Origin that is neither loopback nor `inviteOrigin` is refused, GETs too (another site
+   could otherwise hold the one stream), and audited through `grants.refused(id, kind, detail)`
+   (added: `stream-refused` `other-origin` for the view key's event stream, `request-refused`
+   `other-origin` for any other GET such as the landing page, `input-refused` `not-allowed` or
+   `out-of-scope`). The
+   landing page is its own small page, `scripts/liveview-redeem.html` with `liveview-redeem.js` and
+   `.css` (in `ASSETS`), served for role redeem at `GET /<redeemKey>/` under `VIEWER_CSP`: the step
+   sentence (`actionSentence`), the host, the expiry (UTC, rewritten in the phone's own time) and
+   "Take over", which posts `redeem` and moves with `location.replace` (B-AP1). `routes/turn.mjs`:
+   `POST redeem` (role redeem; 404 alike for used, ended or unknown), `POST turn-done`, `POST turn
+   { show: tabId }` (scope tabs only, else 409), `POST turn-revoke { id }` (right `tools`, the
+   owner). `turn-fill-card` moves to step 45 with the saved card. Stream gate in the viewer's
+   events route: `openStream` or 409 "This hand-off is open somewhere else. Close it there, ..."; the stream joins
+   `linkGuests` (approval card rule applies). Filters: `forTurn` keeps tabs and activity of scope
+   tabs, by each tab's id (`tabsInfo()` entries carry `id`; a tab number shifts when a tab closes
+   while the list is built); frames, `thumb.jpg` (409 when another tab is on screen) and the first frame come only
+   from scope, uncovered, and `guest-frames.mjs` skips turn streams, so other guests keep covers.
+   Input: 409 "That tab isn't on screen. Go back ..." unless a scope tab is shown, checked again in the input
+   queue; `readViewerInput` and `replay` drop `nav go` for role turn; `POST pause` is 403 for
+   role turn. Pinning: `cast.mjs` `follow()` takes `pinned()` (every open turn stream's scope):
+   while one is open the picture stays on a scope tab and goes back to the grant's tab whenever
+   another is shown (the owner's own switch too, at the next tick); a pinned `follow()` records
+   no `followed` address, so the `follow()` that `onEnd` calls brings the picture back to the
+   agent's tab even when its address did not change. Events (`ui/events.js`,
+   `to: "turn"`): `turn` `{ id, action, host, expiresAt, scope: [{ id, title, host, shown }], state:
+   "on" | "off" }` at stream open and whenever it changes (tabs broadcast, a pop-up joining), and
+   `turn-ended` `{ reason }` from `onEnd`, after which the stream closes; the viewer
+   (`liveview.js`, until step 20's turn viewer) closes its EventSource on `turn-ended` and never
+   opens it again, so its own reconnect with the dead view key does not audit a false `reuse`. Scope: the gate watches
+   the browser context from the first open grant (each tick, or the live view's `watchGrants()`
+   right after a mint, step 21): a tab opened later whose `opener()` (bounded, 1 s) is in a scope
+   joins it (`addToScope`), any tab closing calls `grants.closed`; tabs open before the watch are
+   not asked. Each tick ends grants of another session than the one shown (`session-switched`).
+   `invites.onRevokeAll` (added) ends every grant `revoked` (`pairbrowse_invite revoke_all`; also
+   `sharing.endAll` when the window closes, which step 21 or 22 precedes with `browser-restarted`
+   or `helper-stopped`). Tests: `test/liveview-grants.test.mjs`; the masking half of "another
+   joiner's ... agent's results stay masked" lands with B10 (step 21).
 20. Turn viewer `liveview-turn.js` (phone-first) and mobile viewer tests (B8). -> 19
 21. `daemon/yourturn.mjs`, lambdas out of `daemon.mjs`, status result, `TURN_MS`, masking (B7, B10,
     B11). -> 16, 19

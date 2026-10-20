@@ -14,7 +14,7 @@ const routes = readdirSync(join(root, "scripts/liveview/routes")).filter((f) => 
 
 test("every event the live view sends is in ui/events.js", () => {
   const sent = new Set();
-  for (const f of ["scripts/liveview.mjs", ...routes]) {
+  for (const f of ["scripts/liveview.mjs", "scripts/liveview/grants.mjs", ...routes]) {
     // broadcast("x") and sse("x") on the live view's streams; push.broadcast is the joiners' channel.
     for (const [, name] of read(f).matchAll(/(?<![.\w])(?:broadcast|sse)\("([a-z-]+)"/g)) sent.add(name);
   }
@@ -26,7 +26,7 @@ test("every event the live view sends is in ui/events.js", () => {
 
 test("each event says who gets it, and the pages' lists come from the one list", () => {
   for (const [name, e] of Object.entries(SERVER_EVENTS)) {
-    assert.ok(["all", "owner", "pages", "viewers"].includes(e.to), name);
+    assert.ok(["all", "owner", "pages", "viewers", "turn"].includes(e.to), name);
     assert.ok(e.pages === undefined || ["shared", "own"].includes(e.pages), name);
     if (e.pages === "own") assert.equal(typeof e.kind, "string", `${name}: an own-stream event names its kind`);
     if (e.delta) assert.equal(e.pages, "shared", `${name}: only shared-stream events are deltas`);
@@ -37,4 +37,6 @@ test("each event says who gets it, and the pages' lists come from the one list",
   for (const name of DELTA_EVENTS) assert.ok(STREAM_EVENTS.includes(name));
   // Never to a guest: everything but the "all" events and the picture.
   for (const name of ["profile", "join", "invites", "approval", "capture", "downloads", "config", "outline"]) assert.ok(OWNER_EVENTS.includes(name), name);
+  // A hand-off's own events go to its stream alone, never on any page's stream.
+  for (const name of ["turn", "turn-ended"]) assert.ok(SERVER_EVENTS[name].to === "turn" && !STREAM_EVENTS.includes(name) && !OWNER_EVENTS.includes(name), name);
 });

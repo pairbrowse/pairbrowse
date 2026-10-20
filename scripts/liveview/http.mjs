@@ -107,6 +107,9 @@ const viewerHtml = readFileSync(new URL("liveview.html", scripts), "utf8");
 const ASSETS = new Map(Object.entries({
   "liveview.css": ["liveview.css", "text/css; charset=utf-8"],
   "liveview.js": ["liveview.js", "text/javascript; charset=utf-8"],
+  // A hand-off link's landing page (liveview/grants.mjs).
+  "liveview-redeem.css": ["liveview-redeem.css", "text/css; charset=utf-8"],
+  "liveview-redeem.js": ["liveview-redeem.js", "text/javascript; charset=utf-8"],
   "tokens.css": ["../ui/tokens.css", "text/css; charset=utf-8"],
   "common.js": ["../ui/common.js", "text/javascript; charset=utf-8"],
   "vocab.js": ["../ui/vocab.js", "text/javascript; charset=utf-8"],

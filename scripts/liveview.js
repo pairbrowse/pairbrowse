@@ -116,16 +116,27 @@ const saveView = () => { try { localStorage.setItem(VIEW_KEY, JSON.stringify(vie
 // seconds (a hidden pane, a background tab: nobody sees the frames, and with no viewer left the
 // helper stops the tab's screencast), opened again the moment it's shown.
 let es = null;
+let ended = false; // a hand-off that ended: its key is dead, so the stream is never opened again
 const handlers = [];
 const on = (event, fn) => { handlers.push([event, fn]); es?.addEventListener(event, (e) => fn(JSON.parse(e.data))); };
 function openStream() {
-  if (es) return;
+  if (es || ended) return;
   es = new EventSource(base + "events");
   for (const [event, fn] of handlers) es.addEventListener(event, (e) => fn(JSON.parse(e.data)));
   es.onopen = () => { setState("live"); fit(); };
   es.onerror = () => { if (es) setState(es.readyState === EventSource.CLOSED ? "closed" : "reconnecting"); };
 }
 openStream();
+// A hand-off ended (done, revoked, expired): close the stream before EventSource reconnects on
+// its own with the dead key (the helper would audit that as a reused link).
+on("turn-ended", () => {
+  ended = true;
+  es?.close();
+  es = null;
+  setState("closed");
+  $("overlay-title").textContent = "This hand-off ended";
+  $("overlay-text").textContent = "You can close this page.";
+});
 let hiddenTimer = null;
 document.addEventListener("visibilitychange", () => {
   clearTimeout(hiddenTimer);

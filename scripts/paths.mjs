@@ -167,7 +167,7 @@ export const DEFAULT_CONFIG = {
   handoff: { enabled: false, away: false, publicLink: false, grantMinutes: 15, remindMinutes: 10, channels: [] },
   // Fixed live view port, so an SSH tunnel command stays the same. 0 picks a random port.
   liveViewPort: 0,
-  // Extra host names the live view answers to, for invite links only (say, this computer's
+  // Extra host names the live view answers to, for invite and hand-off links only (say, this computer's
   // Tailscale name, myhost.example.ts.net). The live view still listens on 127.0.0.1 only.
   liveViewHosts: [],
   // Where invite links point, e.g. "https://myhost.example.ts.net"; its host must be in

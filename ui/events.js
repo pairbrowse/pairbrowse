@@ -8,7 +8,8 @@
 //             browser's own pages);
 //   "pages"   the browser's own pages' streams only (?page=<kind>, the owner's key); with kind:
 //             only that page kind's streams (least privilege: SDPs reach the capture page alone);
-//   "viewers" the streams that show the picture (not ?panel, not ?page).
+//   "viewers" the streams that show the picture (not ?panel, not ?page);
+//   "turn"    a hand-off grant's own stream alone (liveview/grants.mjs), never broadcast.
 // pages: how the browser's own pages listen (common.js helperStream).
 //   "shared"  on the pages' one shared stream (STREAM_EVENTS); delta: never replayed to a page
 //             that joins late (it fetches its snapshot instead);
@@ -43,6 +44,8 @@ export const SERVER_EVENTS = Object.freeze({
   capture: { to: "pages", kind: "capture", pages: "own" },
   "tab-order": { to: "pages", pages: "shared", delta: true },
   "overlay-pointers": { to: "pages", pages: "shared", delta: true },
+  turn: { to: "turn" },
+  "turn-ended": { to: "turn" },
 });
 
 const names = (keep) => Object.freeze(Object.keys(SERVER_EVENTS).filter((n) => keep(SERVER_EVENTS[n])));

@@ -17,6 +17,31 @@ const KEYS = {
 const COMMANDS = { selectAll: "a", cut: "x", undo: "z", redo: "z" };
 
 const TEXT_MAX = 2000;
+
+// One typed character (the turn viewer's type box on a phone: one `char` per character, so
+// one-time-code boxes that move on keydown and Space on a focused checkbox work). Exactly one code
+// point, printable (no control character: Enter, Tab and Backspace are named keys), with Shift or
+// no modifier only, so no Ctrl, Cmd or Alt letter (a shortcut, the clipboard) is ever replayed.
+// Returns the character, or null.
+export function charOf(text, modifiers = 0) {
+  if (typeof text !== "string" || !text || text.length > 2 || (modifiers !== 0 && modifiers !== 8)) return null;
+  const points = [...text];
+  if (points.length !== 1) return null;
+  const c = points[0].codePointAt(0);
+  if (c < 0x20 || (c >= 0x7f && c <= 0x9f) || (c >= 0xd800 && c <= 0xdfff)) return null;
+  return points[0];
+}
+// The key code a typed character is dispatched with: a letter's or digit's own (its upper case),
+// Space 32, punctuation's OEM code, else 0. Never a character's code point: "-" is 45 (Insert) and
+// "." 46 (Delete), so Shift + either would paste or cut. Shared with shared browser mode.
+export const PUNCT_CODES = { ";": 186, ":": 186, "=": 187, "+": 187, ",": 188, "<": 188, "-": 189, "_": 189, ".": 190, ">": 190,
+  "/": 191, "?": 191, "`": 192, "~": 192, "[": 219, "{": 219, "\\": 220, "|": 220, "]": 221, "}": 221, "'": 222, '"': 222 };
+function charKey(ch) {
+  if (/^[a-z]$/i.test(ch)) return { code: `Key${ch.toUpperCase()}`, keyCode: ch.toUpperCase().charCodeAt(0) };
+  if (/^[0-9]$/.test(ch)) return { code: `Digit${ch}`, keyCode: ch.charCodeAt(0) };
+  if (ch === " ") return { code: "Space", keyCode: 32 };
+  return { code: "", keyCode: Object.hasOwn(PUNCT_CODES, ch) ? PUNCT_CODES[ch] : 0 };
+}
 const NAV_TIMEOUT_MS = { back: 10_000, forward: 10_000, reload: 15_000, go: 20_000 };
 const FIT_MIN = { width: 320, height: 240 };
 const FIT_MAX = 3000;
@@ -28,7 +53,8 @@ const CAST_QUALITY = 60;
 
 // One event from a viewer of the live view (liveview.js), checked before it is replayed: known
 // kinds and actions, places inside the picture (frame: its { w, h }, CSS pixels; unknown: a wide
-// bound), modifiers as CDP takes them (Alt 1, Ctrl 2, Meta 4, Shift 8), text and wheel bounded.
+// bound), modifiers as CDP takes them (Alt 1, Ctrl 2, Meta 4, Shift 8), text and wheel bounded,
+// a typed character one printable character with Shift or nothing (charOf).
 // Nothing an invited viewer sends uses the host's clipboard: no cut command, no Shift+Delete (the
 // keys are the named ones in KEYS only, never letters or Insert). The owner's own cut stays.
 // Returns the event to replay, or null.
@@ -60,6 +86,10 @@ export function readViewerInput(ev, { frame = null, role = "owner" } = {}) {
     return p ? { type: "wheel", ...p, dx: d(ev.dx), dy: d(ev.dy) } : null;
   }
   if (ev.type === "text") return typeof ev.text === "string" && ev.text ? { type: "text", text: ev.text.slice(0, TEXT_MAX) } : null;
+  if (ev.type === "char") {
+    const ch = charOf(ev.text, m);
+    return ch ? { type: "char", text: ch, modifiers: m } : null;
+  }
   if (ev.type === "nav" && NAV.has(ev.action)) return ev.action === "go" ? (typeof ev.url === "string" && ev.url.length <= 2048 ? { type: "nav", action: "go", url: ev.url } : null) : { type: "nav", action: ev.action };
   if (ev.type === "viewport") return role === "owner" ? { type: "viewport", on: ev.on === true, w: Number(ev.w) || 0, h: Number(ev.h) || 0, dpr: Number(ev.dpr) || 1 } : null;
   if (ev.type === "command" && Object.hasOwn(COMMANDS, ev.command)) return ev.command === "cut" && role !== "owner" ? null : { type: "command", command: ev.command, modifiers: m };
@@ -139,6 +169,14 @@ export function createInputReplayer() {
         await cdp.send("Input.dispatchMouseEvent", { type: "mouseWheel", x: ev.x, y: ev.y, deltaX: ev.dx || 0, deltaY: ev.dy || 0 });
       } else if (ev.type === "text") {
         await cdp.send("Input.insertText", { text: String(ev.text).slice(0, TEXT_MAX) });
+      } else if (ev.type === "char") {
+        // A key press with its text, down and up: checked again here, as the text cap above.
+        const ch = charOf(ev.text, ev.modifiers || 0);
+        if (!ch) return;
+        const { code, keyCode } = charKey(ch);
+        const base = { key: ch, code, windowsVirtualKeyCode: keyCode, modifiers: ev.modifiers || 0 };
+        await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", ...base, text: ch, unmodifiedText: ch });
+        await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", ...base });
       } else if (ev.type === "nav") {
         if (ev.action === "back") await page.goBack({ timeout: NAV_TIMEOUT_MS.back }).catch(() => {});
         else if (ev.action === "forward") await page.goForward({ timeout: NAV_TIMEOUT_MS.forward }).catch(() => {});

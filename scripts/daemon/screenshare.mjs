@@ -5,7 +5,7 @@
 // What a joiner does comes back on that connection; it's checked here and replayed in the tab
 // through CDP, like the live view's input (liveview/input.mjs).
 // call(fn, arg, ms): runs fn(arg) in the side panel extension's worker (panel.mjs).
-import { createInputReplayer } from "../liveview/input.mjs";
+import { createInputReplayer, PUNCT_CODES } from "../liveview/input.mjs";
 import { within, sleep } from "../util.mjs";
 import { FRAME_EVERY_MS } from "../../ui/limits.js";
 
@@ -56,8 +56,6 @@ function shortcutCode(key, code) {
 // The key code a plain key (no Ctrl/Cmd) is dispatched with when none came: a letter's or digit's
 // own (its upper case), punctuation's OEM code, else where it is (KeyL: 76), else 0. Never a
 // character's code point: "-" is 45 (Insert) and "." 46 (Delete), so Shift + either would paste or cut.
-const PUNCT_CODES = { ";": 186, ":": 186, "=": 187, "+": 187, ",": 188, "<": 188, "-": 189, "_": 189, ".": 190, ">": 190,
-  "/": 191, "?": 191, "`": 192, "~": 192, "[": 219, "{": 219, "\\": 220, "|": 220, "]": 221, "}": 221, "'": 222, '"': 222 };
 function plainCode(key, code) {
   if (/^[a-z0-9]$/i.test(key)) return key.toUpperCase().charCodeAt(0);
   if (Object.hasOwn(CODES, key)) return CODES[key];

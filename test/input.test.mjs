@@ -2,7 +2,7 @@ import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { createInputReplayer, clamp } from "../scripts/liveview/input.mjs";
+import { createInputReplayer, clamp, readViewerInput, charOf } from "../scripts/liveview/input.mjs";
 
 // The shown tab: a CDP session that records what it's sent, and a page that records navigation.
 function shownTab() {
@@ -57,6 +57,34 @@ test("text is capped, and only the listed keys and editing commands are sent", a
   assert.equal(tab.cdp.sent[0][1].text, "\r", "Enter types a return");
   assert.deepEqual(tab.cdp.sent[2][1], { type: "rawKeyDown", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9, modifiers: 8 });
   assert.deepEqual(tab.cdp.sent[4][1], { type: "rawKeyDown", key: "z", code: "KeyZ", windowsVirtualKeyCode: 90, modifiers: 4, commands: ["undo"] });
+});
+
+test("char replays keyDown with text and keyUp; Ctrl or Meta dropped", async () => {
+  const r = createInputReplayer();
+  const tab = shownTab();
+  for (const ev of [{ text: "7" }, { text: "Q", modifiers: 8 }, { text: " " }, { text: "-", modifiers: 8 }, { text: "é" }, { text: "😀" }]) {
+    const one = readViewerInput({ type: "char", ...ev }, { role: "turn" });
+    assert.ok(one, JSON.stringify(ev));
+    await r.replay(tab, one, "turn");
+  }
+  assert.deepEqual(methods(tab.cdp), Array(6).fill(["Input.dispatchKeyEvent:keyDown", "Input.dispatchKeyEvent:keyUp"]).flat());
+  assert.deepEqual(tab.cdp.sent[0][1], { type: "keyDown", key: "7", code: "Digit7", windowsVirtualKeyCode: 55, modifiers: 0, text: "7", unmodifiedText: "7" }, "a one-time-code box that moves on keydown sees the digit");
+  assert.deepEqual(tab.cdp.sent[1][1], { type: "keyUp", key: "7", code: "Digit7", windowsVirtualKeyCode: 55, modifiers: 0 });
+  assert.deepEqual(tab.cdp.sent[2][1], { type: "keyDown", key: "Q", code: "KeyQ", windowsVirtualKeyCode: 81, modifiers: 8, text: "Q", unmodifiedText: "Q" });
+  assert.deepEqual(tab.cdp.sent[5][1], { type: "keyUp", key: " ", code: "Space", windowsVirtualKeyCode: 32, modifiers: 0 }, "Space ticks a focused checkbox on its key up");
+  assert.equal(tab.cdp.sent[6][1].windowsVirtualKeyCode, 189, "Shift + '-' is the minus key, never Shift+Insert (45)");
+  assert.deepEqual([tab.cdp.sent[8][1], tab.cdp.sent[10][1]].map((p) => [p.text, p.code, p.windowsVirtualKeyCode]), [["é", "", 0], ["😀", "", 0]]);
+
+  // Refused when read: Ctrl, Cmd or Alt held, more than one character, control characters, junk.
+  for (const ev of [{ text: "v", modifiers: 2 }, { text: "v", modifiers: 4 }, { text: "a", modifiers: 10 }, { text: "c", modifiers: 1 }, { text: "ab" }, { text: "" }, { text: "\r" }, { text: "\t" }, { text: "\u007f" }, { text: "\u0085" }, { text: "\ud800" }, { text: 7 }, {}]) {
+    assert.equal(readViewerInput({ type: "char", ...ev }, { role: "owner" }), null, JSON.stringify(ev));
+  }
+  // And again when replayed, whatever reaches the replayer.
+  tab.cdp.sent.length = 0;
+  for (const ev of [{ text: "v", modifiers: 4 }, { text: "v", modifiers: 2 }, { text: "abc" }, { text: "\n" }]) await r.replay(tab, { type: "char", ...ev });
+  assert.deepEqual(tab.cdp.sent, []);
+  assert.equal(charOf("x", 8), "x");
+  assert.equal(charOf("x", 6), null);
 });
 
 test("touch, wheel and back/forward/reload reach the tab", async () => {

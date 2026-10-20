@@ -82,7 +82,7 @@ test("an invited viewer's live view input: places inside the picture, no clipboa
   const { readViewerInput } = await import("../../scripts/liveview/input.mjs");
   const frame = { w: 1200, h: 800 };
   const anyEv = fc.record({
-    type: fc.constantFrom("mouse", "touch", "wheel", "text", "nav", "viewport", "command", "key", "evaluate", ""),
+    type: fc.constantFrom("mouse", "touch", "wheel", "text", "char", "nav", "viewport", "command", "key", "evaluate", ""),
     action: fc.constantFrom("mousePressed", "mouseMoved", "touchStart", "touchEnd", "go", "back", "x"),
     x: fc.oneof(fc.double({ min: -5000, max: 5000, noNaN: false }), fc.constant("10")), y: fc.double({ min: -5000, max: 5000 }),
     command: fc.constantFrom("cut", "selectAll", "undo", "redo", "copy", "paste", "__proto__"),
@@ -93,15 +93,48 @@ test("an invited viewer's live view input: places inside the picture, no clipboa
   check(fc.property(anyEv, (ev) => {
     const out = readViewerInput(ev, { frame, role: "drive" });
     if (!out) return;
-    assert.ok(["mouse", "touch", "wheel", "text", "nav", "command", "key"].includes(out.type), out.type);
+    assert.ok(["mouse", "touch", "wheel", "text", "char", "nav", "command", "key"].includes(out.type), out.type);
     if ("x" in out && out.type !== "touch") assert.ok(out.x >= 0 && out.x <= frame.w && out.y >= 0 && out.y <= frame.h, JSON.stringify(out));
     if (out.type === "command") assert.notEqual(out.command, "cut");
     if (out.type === "key") assert.ok(!(out.key === "Delete" && out.modifiers & 8), "Shift+Delete cuts");
     if (out.type === "text") assert.ok(out.text.length <= 2000);
+    if (out.type === "char") assert.ok([...out.text].length === 1 && (out.modifiers === 0 || out.modifiers === 8), JSON.stringify(out));
     if ("modifiers" in out) assert.ok(Number.isInteger(out.modifiers) && out.modifiers >= 0 && out.modifiers <= 15);
   }));
   assert.equal(readViewerInput({ type: "command", command: "cut" }, { role: "drive" }), null);
   assert.deepEqual(readViewerInput({ type: "command", command: "cut", modifiers: 4 }, { role: "owner" }), { type: "command", command: "cut", modifiers: 4 }, "the owner's own cut stays");
   assert.equal(readViewerInput({ type: "viewport", on: true, w: 10, h: 10 }, { role: "drive" }), null);
   assert.equal(readViewerInput({ type: "mouse", action: "mousePressed", x: 1300, y: 10 }, { frame, role: "drive" }), null, "outside the picture");
+});
+
+// A hand-off viewer's type box (one `char` per character): whatever text and modifiers arrive, what
+// reaches the page is one key press of one printable character, with Shift or nothing held, and
+// never a key code that is Insert or Delete (Shift + either pastes or cuts).
+test("char never carries more than one character or a modifier other than Shift", async () => {
+  const { readViewerInput, createInputReplayer } = await import("../../scripts/liveview/input.mjs");
+  const sent = [];
+  const tab = { page: {}, cdp: { send: async (method, params) => { sent.push([method, params]); } } };
+  const replayer = createInputReplayer();
+  const text = fc.oneof(
+    fc.string({ maxLength: 4 }), fc.string({ unit: "grapheme", maxLength: 3 }), fc.string({ unit: "binary", maxLength: 3 }),
+    fc.constantFrom("v", "c", "x", "-", ".", " ", "\r", "\n", "\t", "\b", "\u007f", "\u0085", "\ud83d", "\ud83d\ude00", "e\u0301", "Insert", "Delete"),
+    fc.constantFrom(null, 7, ["a"], { toString: () => "a" }),
+  );
+  check(fc.asyncProperty(text, mods, fc.constantFrom("owner", "drive", "turn"), async (t, m, role) => {
+    const out = readViewerInput({ type: "char", text: t, modifiers: m }, { role });
+    if (!out) return;
+    assert.equal(out.type, "char");
+    assert.equal([...out.text].length, 1, JSON.stringify(out));
+    assert.ok(out.text.codePointAt(0) >= 0x20 && out.text !== "\u007f", JSON.stringify(out));
+    assert.ok(out.modifiers === 0 || out.modifiers === 8, JSON.stringify(out));
+    sent.length = 0;
+    await replayer.replay(tab, out, role);
+    assert.deepEqual(sent.map(([method, p]) => `${method}:${p.type}`), ["Input.dispatchKeyEvent:keyDown", "Input.dispatchKeyEvent:keyUp"]);
+    for (const [, p] of sent) {
+      assert.ok(!(p.modifiers & 7), JSON.stringify(p));
+      assert.ok(![45, 46].includes(p.windowsVirtualKeyCode), JSON.stringify(p));
+      assert.ok(!p.commands, "no editing command rides along");
+    }
+    assert.equal(sent[0][1].text, out.text);
+  }));
 });

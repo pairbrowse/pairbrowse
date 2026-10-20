@@ -218,6 +218,16 @@ export function createLaunch(st, deps, api) {
       dropHelperKey(keyFile, captureKeyFile);
       throw new Error("the virtual screen ended while the browser started; see daemon.log");
     }
+    // The session's egress check (daemon/network.mjs, spec server-mode section 3.2 step 6, C7):
+    // before any tab is adopted or saved tab loads. A failure closes the browser and fails the
+    // launch with the reason; the close handler isn't on yet, so it is no crash for the guard.
+    const checked = net ? await network.checkAtLaunch(ctx, st.session, net) : { ok: true };
+    if (!checked.ok) {
+      await within(5000, ctx.close().catch(() => {}));
+      dropHelperKey(keyFile, captureKeyFile);
+      throw new Error(checked.refusal);
+    }
+    if (net?.proxy) step("network check");
     net?.started(); // the running browser's network from now (network.strict(), C11)
     hud.setSandboxOff?.(SANDBOX.on === false); // the bar warns while the sandbox is off
     step("browser (fingerprint and launchPersistentContext inside)");
@@ -262,6 +272,9 @@ export function createLaunch(st, deps, api) {
     // The browser kept crashing soon after each start (browser/supervise.mjs): no new start for now.
     const loop = !st.contextPromise && api.crashLoop();
     if (loop) return Promise.reject(new Error(loop));
+    // The session's proxy failed its check a moment ago (daemon/network.mjs): no new start yet.
+    const held = !st.contextPromise && network?.refusal(st.session);
+    if (held) return Promise.reject(new Error(held));
     if (!st.contextPromise) {
       st.launching = true;
       st.contextPromise = launch().catch((e) => {

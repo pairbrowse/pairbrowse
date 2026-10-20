@@ -43,7 +43,7 @@ export function createContext({ personTabs = createPersonTabs(), config, log, ch
   const api = {};
   // The virtual screen the browser runs on, when this machine needs one (browser/supervise.mjs).
   // With server.keepAlive, the browser kept up with nobody connected.
-  const { stopScreenNow, crashLoop, statusParts, keepAlive, keepAliveStart, isServer } = Object.assign(api, createSupervisor(st, deps, api));
+  const { stopScreenNow, crashLoop, statusParts: screenParts, keepAlive, keepAliveStart, isServer } = Object.assign(api, createSupervisor(st, deps, api));
   // Launching the browser and getContext() (browser/launch.mjs).
   const { dropHelperKey, choiceConfig, profile, getContext, watchClose, ready, reset, openByHand, close, nextShell } = Object.assign(api, createLaunch(st, deps, api));
   // Downloads: kept in the Downloads folder, and Playwright's temporary ones forgotten (browser/downloads.mjs).
@@ -86,8 +86,11 @@ export function createContext({ personTabs = createPersonTabs(), config, log, ch
     // At process exit, where close() can't wait: the virtual screen is told to end now.
     stopScreenNow,
     // The crash-loop guard's refusal while it holds, else null; and what pairbrowse_status adds
-    // about the browser's surroundings (browser/supervise.mjs).
-    crashLoop, statusParts,
+    // about the browser's surroundings (browser/supervise.mjs) and the session's network
+    // (daemon/network.mjs: its last check, or a failed one that holds).
+    crashLoop, statusParts: () => [...screenParts(), ...(network?.statusParts(st.session) || [])],
+    // The refusal the session's starts get while its proxy's failed check holds, else null.
+    networkRefusal: () => network?.refusal(st.session) || null,
     // Server mode (display.mjs serverMode): hand-offs always go to the person's channels there.
     isServer,
     // server.keepAlive: the helper stays when the browser closes and counts as in use (handoff.mjs);

@@ -238,8 +238,18 @@
   more each) and a PairBrowse build that reads them from an owner-only file the helper writes for
   that launch and deletes once the browser is up: no build does yet and the open build never will,
   so such a session doesn't start for now, with an error saying why. A session whose network can't
-  be used doesn't start (its error says why); it never starts direct instead. The checks of the
-  proxy's exit address before saved tabs load, and their repeats, come in a later version.
+  be used doesn't start (its error says why); it never starts direct instead. Before any saved tab
+  loads, at every start (a recovery after a crash included), the proxy's exit is checked: the
+  helper reads `checkUrl` through the proxy, the browser reads it too and gathers WebRTC
+  candidates, and without `expectEgress` this computer's own exit is read once to compare (never
+  kept). The two exits must match and fall inside `expectEgress` (without one, differ from this
+  computer's own), and with `strict` `true` WebRTC may show no address but that exit. Anything
+  else, a timeout included (10 s), closes the browser before a saved tab opens: the session's
+  starts are refused with the reason for a minute (at once again after you change `config.json`
+  or `secrets.env`), `pairbrowse_status` says why and you get one notification. Each check is
+  kept in the session's `network.json` (owner-only, the last 50; clean sessions: memory only)
+  with the proxy's exit and country, never this computer's own address. The repeats every
+  `recheckMinutes` and `onEgressChange` come in a later version.
 - `reportUrl`: where a problem report you send yourself goes (default
   `https://pairbrowse.com/api/report`): an https address with no user, query or fragment.
   `null`: no report is ever sent, and Settings doesn't offer it.

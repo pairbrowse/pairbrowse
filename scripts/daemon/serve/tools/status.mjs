@@ -14,7 +14,8 @@ const BADGE_MS = 4000; // pairbrowse_status waits this long at most for the badg
 // unknown keys and refused values (paths.mjs loadConfig), and the browser's sandbox: off (Linux
 // only) or a request to turn it off refused (engine.mjs SANDBOX). update: a newer PairBrowse
 // installed that this helper waits to move to (handoff.mjs pendingLine), said last. more: the
-// other parts' own, in order, after these (context.statusParts: the virtual screen, a crash loop).
+// other parts' own, in order, after these (context.statusParts: the virtual screen, a crash loop,
+// the session's network).
 export function statusLine(selected = SELECTED, configWarnings = CONFIG_WARNINGS, sandbox = SANDBOX, update = "", more = []) {
   const parts = ["ok"];
   if (selected.instance) parts.push(`PairBrowse instance "${selected.instance}" (${selected.home})`);
@@ -33,9 +34,10 @@ export function createStatusTool(conn, api) {
   const { participant } = conn;
   return {
     async pairbrowse_status(given) {
-      // While the crash-loop guard holds there is no browser to start: the status still goes to
-      // the side panels and the goal log, and the line below says why (context.statusParts).
-      if (!context.crashLoop?.()) await context.getContext();
+      // While the crash-loop guard holds there is no browser to start, nor while the session's
+      // proxy failed its check (a start that fails it now too): the status still goes to the side
+      // panels and the goal log, and the line below says why (context.statusParts).
+      if (!context.crashLoop?.() && !context.networkRefusal?.()) await context.getContext().catch((e) => { if (!context.networkRefusal?.()) throw e; });
       // "agent" is "claude" (working) by another name, for apps that aren't Claude.
       const args = given.kind === "agent" ? { ...given, kind: "claude" } : given;
       // The hand-off first, in the agent's own tab: its step kind is the Tools tab entry's (set

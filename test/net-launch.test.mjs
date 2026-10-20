@@ -204,7 +204,11 @@ test("a launch carries the session's proxy and switches; switching a proxy leave
   const cfg = join(testHome, "config.json");
   const write = (network) => writeFileSync(cfg, JSON.stringify({ network }));
   const d = recordingDriver();
-  const context = makeContext(d.chromium, createNetwork({ configFile: cfg, runDir: join(dir, "run-l") }));
+  // The egress check (net-refuse.test.mjs) passes here: each proxy answers as its own exit.
+  const exitOf = (proxy) => ({ ok: true, ip: proxy.host, loc: "US" });
+  const context = makeContext(d.chromium, createNetwork({ configFile: cfg, runDir: join(dir, "run-l"), observationsFile: (s) => join(dir, "obs-l", s, "network.json"),
+    probe: async (a) => (a.proxy ? exitOf(a.proxy) : { ok: false, problem: "no direct exit here" }),
+    inBrowser: async () => { const server = d.calls.at(-1).options.proxy.server; return { browser: exitOf({ host: new URL(server).hostname }), webrtc: { ok: true, candidates: [] } }; } }));
   const session = context.sessionName();
   write({ proxies: { a: { server: "http://203.0.113.10:3128" }, b: { server: "socks5://198.51.100.7:1080" } }, sessions: { [session]: "a" } });
   await context.getContext();
@@ -248,5 +252,5 @@ test("launch wiring follows section 3.2: screen, network, then the browser; the 
   assert.ok(src.lastIndexOf("try {", network) > src.indexOf("let ctx, net = null;"), "forLaunch inside the try");
   assert.ok(src.indexOf("net?.started();") > engine, "started() after launchEngine");
   const daemon = readFileSync(new URL("../scripts/daemon.mjs", import.meta.url), "utf8");
-  assert.match(daemon, /network: createNetwork\(\{ log \}\)/, "the helper always passes its network part (null is for tests only)");
+  assert.match(daemon, /network: createNetwork\(\{ log, notify: \(text\) => panel\.notify\(text\) \}\)/, "the helper always passes its network part (null is for tests only)");
 });

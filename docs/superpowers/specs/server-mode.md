@@ -132,7 +132,7 @@ in this fixed order:
 3. `deps.network.forLaunch(session, { profileNetwork })`: proxy, strict switches, auth file (C).
 4. Graphics plan and static compatibility errors, with the stored measurement or a probe launch (E).
 5. `launchEngine` with the server-mode sandbox rule (A).
-6. `deps.network.checkAtLaunch(ctx, session)`; failure closes the browser (C).
+6. `deps.network.checkAtLaunch(ctx, session, launch)` (`launch`: step 3's result); failure closes the browser (C).
 7. `readBackend` and `backend.requested`/`backend.stable` (E); failure closes the browser.
 8. `api.restore` (tabs, active tab, agents' successors) or the picker; then `yourturn.recover()` (B).
 
@@ -632,14 +632,15 @@ fail closed, also after recovery.
   `127.0.0.1` traffic to the proxy. A non-loopback bypass is refused in strict mode. No profile
   preference is written for networking.
 - **C6. Checks before any saved tab loads.** (1) A helper-side probe through the proxy (stdlib `net`,
-  `tls`; CONNECT or SOCKS5 with the name as a domain) to `network.checkUrl` before `launchEngine`; (2) a
+  `tls`; CONNECT or SOCKS5 with the name as a domain) to `network.checkUrl`, started with `forLaunch` and
+  running while the browser starts (step 29); (2) a
   browser-side probe of the same URL with CDP `Network.loadNetworkResource` in an internal
   `about:blank` tab; (3) a WebRTC gather in that tab against `stun:stun.cloudflare.com:3478`. Default
   `checkUrl` `https://cloudflare.com/cdn-cgi/trace` (answers `ip=` and `loc=`). Direct sessions run no
   check.
 - **C7. Fail closed** on: proxy unreachable; browser egress differing from the helper-through-proxy
-  egress or outside `expectEgress`; egress equal to the direct one when `expectEgress` is unset; a WebRTC
-  candidate other than mDNS or the proxy egress; strict switches not applicable; a check that times
+  egress or outside `expectEgress`; egress equal to the direct one when `expectEgress` is unset; in strict mode, a WebRTC
+  candidate other than mDNS or the proxy egress (step 29: recorded, not judged, without strict); strict switches not applicable; a check that times
   out. The browser closes, tools are refused with the reason, the person is notified (Phase B channels
   when configured). The same check runs after every recovery (section 3.2). The proxy list has no
   `DIRECT` fallback.
@@ -1704,6 +1705,44 @@ it depends on.
    `test/security.test.mjs` (`NET_CHECK`); stubs in `test/helpers/proxies.mjs` (trace echo, HTTP and
    SOCKS5 proxies, hung and garbled ones, a STUN responder, an openssl-made test CA).
 29. `checkAtLaunch`, fail closed, refusal, status; row C-1 (C7). -> 27, 28
+   Landed as: `daemon/network.mjs` `createNetwork` gains `notify`, `observationsFile` and, for
+   tests, `probe`, `inBrowser`, `now`. `forLaunch` starts the helper's probes for a proxied
+   session (`checkTargets(net)`; through the proxy with the auth file's credentials for an http: or
+   https: proxy, and this computer's own exit only when the proxy has no `expectEgress`), so they
+   run while the browser starts rather than before `launchEngine` as C6 (1) put it: an unreachable
+   proxy still fails before any tab is adopted, at the cost of a window opened and closed.
+   `checkAtLaunch(ctx, session, launch)` (section 3.2 step 6, right after the lost-screen check in
+   `launch.mjs`, before `net.started()`, the page script, `api.adopt`, the `page` and `close`
+   listeners and the restore, so the check tab never reaches tab memory or the strip) runs
+   `checkInBrowser`, awaits the probes (bounded), and judges with `egressVerdict` and
+   `webrtcVerdict`; it answers `{ ok: true }` (a direct session runs nothing) or `{ ok: false,
+   refusal }` and never throws. The launch's state (its network, targets and probes) is kept with
+   the handle `forLaunch` returned, not in the part, so a later `forLaunch` (a Settings test, a
+   recheck, a probe launch) can't take it; a handle with no state (none, another session's, checked
+   already) is refused, never passed unchecked. WebRTC is judged only in strict mode (decided here: without
+   strict's policy a proxied browser always gathers this computer's srflx address, so C7 would make
+   `strict: false` unusable); it is recorded either way. C7's "strict switches not applicable" has
+   no check of its own: a browser that ignores them fails the WebRTC or egress verdict. On a failure
+   `launch.mjs` closes the browser (bounded; the close handler isn't on yet, so it is no crash for
+   the guard and no `onClosed`), drops the key files and throws the refusal: `Session "x" doesn't
+   start: network "id" failed its check before any saved tab opened, so the browser closed.` plus
+   the verdict's reason (never an exit address) and what to do. `refusal(session)` then holds the
+   session's starts (`getContext` rejects with it, no launch) for `HOLD_MS` (60 s) or until
+   `config.json` or `secrets.env` changes (their mtimes). The person is notified once per session
+   and reason through the helper's `notify` (`panel.notify`: side panel or the system's); a
+   message to the Phase B channels needs a new message kind and comes with step 31. Each check is
+   appended to `sessionFile(name, "network.json")` (0600 via `writeJsonAtomic`, `OBSERVATIONS_MAX`
+   50, memory only for a clean session; `observations(session)` reads it) in the observation
+   file's shape, `dns` "strict" or "local", the direct exit never kept. `statusParts(session)`:
+   the held refusal as a warning, else `network "id" (strict): exit checked at launch, country XX`;
+   `context.statusParts` appends it to the supervisor's parts and `context.networkRefusal()` lets
+   `pairbrowse_status` answer while a failure holds (a start that fails now is caught there too).
+   `daemon.mjs` passes `notify`. Row C-1 landed without "egress change pauses agents" (step 31
+   adds it) and names `test/net-browsercheck.test.mjs` and `test/net-refuse.test.mjs`;
+   `test/integration/proxy.test.mjs` joins it when it exists. Tests: `test/net-refuse.test.mjs`
+   (passing check and its record, direct, every C7 failure, strict-only WebRTC, hold, status and
+   notification, clean sessions, through `createContext`, the wiring order), `test/net-launch.test.mjs`
+   and `test/supervise.test.mjs` (updated pins).
 30. NetLog leak tests (C12). -> 29
 31. Recheck, egress change, pause and notify through the B notifier (C8). -> 29, 16
 32. Session rename and delete with network; strict sessions share frames (C4, C11).

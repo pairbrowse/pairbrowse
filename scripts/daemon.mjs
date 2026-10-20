@@ -264,7 +264,7 @@ const popups = createPopups({
 const phishing = createPhishing({ file: paths.phishingList, enabled: () => config.phishingProtection !== false, log }); // listed phishing sites stopped before they show
 phishing.start();
 const context = createContext({
-  personTabs, phishing, network: createNetwork({ log }), // a session's proxy at each launch (config.json network, daemon/network.mjs)
+  personTabs, phishing, network: createNetwork({ log, notify: (text) => panel.notify(text) }), // a session's proxy and its check at each launch (daemon/network.mjs)
   config, log, chromium: () => runtime().chromium, driver: driverChoice.driver, hud, presence, popups, hostNote, notify: (text) => panel.notify(text),
   // A person renamed the session: the timeline's last writes land first, then the goal log follows.
   beforeRename: () => { activityLog.flush(); return timeline.settled(); }, onRenamed: (from, to) => journal.renamed(from, to),

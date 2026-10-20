@@ -49,7 +49,7 @@ const sameFolder = (a, b) => dirname(a) === dirname(b) && dirname(a) !== DAEMON;
 const ALLOWED = new Set([
   // Parts that build on a shared piece.
   "context -> toolstab", "context -> where", "context -> browser/downloads", "context -> browser/state", "context -> browser/tabs",
-  "context -> browser/launch", "context -> browser/supervise", "context -> sessions/picker", "context -> sessions/switch",
+  "context -> browser/launch", "context -> browser/supervise", "context -> sessions/picker", "context -> sessions/switch", "context -> sessions/profiles",
   "follow -> join/state", "follow -> join/hosts", "follow -> join/agents", "follow -> join/screens", "follow -> join/mirror",
   "recorder -> tablabels", "recorder -> capture", "recorder -> covers", "serve -> covers", "reveal -> page", "screenshot -> page",
   "serve -> browser/tabs", "serve -> output", "serve -> serve/wire", "serve -> serve/pageread", "serve -> serve/refuse",
@@ -114,6 +114,7 @@ test("the fixed entry paths are listed once and exist; no other file only forwar
 const PART_SEAMS = {
   "scripts/daemon/browser/launch.mjs": ["adBlockerOf", "safeStorageKeyFileOf", "adBlockerCrxOf", "proxyAuthFileOf"],
   "scripts/daemon/browser/supervise.mjs": ["startScreen", "needsScreen", "server", "now", "setTimer", "mark"],
+  "scripts/daemon/sessions/profiles.mjs": ["now", "platform"],
 };
 const namesIn = (list) => list.split(",").map((s) => s.trim().split(/\s*=/)[0].trim()).filter(Boolean);
 

@@ -319,10 +319,11 @@ export function dropHelperKeyFile(path) {
 
 // The window's size and place: the virtual screen's whole area when the helper runs one (no window
 // manager there to place or size it), else the fixed desktop size.
-function windowArgs(screen) {
+// sized: a browser profile sets the window (its --window-size takes this one's place).
+function windowArgs(screen, { sized = false } = {}) {
   const { width, height } = screen?.geometry || {};
-  if (Number.isInteger(width) && Number.isInteger(height) && width > 0 && height > 0) return [`--window-size=${width},${height}`, "--window-position=0,0"];
-  return ["--window-size=1366,900"];
+  if (Number.isInteger(width) && Number.isInteger(height) && width > 0 && height > 0) return [...(sized ? [] : [`--window-size=${width},${height}`]), "--window-position=0,0"];
+  return sized ? [] : ["--window-size=1366,900"];
 }
 
 // Every flag the daemon launches the PairBrowse browser with (the install self-check uses the same).
@@ -332,17 +333,22 @@ function windowArgs(screen) {
 // screen: the helper's own virtual screen ({ geometry }, display.mjs startVirtualDisplay) or null;
 // on one the window fills it from its top-left corner (spec server-mode A2), elsewhere it opens
 // at 1366x900 where the window manager puts it.
-export function launchArgs(config = {}, { firstRun = false, browserPages = false, helper = null, safeStorageKeyFile = null, screen = null } = {}) {
+// profileArgs: the session's browser profile's switches (profiles/map.mjs toLaunch), after the
+// user's browserArgs and screened the same way; its --window-size replaces the fixed one.
+export function launchArgs(config = {}, { firstRun = false, browserPages = false, helper = null, safeStorageKeyFile = null, screen = null, profileArgs = [] } = {}) {
   // The user's browserArgs (or older chromeArgs), screened (browser-args.mjs): no debugging surface, no other profile or
   // extension, no web security off; --no-sandbox goes through sandboxDecision instead.
-  const extra = launchableBrowserArgs(browserArgsOf(config));
+  const fromProfile = launchableBrowserArgs(Array.isArray(profileArgs) ? profileArgs : []);
+  const extra = [...launchableBrowserArgs(browserArgsOf(config)), ...fromProfile];
+  const profileWindow = fromProfile.some((a) => switchName(a) === "window-size");
   // Any spelling of --enable-features ("-enable-features=..." too) joins the one merged switch.
   const isEnable = (a) => switchName(a) === "enable-features";
   const features = [...FEATURES, ...extra.filter(isEnable).flatMap((a) => a.slice(a.indexOf("=") + 1).split(","))];
   return [
-    // A user's --window-size or --window-position in browserArgs comes later, and the engine takes
-    // a switch's last value, so theirs still wins.
-    ...windowArgs(screen), "--hide-crash-restore-bubble",
+    // browserArgs and then the profile's switches come later, and the engine takes a switch's last
+    // value: a profile's --window-size, last of all, wins over a user's in browserArgs, which wins
+    // only when the profile sets no window (a user's --window-position always wins).
+    ...windowArgs(screen, { sized: profileWindow }), "--hide-crash-restore-bubble",
     // Hides the engine's "unsupported command-line flag" bar (about --no-sandbox where the sandbox is
     // off, see sandboxDecision in engine.mjs, and the other launch flags).
     "--test-type",
@@ -370,10 +376,11 @@ export function launchArgs(config = {}, { firstRun = false, browserPages = false
 // (PairBrowse's new tab page), not the driver's about:blank (plans/555 D1.2), unless blankStart
 // (the self-check, which drives its first tab to a page of its own). firstRun: a new profile
 // (prepareProfile). helper: { origin, keyFile, captureKeyFile? } for the browser's own pages, or
-// null (the self-check has no live view). screen: the virtual screen it runs on, or null (launchArgs).
+// null (the self-check has no live view). screen: the virtual screen it runs on, or null; profileArgs:
+// the session's browser profile's switches (launchArgs).
 // env, executablePath: as Playwright takes them. The Safe Storage password: browser/safe-storage.mjs
 // (a key file of this install's own, the Keychain, or the driver's mock keychain).
-export function launchOptions(config = {}, { shell, firstRun = false, helper = null, env, executablePath, blankStart = false, platform = process.platform, screen = null } = {}) {
+export function launchOptions(config = {}, { shell, firstRun = false, helper = null, env, executablePath, blankStart = false, platform = process.platform, screen = null, profileArgs = [] } = {}) {
   const ownPages = !!shell?.ownPages;
   const storage = safeStorageFor(config, shell, paths.safeStorageKey, platform);
   return {
@@ -382,7 +389,7 @@ export function launchOptions(config = {}, { shell, firstRun = false, helper = n
     executablePath,
     viewport: null,
     ignoreDefaultArgs: [...(ownPages && !blankStart ? ["--disable-extensions", "about:blank"] : ["--disable-extensions"]), ...(storage.mock ? [] : ["--use-mock-keychain"])],
-    args: launchArgs(config, { firstRun, browserPages: ownPages, helper, safeStorageKeyFile: storage.keyFile, screen }),
+    args: launchArgs(config, { firstRun, browserPages: ownPages, helper, safeStorageKeyFile: storage.keyFile, screen, profileArgs }),
   };
 }
 

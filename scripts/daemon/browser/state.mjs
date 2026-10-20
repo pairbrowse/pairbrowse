@@ -25,6 +25,7 @@ export function createBrowserState({ session, pick }) {
     personAt: 0,
     inUse: null, // the browser the last launch chose
     session, // which browser session (browser profile) is in use
+    profile: null, // the browser profile the running browser started on (sessions/profiles.mjs), else null
     switching: false,
     // While a session switch closes one browser and opens the next, anyone else asking for the
     // browser waits for it: a browser started in between would be left running, unknown to the

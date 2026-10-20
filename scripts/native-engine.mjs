@@ -13,6 +13,8 @@ import { switchName, withoutNoSandbox } from "./browser-args.mjs";
 import { PAIRBROWSE_ENGINE_KEYS } from "./config-schema.mjs";
 import { normalizeWebgpu } from "./native/graphics.mjs";
 import { STRICT_WEBRTC } from "./net/config.mjs";
+import { ENGINE_KEYS as PROFILE_ENGINE_KEYS } from "./profiles/map.mjs";
+import { PERSONA_FILE, LEGACY_PERSONA } from "./sessions.mjs";
 
 // Humanized typing and form fills live in native/humanize.mjs; re-exported for older importers.
 export * from "./native/humanize.mjs";
@@ -273,9 +275,20 @@ export function flatWebgpuProfile(value) {
 }
 const withFlatWebgpu = (layer) => (layer?.fingerprintProfile === undefined ? layer : { ...layer, fingerprintProfile: flatWebgpuProfile(layer.fingerprintProfile) });
 
+// The persona kept with a session belongs to one browser profile: it is saved under the profile's
+// id (spec server-mode D13), and a launch on another profile is refused rather than starting with
+// its seed and values (daemon/sessions/profiles.mjs; a reassignment removes it, sessions.mjs).
+export const personaBindingRefusal = (name, id) => `The persona kept with this session (${PERSONA_FILE}) belongs to ${/^p-[0-9a-f]{16}$/.test(String(name)) ? `browser profile ${name}` : "no browser profile"}, not ${id}: refused, it is never saved over under another profile. The person reassigns the session to start it on another profile.`;
+
 // The three layers of settings, lowest first: the persona saved in the profile, a saved profile
 // chosen by name, and config.json. Every layer is checked for options this engine can't honour, and
 // its fingerprintProfile's WebGPU flattened (flatWebgpuProfile).
+// config.browserProfile: the session's browser profile's engine layer (daemon/sessions/profiles.mjs:
+// { id, kind, engineKeys, geoip }), or none (the install self-check, tests). Its keys go over
+// config.json's; a store profile (kind "store") takes none of config.json's own persona settings
+// (languages, time zone, screen, seed, geoip, a picked or saved persona, fingerprintProfile): those
+// are the config-backed default's. config.json's other engine keys (the legacy hardware ones,
+// decision U6) still apply to every profile.
 function readSettings(config, pack, personaPath) {
   // motion: how humanized mouse moves are shaped: "fast" (the default: PairBrowse's hand-like
   // shape, one reach that lands close, then homes in without stopping, at a quick hand's pace: a
@@ -289,21 +302,30 @@ function readSettings(config, pack, personaPath) {
   // Only the engine's fingerprint options pass (config-schema.mjs PAIRBROWSE_ENGINE_KEYS): never an
   // unpacked extension, a proxy, launch options or switches from config.json, which would go
   // around the browserArgs screen. An option this engine can't honour still stops the launch below.
-  const overrides = withFlatWebgpu(Object.fromEntries(Object.entries(given).filter(([k]) => PAIRBROWSE_ENGINE_KEYS.includes(k))));
+  const chosen = config.browserProfile ?? null;
+  const store = chosen?.kind === "store";
+  const fromConfig = Object.entries(given).filter(([k]) => PAIRBROWSE_ENGINE_KEYS.includes(k) && !(store && (PROFILE_ENGINE_KEYS.includes(k) || k === "fingerprintProfile")));
+  const fromProfile = Object.entries(chosen?.engineKeys ?? {}).filter(([k]) => PROFILE_ENGINE_KEYS.includes(k));
+  const overrides = withFlatWebgpu(Object.fromEntries([...fromConfig, ...fromProfile]));
   const ignored = Object.keys(given).filter((k) => !PAIRBROWSE_ENGINE_KEYS.includes(k) && !UNSUPPORTED.includes(k));
   const motion = ["classic", "combined", "quick"].includes(motionSetting) ? motionSetting : "fast";
   if (given.canvasBridge !== undefined) throw new Error(canvasBridgeRefusal("config.json's pairbrowse block"));
-  const saved = withFlatWebgpu(selection && !["auto", "local"].includes(selection) ? pack.resolveProfileOptions(selection) : {});
+  const picked = store ? undefined : selection;
+  const saved = withFlatWebgpu(picked && !["auto", "local"].includes(picked) ? pack.resolveProfileOptions(picked) : {});
   if (saved?.canvasBridge !== undefined) throw new Error(canvasBridgeRefusal("The saved profile (pairbrowse.profile)"));
   if (saved?.proxy !== undefined) throw new Error(personaProxyRefusal("The saved profile (pairbrowse.profile)"));
-  const persisted = { ...withFlatWebgpu(existsSync(personaPath) ? pack.Profile.load(personaPath).options : {}) };
+  const kept = existsSync(personaPath) ? pack.Profile.load(personaPath) : null;
+  // The persona is the profile's: under its id, or (the config-backed default only) the name every
+  // persona had before profiles, which this launch saves under the default's id.
+  if (chosen && kept && kept.name !== chosen.id && !(kept.name === LEGACY_PERSONA && chosen.kind === "config")) throw new Error(personaBindingRefusal(kept.name, chosen.id));
+  const persisted = { ...withFlatWebgpu(kept ? kept.options : {}) };
   if (persisted.proxy !== undefined) throw new Error(personaProxyRefusal("The persona kept with this session (pairbrowse-persona.json)"));
   const bridgeDropped = persisted.canvasBridge !== undefined;
   delete persisted.canvasBridge;
   for (const key of UNSUPPORTED) {
     if ([persisted, saved, given].some((layer) => layer[key] !== undefined)) throw new Error(`PairBrowse native does not support pairbrowse.${key} on this engine.`);
   }
-  return { selection, profileSelect, humanize, showCursor, geoip, typingPace: clampPace(typingPace), motion, overrides, saved, persisted, ignored, bridgeDropped };
+  return { selection: picked, profileSelect: store ? {} : profileSelect, humanize, showCursor, geoip: store ? !!chosen.geoip : chosen?.kind === "config" ? !!(geoip || chosen.geoip) : geoip, typingPace: clampPace(typingPace), motion, overrides, saved, persisted, ignored, bridgeDropped, personaName: chosen?.id ?? LEGACY_PERSONA };
 }
 
 // The fingerprint to launch with: the layered settings, then a persona (picked, or this Mac's own
@@ -359,11 +381,12 @@ async function resolveFingerprint(chromium, options, pack, directory, settings, 
 // bridge, and with geoip never what it derived (GEOIP_FIELDS, spec C9): those are measurements of
 // this launch's exit address, not settings. One set in config.json or a saved profile is read from
 // there again at each launch.
-function savePersona(pack, personaPath, fingerprint, geoip) {
+// name: the browser profile's id (D13), or "pairbrowse" for a launch without one.
+function savePersona(pack, personaPath, fingerprint, geoip, name = LEGACY_PERSONA) {
   const persona = { ...fingerprint };
   delete persona.canvasBridge;
   if (geoip) for (const key of GEOIP_FIELDS) delete persona[key];
-  new pack.Profile("pairbrowse", persona).save(personaPath);
+  new pack.Profile(name, persona).save(personaPath);
 }
 
 // Extensions passed as --load-extension / --disable-extensions-except go through the engine's own
@@ -386,7 +409,7 @@ export async function launchNative(chromium, config, directory, options, pack, l
   // Before anything else runs (a first launch's host capture takes up to a minute).
   if (proxyCredentials(options.proxy)) throw new Error(PROXY_CREDENTIALS_REFUSAL);
   mkdirSync(directory, { recursive: true, mode: 0o700 });
-  const personaPath = join(directory, "pairbrowse-persona.json");
+  const personaPath = join(directory, PERSONA_FILE);
   const settings = readSettings(config, pack, personaPath);
   if (settings.bridgeDropped) log(CANVAS_BRIDGE_DROPPED);
   if (settings.ignored.length) log(`launch: ${settings.ignored.map((k) => `pairbrowse.${k}`).join(", ")} in config.json not used (PairBrowse passes on only its own settings and the engine's fingerprint options; see docs/configuration.md)`);
@@ -395,7 +418,7 @@ export async function launchNative(chromium, config, directory, options, pack, l
   // Each launch step's time (plans/555 item 4): what a slow first launch spent where.
   log(`launch: fingerprint ${Date.now() - fingerprintAt} ms${steps.length ? ` (${steps.join(", ")})` : ""}`);
   if (source) log(`PairBrowse persona selected from ${source}.`);
-  savePersona(pack, personaPath, fingerprint, settings.geoip);
+  savePersona(pack, personaPath, fingerprint, settings.geoip, settings.personaName);
 
   const { portableProfile, encryptionKey, extensions, disablePrivacySandbox = true, ...personaRest } = rest;
   const { agent, rest: launchOptions } = pack.splitAgentOptions(personaRest);

@@ -1,6 +1,7 @@
 // The browser itself: launching it (and the native PairBrowse build), the pages it opens, the
-// tabs it brings back, downloads, the tab cap, and switching between browser sessions. This is
-// the facade over its parts: browser/{state,launch,downloads,tabs}.mjs, sessions/{picker,switch}.mjs.
+// tabs it brings back, downloads, the tab cap, switching between browser sessions and the browser
+// profile each starts on. This is the facade over its parts: browser/{state,launch,downloads,tabs}.mjs,
+// sessions/{picker,switch,profiles}.mjs.
 import { currentSession } from "../sessions.mjs";
 import { createPersonTabs } from "./toolstab.mjs";
 import { where } from "./where.mjs";
@@ -11,6 +12,7 @@ import { createTabs, stopRequestMirroring } from "./browser/tabs.mjs";
 import { createLaunch, browserPagesIn, capturePagesIn, captureKeyedIn, settingsSectionIn, quietTabsIn, measuringLog, MEASURING_STATUS } from "./browser/launch.mjs";
 import { createPicker } from "./sessions/picker.mjs";
 import { createSwitch } from "./sessions/switch.mjs";
+import { createProfiles } from "./sessions/profiles.mjs";
 
 export { stopRequestMirroring, measuringLog, MEASURING_STATUS };
 // Where the browser runs ("Local", or "Server" over SSH): daemon/where.mjs.
@@ -29,21 +31,25 @@ export { where };
 // onRestored(): saved tabs came back after a launch (browser/tabs.mjs); onCrashLoop(): the crash-loop
 // guard stopped launches (browser/supervise.mjs). Both: yourturn.mjs, spec server-mode B16.
 // network: the session's proxy at each launch (daemon/network.mjs createNetwork; null: direct, tests).
+// profileStore: the browser profile store each launch reads its session's profile from
+// (profiles/store.mjs createProfileStore; null: the helper home's own, sessions/profiles.mjs).
 // onDownload({ op: "start", name, page }) -> id, then { op: "done", id, path } or { op: "failed", id }:
 // the Tools tab's Downloads (daemon/toolstab.mjs), in memory only.
 // personTabs: the person's own tabs (daemon/toolstab.mjs createPersonTabs), shared with serve.mjs:
 // openForPerson opens one, and no agent's fallback tab is ever one.
 export function createContext({ personTabs = createPersonTabs(), config, log, chromium, driver = "patchright", hud, presence, popups, hostNote, onTabClosed, status, shuttingDown, onStarted, onClosed, liveOthers = () => [], notify = () => {}, browserPagesOf = browserPagesIn, capturePagesOf = capturePagesIn, captureKeyedOf = captureKeyedIn, settingsSectionOf = settingsSectionIn, quietTabsOf = quietTabsIn, helperFor = async () => null,
-  beforeRename = async () => {}, onRenamed = () => {}, onDownload = () => null, phishing = null, onRestored = () => {}, onCrashLoop = () => {}, network = null }) {
+  beforeRename = async () => {}, onRenamed = () => {}, onDownload = () => null, phishing = null, onRestored = () => {}, onCrashLoop = () => {}, network = null, profileStore = null }) {
   const st = createBrowserState({ session: currentSession(), pick: null }); // browser/state.mjs
   // What the browser's parts (browser/*.mjs, sessions/*.mjs) are given, and the functions they
   // read from each other when called (api).
   const deps = { personTabs, config, log, chromium, driver, hud, presence, popups, hostNote, onTabClosed, status, shuttingDown, onStarted, onClosed, liveOthers, notify, phishing,
-    browserPagesOf, capturePagesOf, captureKeyedOf, settingsSectionOf, quietTabsOf, helperFor, beforeRename, onRenamed, onRestored, onCrashLoop, network };
+    browserPagesOf, capturePagesOf, captureKeyedOf, settingsSectionOf, quietTabsOf, helperFor, beforeRename, onRenamed, onRestored, onCrashLoop, network, profileStore };
   const api = {};
   // The virtual screen the browser runs on, when this machine needs one (browser/supervise.mjs).
   // With server.keepAlive, the browser kept up with nobody connected.
   const { stopScreenNow, crashLoop, statusParts: screenParts, keepAlive, keepAliveStart, isServer } = Object.assign(api, createSupervisor(st, deps, api));
+  // The browser profile each launch starts on: assignment, binding, engine, mapping (sessions/profiles.mjs).
+  const profiles = api.profiles = createProfiles(st, deps);
   // Launching the browser and getContext() (browser/launch.mjs).
   const { dropHelperKey, choiceConfig, profile, getContext, watchClose, ready, reset, openByHand, close, nextShell } = Object.assign(api, createLaunch(st, deps, api));
   // Downloads: kept in the Downloads folder, and Playwright's temporary ones forgotten (browser/downloads.mjs).
@@ -88,7 +94,10 @@ export function createContext({ personTabs = createPersonTabs(), config, log, ch
     // The crash-loop guard's refusal while it holds, else null; and what pairbrowse_status adds
     // about the browser's surroundings (browser/supervise.mjs) and the session's network
     // (daemon/network.mjs: its last check, or a failed one that holds).
-    crashLoop, statusParts: () => [...screenParts(), ...(network?.statusParts(st.session) || [])],
+    // The running browser's profile ("Profile: <name> (rev <n>, <status> on <build>)") comes before them.
+    crashLoop, statusParts: () => [...screenParts(), ...profiles.statusParts(), ...(network?.statusParts(st.session) || [])],
+    // The browser profiles there are (the store's list): what an agent may pick from (spec D14).
+    profiles: () => profiles.list(),
     // The refusal the session's starts get while its proxy's failed check holds, else null.
     networkRefusal: () => network?.refusal(st.session) || null,
     // Whether the browser runs a strict proxied session now: shared browser mode then sends

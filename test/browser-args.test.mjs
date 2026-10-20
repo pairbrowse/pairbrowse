@@ -179,6 +179,23 @@ test("the window follows the virtual screen only when one is in use", () => {
   assert.equal(last("window-position"), "--window-position=10,20");
 });
 
+// A session's browser profile (spec server-mode step 37, profiles/map.mjs toLaunch): its switches
+// come after the user's browserArgs, screened the same way, and its window takes the fixed size's place.
+test("a browser profile's switches follow browserArgs; its window replaces the fixed size", () => {
+  const win = (args) => args.filter((a) => /^--window-(size|position)=/.test(a));
+  const args = launchArgs({ browserArgs: ["--lang=fr"] }, { profileArgs: ["--lang=de-DE", "--window-size=1440,900", "--force-dark-mode"] });
+  assert.deepEqual(win(args), ["--window-size=1440,900"], "one size: the profile's");
+  assert.ok(args.indexOf("--lang=de-DE") > args.indexOf("--lang=fr"), "after the user's, so the engine takes the profile's");
+  assert.ok(args.includes("--force-dark-mode"));
+  const screen = { display: ":99", geometry: { width: 1280, height: 800, depth: 24 } };
+  assert.deepEqual(win(launchArgs({}, { screen, profileArgs: ["--window-size=1024,768"] })), ["--window-position=0,0", "--window-size=1024,768"], "on a virtual screen the position stays");
+  assert.deepEqual(win(launchOptions({}, { profileArgs: ["--window-size=1024,768"] }).args), ["--window-size=1024,768"], "launchOptions passes them on");
+  // Screened as browserArgs are: a switch the screen refuses never reaches the launch.
+  const screened = launchArgs({}, { profileArgs: ["--remote-debugging-port=9222", "--window-size=big"] });
+  assert.ok(!screened.some((a) => /remote-debugging|window-size=big/.test(a)));
+  assert.deepEqual(win(screened), ["--window-size=1366,900"], "no profile window passed: the fixed size stays");
+});
+
 test("--no-sandbox stays the user's sandbox choice on Linux (sandboxDecision) and is never passed raw", () => {
   const config = { browserArgs: ["--no-sandbox", "--lang=en"] };
   assert.equal(sandboxDecision(config, { platform: "linux", uid: 501 }).on, false);

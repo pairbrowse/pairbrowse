@@ -10,7 +10,8 @@ import { profileDir, createSession, sweepTemporary } from "../../sessions.mjs";
 import { within } from "../../util.mjs";
 import { setQuietTabs } from "../../focus.mjs";
 import { shippedCrx } from "../../browser/adblock.mjs";
-import { MEASURING } from "../../native-engine.mjs";
+import { MEASURING, nativeManifest } from "../../native-engine.mjs";
+import { NATIVE } from "../../native-pack.mjs";
 import { OPEN_ACCEPT_MS } from "../../opener.mjs";
 import { isBrowserPage, BROWSER_PICKER, extensionUrl } from "../../../ui/urls.js";
 import { pruneStaleContexts } from "../exec-contexts.mjs";
@@ -173,13 +174,6 @@ export function createLaunch(st, deps, api) {
     st.ownPages = st.shell.ownPages;
     st.capture = st.shell.capturePage;
     st.chosen = true;
-    // The profile settings PairBrowse needs (blank start tab, pinned and enabled side panel,
-    // colors; see prepareProfile in browser.mjs), written before each launch.
-    const firstRun = prepareProfile(profile(), undefined, { browserPages: st.ownPages, layout: config.layout, adBlocker: st.shell.adBlocker && config.adBlocker !== false, adBlockerCrx: shippedCrx(st.shell.adBlockerCrx, next.executablePath) });
-    step("prepare");
-    // A side panel worker from another build (an update): the browser would keep running its
-    // cached copy, so it's loaded anew from disk (resetPanelWorker in browser.mjs).
-    if (!st.ownPages) try { if (resetPanelWorker(profile())) log("side panel: its worker changed since the last start; the browser loads it anew"); } catch (e) { log(`side panel: ${e?.message || e}`); }
     // The browser's own pages reach the live view with the address in their launch switch and the
     // key in an owner-only file the other switch names (neither the key nor the path is logged).
     const helper = st.ownPages ? await helperFor().catch((e) => { log("live view", e?.message || e); return null; }) : null;
@@ -190,6 +184,22 @@ export function createLaunch(st, deps, api) {
     // st.screen later: a screen lost while the launch waits below is never swapped for no screen.
     const screen = await api.ensureScreen();
     createSession(st.session);
+    // The session's browser profile (sessions/profiles.mjs, spec server-mode section 3.2 step 2):
+    // its assignment, binding and engine checked, mapped to this launch's switches, engine layer,
+    // network and ad blocker, or the refusal this launch stops with (nothing written yet but the
+    // binding of a first start). native: this build's version, which its validation is kept under.
+    const native = next.browserEngine === "pairbrowse";
+    const chosen = api.profiles.forLaunch(st.session, { browserKind: native ? "pairbrowse" : "pairbrowse-open", build: native ? nativeManifest(next.executablePath).version : null, pack: NATIVE.engine.sha256 });
+    step("profile");
+    // The profile settings PairBrowse needs (blank start tab, pinned and enabled side panel,
+    // colors; see prepareProfile in browser.mjs), written before each launch. The ad blocker: the
+    // profile's choice, else config.json's.
+    const adBlockerOn = chosen.adBlocker ?? config.adBlocker !== false;
+    const firstRun = prepareProfile(profile(), undefined, { browserPages: st.ownPages, layout: config.layout, adBlocker: st.shell.adBlocker && adBlockerOn, adBlockerCrx: shippedCrx(st.shell.adBlockerCrx, next.executablePath) });
+    step("prepare");
+    // A side panel worker from another build (an update): the browser would keep running its
+    // cached copy, so it's loaded anew from disk (resetPanelWorker in browser.mjs).
+    if (!st.ownPages) try { if (resetPanelWorker(profile())) log("side panel: its worker changed since the last start; the browser loads it anew"); } catch (e) { log(`side panel: ${e?.message || e}`); }
     // The PairBrowse browser (scripts/browser.mjs), or another browser on the same engine from config.
     let keyFile = null, captureKeyFile = null;
     if (helper) try { keyFile = st.helperKeyPath = writeHelperKeyFile(helper.key); } catch (e) { log(`the browser's own pages have no helper address (key file: ${e?.code || "refused"})`); }
@@ -203,22 +213,25 @@ export function createLaunch(st, deps, api) {
       // The session's network (daemon/network.mjs, spec server-mode section 3.2 step 3): its proxy,
       // strict switches and auth file, or the refusal this launch stops with (never direct instead).
       // Inside the try, so the finally drops its auth file whatever stops the launch.
-      net = network ? network.forLaunch(st.session, { shell: st.shell, native: next.browserEngine === "pairbrowse" }) : null;
+      // The profile's network id counts unless config.json's network.sessions names one (C4).
+      net = network ? network.forLaunch(st.session, { profileNetwork: chosen.network, shell: st.shell, native }) : null;
       const options = {
         // The helper's own shutdown closes the browser (daemon.mjs shutdown -> close below).
         // Playwright's signal handlers would start a close of their own on the same SIGTERM, and
         // then treat the helper's close as a second one: a SIGKILL of the browser inside 50 ms, before
         // it wrote its cookies (it writes them every ~30 s and on a clean exit): logins lost.
         handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false,
-        // The launch itself, as the install self-check makes it too (browser.mjs launchOptions).
+        // The launch itself, as the install self-check makes it too (browser.mjs launchOptions),
+        // with the profile's switches after browserArgs (its window in place of the fixed size).
         ...launchOptions(config, {
-          shell: st.shell, firstRun, screen,
+          shell: st.shell, firstRun, screen, profileArgs: chosen.switches,
           env: { ...process.env, ...(screen?.env || {}) },
           executablePath: next.executablePath || await ensureBrowser(browserType(), log),
           helper: helper && keyFile ? { origin: helper.origin, keyFile, ...(captureKeyFile ? { captureKeyFile } : {}) } : null,
         }),
       };
-      ctx = await launchEngine(browserType(), next, profile(), withNetLog(net ? net.apply(options) : options), launchLog, undefined, { server: api.isServer() }); // in server mode the sandbox is required (spec server-mode A10)
+      // The native build's engine layer: the profile's keys, geoip and the id its persona is saved under.
+      ctx = await launchEngine(browserType(), { ...next, browserProfile: chosen.engine }, profile(), withNetLog(net ? net.apply(options) : options), launchLog, undefined, { server: api.isServer() }); // in server mode the sandbox is required (spec server-mode A10)
     } catch (e) { dropHelperKey(keyFile, captureKeyFile); throw e; } // a failed launch leaves no key file
     finally { net?.drop(); launchLog.done(hud.badge()); } // the proxy's auth file: read by now, or the launch failed
     // The screen ended while the browser started (supervise.mjs lost() cleared it): this browser has
@@ -271,8 +284,8 @@ export function createLaunch(st, deps, api) {
       if (!st.switching && !st.resetting && !shuttingDown() && !api.noteUnexpectedClose(launchedAt)) api.relaunchSoon(launchedAt);
       // Closed while asking: the next browser asks again.
       if (st.pick.state === "showing") { st.pick.state = "pending"; st.pick.page = null; }
-      // Only the browser in use: an older one closing late never drops the next one.
-      if (st.contextPromise === mine) st.contextPromise = null;
+      // Only the browser in use: an older one closing late never drops the next one (nor its profile).
+      if (st.contextPromise === mine) { st.contextPromise = null; api.profiles.release(); }
       hud.clearSparks();
       if (!st.switching) onClosed(); // switching sessions: the next one opens right away
     });
@@ -294,6 +307,7 @@ export function createLaunch(st, deps, api) {
       st.launching = true;
       st.contextPromise = launch().catch((e) => {
         st.contextPromise = null;
+        api.profiles.release(); // a launch that stopped started no browser on its profile
         throw e;
       }).finally(() => { st.launching = false; installWaiters.clear(); });
     }

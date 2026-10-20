@@ -2067,6 +2067,55 @@ it depends on.
    `test/sessions.test.mjs`, `test/profile-store.test.mjs`, `test/fuzz/profile-schema.test.js`.
 37. `daemon/sessions/profiles.mjs`, binding, persona under the profile id, launch wiring (D2, D10,
     D13). -> 36, 27
+   Landed as: `scripts/daemon/sessions/profiles.mjs` `createProfiles(st, deps)` (deps `config`, `log`,
+   `profileStore`: `createContext`'s new dep, the home's own store when null; tests pass `now` and
+   `platform`), made by `context.mjs` as `api.profiles` (the `ALLOWED` edge `context ->
+   sessions/profiles`; `daemon.mjs` passes nothing new). `forLaunch(session, { browserKind, build,
+   pack })`: `readAssignment` (a problem refuses), `store.use` with `fromConfig(config, { native })`
+   (unknown, retired, unreadable refused by name), the binding (`sessions.mjs` `readBinding`: a link,
+   non-JSON (copied aside) or anything but `{ profileId, created }` refuses; another profile's id
+   refuses naming both; none: written 0600 once every check passed, a write that fails refuses), D10
+   (`build` the native build's manifest version: `record.engine` of another major refuses "re-validate
+   the profile on this build or migrate it", except for the config-backed `default`, which until step
+   38 starts `unverified` with a log line, its pin kept; the status is `validation[build].status`, else
+   `unverified`, so another build of the same major is unverified), `toLaunch` (its `problem`
+   refuses), `requireValidatedProfiles` (anything but `validated`, or a validated entry with an
+   error item, refuses; the open build is never validated, so it always refuses there). Then
+   `store.recordLaunch(id, { engine, build, entry })` (new in `store.mjs`): `engine` set once (null
+   before), `validation[build]` the launch's `{ status: "unverified", at, pack, items }` (`pack`
+   `NATIVE.engine.sha256`), written only when there is none or an unverified one with other items,
+   a validated or failed (measured) entry left as it is; no revision, no history entry; a record of an
+   older schema waits for its next change; the default's stub takes it too. A failed record is
+   logged, never a refusal. Answers `{ id, name, kind, revision, status, build, switches, network,
+   adBlocker, results, warnings, engine: { id, kind, geoip, engineKeys } }`; `license: "unknown"`
+   warns in the log at every launch and in the status part. `statusParts()`: `Profile: <name> (rev
+   <n>, <status> on <build>)` (`the open build` there), placed by `context.statusParts` after the
+   supervisor's and before the network's; `release()` forgets it (the close handler of the browser in
+   use, and every failed launch; the identity lock joins it in step 38); `list()` the store's. Wiring
+   in `launch.mjs`: `forLaunch` right after `ensureScreen` and `createSession`, before the key
+   files and before `prepareProfile` (moved after it, so the profile's `adBlocker`, else
+   `config.adBlocker`, reaches the preferences; a refused profile writes no preference);
+   `network.forLaunch(..., { profileNetwork })`; `launchOptions(..., { profileArgs })`
+   (`browser.mjs` `launchArgs`: the profile's switches screened as `browserArgs` are and placed after
+   them, a profile `--window-size` taking the fixed size's place, the virtual screen's position kept);
+   `launchEngine` gets `{ ...next, browserProfile: chosen.engine }`. `native-engine.mjs`
+   `readSettings`: the profile's `engineKeys` (only `map.mjs` `ENGINE_KEYS`) over config.json's;
+   for a store profile config.json's own `ENGINE_KEYS`, `fingerprintProfile`, `geoip`, `profile`
+   and `profileSelect` are not read (the U6 hardware keys still are); the persisted persona must be
+   named the profile's id, or "pairbrowse" (`LEGACY_PERSONA`) for the config-backed default only,
+   else `personaBindingRefusal`; `savePersona` saves under the id ("pairbrowse" without a profile:
+   the install self-check). `sessions.mjs`: `BINDING_FILE`, `bindingFile`, `readBinding`,
+   `writeBinding`, `PERSONA_FILE`, `LEGACY_PERSONA`, `personaFile`, `personaNameOf`;
+   `assignProfile` now rewrites the binding with the assignment (a binding write that fails puts the
+   assignment back) and removes a persona named for another profile (the default keeps a legacy one
+   of a session never bound elsewhere), so a reassigned session starts. D2 needed no code: one
+   browser per helper and its one `st.profile`. Until step 38 (`cli.mjs validate`, `migrate`) there is
+   no way to clear an engine pin, so a native build of a new major refuses store profiles pinned to
+   the old one until then; the `default` is let through (above) so a desktop user is never locked
+   out, and step 38 holds it to its pin again once `validate` and `migrate` can clear one. Release
+   gate: no version bump ships a native build of a new major before step 38. Tests: `test/session-profiles.test.mjs`, `test/profile-store.test.mjs`,
+   `test/native-engine.test.mjs`, `test/browser-args.test.mjs`, `test/net-launch.test.mjs`,
+   `test/supervise.test.mjs`, `test/structure.test.mjs`.
 38. Identity lock, migration and undo, `pairbrowse_session` `profile`, CLI, owner routes and UI (D3,
     D14, Phase D migration). -> 37
 39. Spike E-S1: `SystemInfo`, software switches, Linux WebGPU, fixtures; lands the A13 container

@@ -304,10 +304,10 @@ user's file, readable by others), the section says why and refuses a username or
   own read, WebRTC and its name lookups are checked when a session using the proxy starts. A
   change counts from a session's next start.
 - `requireValidatedProfiles`: `false` (default). For browser profiles, which server mode brings
-  (kept owner-only in `~/.pairbrowse/browser-profiles/`): `true` will refuse to start a session on a
+  (kept owner-only in `~/.pairbrowse/browser-profiles/`): `true` refuses to start a session on a
   profile that hasn't been validated on the browser build in use, or one with an error in its
-  consistency checks. It is checked and kept now, and changes nothing until sessions start on
-  their assigned profiles.
+  consistency checks. Until PairBrowse measures a build (a later version), every profile is
+  `unverified`, so `true` refuses every start; the open build's starts are never validated.
 
   The `default` browser profile is read from this file, never written into it: `browser` (and
   its older names) gives the browser it is for; the screened `browserArgs` give its languages
@@ -323,6 +323,21 @@ user's file, readable by others), the section says why and refuses a username or
   isn't either: a change there never changes the profile. A value that doesn't fit a profile (an
   unknown time zone, a window under 320 pixels) is left out of it and named. Each session's
   profile is recorded in its `assignment.json`; a session without one uses `default`.
+
+  Each session starts on its profile: the profile's languages, window, dark scheme, reduced
+  motion and software graphics as switches after `browserArgs` (its window in place of the
+  fixed size), and on the native build its languages, time zone, screen, seed and `geoip` in
+  place of the `pairbrowse` block's (the `default` profile's are the block's own; the hardware
+  keys still apply to every profile), its network id unless `network.sessions` names one, and
+  its ad blocker choice over `adBlocker`. A setting the browser in use can't apply stops the
+  start, naming it. The session's browser folder is bound to its profile at its first start
+  (`pairbrowse-binding.json`): a start on any other profile is refused until the session is
+  reassigned, which also drops the persona kept for the old profile (the native build saves a
+  session's persona under its profile's id). A profile records the engine it first ran on: a
+  build of another major refuses to start it (the `default` profile, for now, starts `unverified`
+  there instead), another build starts it `unverified`.
+  `pairbrowse_status` names it: `Profile: <name> (rev <n>, <status> on <build>)`, with a warning
+  for a profile imported with license `unknown`.
 - `reportUrl`: where a problem report you send yourself goes (default
   `https://pairbrowse.com/api/report`): an https address with no user, query or fragment.
   `null`: no report is ever sent, and Settings doesn't offer it.

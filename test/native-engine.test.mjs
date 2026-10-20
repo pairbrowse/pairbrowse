@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync, statSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { launchNative, DRIVER_BLINK_SWITCH, DRIVER_BACKGROUND_SWITCH, nativeManifest, declaresOwnPages, macHostProfile, captureMacHost, MEASURING, hostCachePath, screenInfoArg, CANVAS_BRIDGE_DROPPED, isCanvasBridgeSwitch, personaProxyRefusal, PROXY_CREDENTIALS_REFUSAL, proxyCredentials, withoutAddresses, proxyAuthFile, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE, flatWebgpuProfile } from "../scripts/native-engine.mjs";
+import { launchNative, DRIVER_BLINK_SWITCH, DRIVER_BACKGROUND_SWITCH, nativeManifest, declaresOwnPages, macHostProfile, captureMacHost, MEASURING, hostCachePath, screenInfoArg, CANVAS_BRIDGE_DROPPED, isCanvasBridgeSwitch, personaProxyRefusal, PROXY_CREDENTIALS_REFUSAL, proxyCredentials, withoutAddresses, proxyAuthFile, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE, flatWebgpuProfile, personaBindingRefusal } from "../scripts/native-engine.mjs";
 import { loadEngine } from "../scripts/native/pack.mjs";
 import { normalizeWebgpu } from "../scripts/native/graphics.mjs";
 import { STRICT_WEBRTC, resolverRule } from "../scripts/net/config.mjs";
@@ -1025,4 +1025,47 @@ test("F7 today: this computer's Intl replaces the device's languages and is stor
     mkdtempSync(join(tmpdir(), "pairbrowse-f7-explicit-")), { executablePath: app.executablePath, headless: false }, explicit);
   assert.equal(explicit.given[0].acceptLanguage, "nl-NL,nl", "a set acceptLanguage wins");
   assert.equal(explicit.given[0].timezone, "Europe/Amsterdam");
+});
+
+// D13 (spec step 37): the persona kept with a session is its browser profile's, saved under the
+// profile's id; a launch on another profile is refused rather than carrying its seed and values over,
+// and only the config-backed default takes over the "pairbrowse" persona every session had before.
+// A store profile's engine keys replace config.json's own persona settings; the default's sit on them.
+test("persona saved under the profile id; another profile's persona refused; a store profile's keys replace config.json's", async () => {
+  const app = appFixture();
+  const id = "p-0123456789abcdef", other = "p-fedcba9876543210", defaultId = "p-00000000000000aa";
+  // A collector of its own: on macOS a store profile without a device of its own is this Mac (host capture).
+  const launch = (config, directory, pack = Object.assign(recordingPack(), { collector: "" })) => launchNative(fakeBrowserType(), config, directory, { executablePath: app.executablePath, headless: false }, pack).then(() => pack);
+  const storeLayer = { id, kind: "store", geoip: false, engineKeys: { timezone: "Europe/Berlin", acceptLanguage: "de-DE,de", fingerprint: "profile-seed" } };
+  const config = { pairbrowse: { timezone: "Asia/Tokyo", acceptLanguage: "ja-JP", fingerprint: "config-seed", fingerprintProfile: PINNED_PROFILE(), profile: "auto" }, browserProfile: storeLayer };
+  const directory = mkdtempSync(join(tmpdir(), "pairbrowse-persona-id-"));
+  const pack = await launch(config, directory);
+  assert.equal(pack.given[0].timezone, "Europe/Berlin");
+  assert.equal(pack.given[0].acceptLanguage, "de-DE,de");
+  assert.equal(pack.given[0].fingerprint, "profile-seed");
+  const persona = JSON.parse(readFileSync(join(directory, "pairbrowse-persona.json"), "utf8"));
+  assert.equal(persona.name, id, "saved under the profile's id");
+  assert.equal(persona.options.timezone, "Europe/Berlin");
+  // The same profile again: its own persona is read.
+  assert.equal((await launch(config, directory)).given[0].fingerprint, "profile-seed");
+  // Another profile on this folder: refused, the persona left as it was.
+  const before = readFileSync(join(directory, "pairbrowse-persona.json"), "utf8");
+  await assert.rejects(launch({ pairbrowse: {}, browserProfile: { ...storeLayer, id: other } }, directory), (e) => e.message === personaBindingRefusal(id, other));
+  assert.equal(readFileSync(join(directory, "pairbrowse-persona.json"), "utf8"), before);
+  assert.match(personaBindingRefusal("../x", other), /belongs to no browser profile, not p-fedcba9876543210: refused/, "a name that isn't an id is never repeated");
+  // The persona from before profiles: the config-backed default takes it over under its id...
+  const legacy = mkdtempSync(join(tmpdir(), "pairbrowse-persona-legacy-"));
+  writeFileSync(join(legacy, "pairbrowse-persona.json"), JSON.stringify({ name: "pairbrowse", options: { fingerprint: "kept-seed", fingerprintProfile: PINNED_PROFILE() } }));
+  const def = await launch({ pairbrowse: { timezone: "Asia/Tokyo" }, browserProfile: { id: defaultId, kind: "config", geoip: false, engineKeys: { timezone: "Asia/Tokyo" } } }, legacy);
+  assert.equal(def.given[0].fingerprint, "kept-seed", "its seed kept");
+  assert.equal(def.given[0].timezone, "Asia/Tokyo");
+  assert.equal(JSON.parse(readFileSync(join(legacy, "pairbrowse-persona.json"), "utf8")).name, defaultId);
+  // ...and a store profile never does.
+  const legacy2 = mkdtempSync(join(tmpdir(), "pairbrowse-persona-legacy2-"));
+  writeFileSync(join(legacy2, "pairbrowse-persona.json"), JSON.stringify({ name: "pairbrowse", options: { fingerprint: "kept-seed" } }));
+  await assert.rejects(launch({ pairbrowse: {}, browserProfile: storeLayer }, legacy2), (e) => e.message === personaBindingRefusal("pairbrowse", id));
+  // Without a profile (the install self-check, older callers) the persona keeps its old name.
+  const plain = mkdtempSync(join(tmpdir(), "pairbrowse-persona-plain-"));
+  await launch({ pairbrowse: { fingerprint: "seed", fingerprintProfile: PINNED_PROFILE() } }, plain);
+  assert.equal(JSON.parse(readFileSync(join(plain, "pairbrowse-persona.json"), "utf8")).name, "pairbrowse");
 });

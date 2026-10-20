@@ -240,14 +240,15 @@ test("a launch carries the session's proxy and switches; switching a proxy leave
   await context.close();
 });
 
-test("launch wiring follows section 3.2: screen, network, then the browser; the auth file dropped either way", () => {
+test("launch wiring follows section 3.2: screen, profile, network, then the browser; the auth file dropped either way", () => {
   const src = readFileSync(new URL("../scripts/daemon/browser/launch.mjs", import.meta.url), "utf8");
   const screen = src.indexOf("const screen = await api.ensureScreen();");
-  const network = src.indexOf("net = network ? network.forLaunch(st.session, { shell: st.shell, native: next.browserEngine === \"pairbrowse\" }) : null;");
+  const chosen = src.indexOf("const chosen = api.profiles.forLaunch(st.session, {");
+  const network = src.indexOf("net = network ? network.forLaunch(st.session, { profileNetwork: chosen.network, shell: st.shell, native }) : null;");
   const engine = src.indexOf("ctx = await launchEngine(");
-  assert.ok(screen > 0 && network > screen && engine > network, "ensureScreen, network.forLaunch, launchEngine");
+  assert.ok(screen > 0 && chosen > screen && network > chosen && engine > network, "ensureScreen, profiles.forLaunch, network.forLaunch, launchEngine");
   // The session's network applied to the launch options, then (a test run only) the NetLog switch.
-  assert.match(src.slice(engine), /^ctx = await launchEngine\(browserType\(\), next, profile\(\), withNetLog\(net \? net\.apply\(options\) : options\),/);
+  assert.match(src.slice(engine), /^ctx = await launchEngine\(browserType\(\), \{ \.\.\.next, browserProfile: chosen\.engine \}, profile\(\), withNetLog\(net \? net\.apply\(options\) : options\),/);
   assert.match(src, /finally \{ net\?\.drop\(\);/);
   // forLaunch inside the try that drops its auth file; the network recorded only once the browser is up.
   assert.ok(src.lastIndexOf("try {", network) > src.indexOf("let ctx, net = null;"), "forLaunch inside the try");

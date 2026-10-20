@@ -348,3 +348,50 @@ test("two writers: one wins, never half written", async () => {
   assert.equal(now.history.length, 1);
   assert.ok(!existsSync(join(store.dir, ".lock")), "the lock is released");
 });
+
+// D10, E8 (spec step 37): what a launch on the native build found is evidence: the engine pinned
+// once, the build's unverified entry, never a new revision or history entry; measured entries left
+// as they are; the config-backed default's stored part takes it the same way.
+test("recordLaunch keeps the engine and the launch's entry without a new revision; measured entries stay", () => {
+  const store = makeStore();
+  const p = store.create({ name: "berlin" });
+  const item = { field: "screen", rule: "profile.map", class: "C", status: "derived", requested: null, measured: null, severity: "info", reason: "this computer's" };
+  const entry = (at, items = [item]) => ({ status: "unverified", at, pack: null, items });
+  assert.equal(store.recordLaunch(p.id, { engine: { major: "150", build: "150.0.7871.114" }, build: "150.0.7871.114", entry: entry("2026-10-21T11:00:00Z") }), true);
+  let r = store.get(p.id);
+  assert.deepEqual(r.engine, { major: "150", build: "150.0.7871.114" });
+  assert.deepEqual(r.validation["150.0.7871.114"], entry("2026-10-21T11:00:00Z"));
+  assert.equal(r.revision, 1);
+  assert.deepEqual(r.history, []);
+  assert.deepEqual(store.revisions(p.id), [], "no revision file");
+  assert.equal(mode(join(store.dir, `${p.id}.json`)), 0o600);
+  // The same items again: nothing written (its time stays the first launch's); other items replace it.
+  assert.equal(store.recordLaunch(p.id, { engine: { major: "150", build: "150.0.7871.114" }, build: "150.0.7871.114", entry: entry("2026-10-21T12:00:00Z") }), false);
+  assert.equal(store.recordLaunch(p.id, { build: "150.0.7871.114", entry: entry("2026-10-21T12:00:00Z", []) }), true);
+  assert.equal(store.get(p.id).validation["150.0.7871.114"].at, "2026-10-21T12:00:00Z");
+  // The engine is pinned once: a later build of the same major is recorded beside it.
+  store.recordLaunch(p.id, { engine: { major: "150", build: "150.0.7871.200" }, build: "150.0.7871.200", entry: entry("2026-10-21T13:00:00Z") });
+  r = store.get(p.id);
+  assert.deepEqual(r.engine, { major: "150", build: "150.0.7871.114" });
+  assert.deepEqual(Object.keys(r.validation).sort(), ["150.0.7871.114", "150.0.7871.200"]);
+  // A measured entry (Phase E) is never written over by a launch.
+  const file = join(store.dir, `${p.id}.json`);
+  const raw = JSON.parse(readFileSync(file, "utf8"));
+  raw.validation["150.0.7871.114"] = { status: "validated", at: "2026-10-21T09:00:00Z", pack: null, items: [] };
+  writeFileSync(file, JSON.stringify(raw));
+  assert.equal(store.recordLaunch(p.id, { build: "150.0.7871.114", entry: entry("2026-10-21T14:00:00Z") }), false);
+  assert.equal(store.get(p.id).validation["150.0.7871.114"].status, "validated");
+  // An entry that isn't valid is refused, nothing written.
+  refuses(() => store.recordLaunch(p.id, { build: "150.0.7871.300", entry: { status: "fine", at: "x", pack: null, items: [] } }), "PROFILE_INVALID");
+  assert.equal(store.get(p.id).validation["150.0.7871.300"], undefined);
+  refuses(() => store.recordLaunch("p-00000000000000ff", { build: "150.0.7871.114", entry: entry("2026-10-21T11:00:00Z") }), "PROFILE_UNKNOWN");
+  // The config-backed default: its stored part takes the engine and the entry, its hash unchanged.
+  const def = store.configProfile({});
+  const hash = JSON.parse(readFileSync(join(store.dir, `${def.id}.json`), "utf8")).configHash;
+  assert.equal(store.recordLaunch(def.id, { engine: { major: "150", build: "150.0.7871.114" }, build: "150.0.7871.114", entry: entry("2026-10-21T11:00:00Z") }), true);
+  const stub = JSON.parse(readFileSync(join(store.dir, `${def.id}.json`), "utf8"));
+  assert.deepEqual(stub.engine, { major: "150", build: "150.0.7871.114" });
+  assert.equal(stub.configHash, hash);
+  assert.equal(stub.revision, 1);
+  assert.equal(store.configProfile({}).validation["150.0.7871.114"].status, "unverified");
+});

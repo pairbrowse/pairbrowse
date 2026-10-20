@@ -102,7 +102,10 @@ test("every config.json key the code reads has its default (or is one of the old
   const files = readdirSync(dir, { recursive: true }).filter((f) => f.endsWith(".mjs") && !f.startsWith("dev/")).map((f) => join(dir, f));
   const read = new Set();
   for (const f of files) for (const m of readFileSync(f, "utf8").matchAll(/\bconfig\??\.([a-zA-Z]+)\b/g)) read.add(m[1]);
-  const older = new Set(["browserEngine", "executablePath", "chromeArgs", "chromeSandbox", "json", "mjs"]); // still read, never written (browser/choice.mjs browserChoice, browser-args.mjs)
+  // Still read, never written (browser/choice.mjs browserChoice, browser-args.mjs); browserProfile is
+  // set by the launch (launch.mjs: the session's profile's engine layer for native-engine.mjs), never in
+  // config.json; json, mjs and map are file names and a rule name (profiles/map.mjs "config.map"), not keys.
+  const older = new Set(["browserEngine", "executablePath", "browserProfile", "chromeArgs", "chromeSandbox", "json", "mjs", "map"]);
   for (const k of read) assert.ok(Object.hasOwn(DEFAULT_CONFIG, k) || older.has(k), `config.${k} has no default in DEFAULT_CONFIG`);
 });
 

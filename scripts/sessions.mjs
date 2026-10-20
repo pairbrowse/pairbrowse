@@ -34,6 +34,19 @@ export const networkFile = (name) => sessionFile(name, "network.json");
 // The browser profile the session starts with (spec server-mode D1, D13): { "profileId": "p-..." },
 // owner-only. Settings live in the profile (profiles/store.mjs), never here.
 export const assignmentFile = (name) => sessionFile(name, "assignment.json");
+// The profile a session's browser folder belongs to (spec server-mode D13): { "profileId", "created" }
+// in the folder itself, so it moves with a rename and goes with a deletion, owner-only. Written at
+// the session's first start on a profile and by a reassignment, never re-stamped by a launch: a
+// launch whose profile isn't the one named here is refused (daemon/sessions/profiles.mjs).
+export const BINDING_FILE = "pairbrowse-binding.json";
+export const bindingFile = (name) => join(profileDir(name), BINDING_FILE);
+// The persona the native build keeps with a session (native-engine.mjs savePersona: the engine
+// pack's { name, options }, the name the profile's id), in the native build's own folder
+// (engine.mjs nativeProfile). "pairbrowse": the name every persona had before profiles, which the
+// config-backed default still takes over (it is saved under the default's id at its next start).
+export const PERSONA_FILE = "pairbrowse-persona.json";
+export const LEGACY_PERSONA = "pairbrowse";
+export const personaFile = (name) => join(profileDir(name), "pairbrowse-native", PERSONA_FILE);
 // Every file or folder of a kept session, moved by a rename and gone with a deletion.
 const SESSION_FILES = [profileDir, tabsFile, peopleFile, timelineDir, activityFile, networkFile, assignmentFile];
 
@@ -131,7 +144,71 @@ export function assignProfile(name, ref, { store, configSettings } = {}) {
   const record = store.use(ref, { session: name, configSettings });
   const previous = readAssignment(name).profileId;
   writeJsonAtomic(assignmentFile(name), { profileId: record.id }, { mode: 0o600 });
+  // The binding and the persona follow together (D13): a session's folder is bound to the new
+  // profile, and a persona kept for another profile (its pinned seed, a time zone set there) is
+  // removed, never carried over (the next start makes the new profile's). The default keeps an
+  // older persona named "pairbrowse" of a session never bound (it was the default's). A binding
+  // that can't be written puts the assignment back.
+  if (existsSync(profileDir(name))) {
+    const bound = readBinding(name);
+    try {
+      if (bound.profileId !== record.id) writeBinding(name, record.id);
+    } catch (e) {
+      try { if (previous) writeJsonAtomic(assignmentFile(name), { profileId: previous }, { mode: 0o600 }); else rmSync(assignmentFile(name), { force: true }); } catch {}
+      throw new Error(`Session "${name}" wasn't put on browser profile "${record.name}": its binding couldn't be written (${e?.code || "error"}).`);
+    }
+    const persona = personaNameOf(name);
+    const legacy = persona === LEGACY_PERSONA && record.kind === "config" && (!bound.profileId || bound.profileId === record.id) && !bound.problem;
+    if (persona !== undefined && persona !== record.id && !legacy) rmSync(personaFile(name), { force: true });
+  }
   return { session: name, profileId: record.id, profile: record.name, previous };
+}
+
+// The session's binding: { profileId, created, problem }. No file: both null (the session never
+// started on a profile, or started before profiles). problem: why the file can't be used (a link
+// or folder at its name, not JSON (copied aside), anything but { profileId, created }), with
+// profileId null: a launch then refuses rather than bind it anew.
+export function readBinding(name) {
+  const file = bindingFile(name);
+  const who = `Session "${validName(name) ? name : "(that name)"}"'s profile binding (${BINDING_FILE} in its folder)`;
+  const refused = (why) => ({ profileId: null, created: null, problem: `${who} ${why}; the person reassigns the session to bind it again.` });
+  let text;
+  try {
+    if (!lstatSync(file).isFile()) return refused("isn't a regular file (a link or folder at its name is never followed)");
+    text = readFileSync(file, "utf8");
+  } catch (e) {
+    if (e?.code === "ENOENT") return { profileId: null, created: null, problem: null };
+    return refused(`couldn't be read (${e?.code || "error"})`);
+  }
+  let raw;
+  try { raw = JSON.parse(text); } catch {
+    keepCorrupt(file, text);
+    return refused("isn't valid JSON (what it held is kept beside it with .corrupt added)");
+  }
+  const ok = !!raw && typeof raw === "object" && !Array.isArray(raw) && Object.keys(raw).length === 2
+    && typeof raw.profileId === "string" && PROFILE_ID.test(raw.profileId)
+    && typeof raw.created === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(raw.created);
+  if (!ok) return refused('doesn\'t hold { "profileId", "created" }');
+  return { profileId: raw.profileId, created: raw.created, problem: null };
+}
+
+// Binds the session's folder to a profile id (its first start on it, or a reassignment), 0600.
+export function writeBinding(name, profileId, at = Date.now()) {
+  if (typeof profileId !== "string" || !PROFILE_ID.test(profileId)) throw new Error("A session is bound to a profile id.");
+  writeJsonAtomic(bindingFile(name), { profileId, created: new Date(at).toISOString() }, { mode: 0o600 });
+}
+
+// The name the session's kept persona is saved under, undefined when it has none, null when its
+// file isn't a regular file holding JSON with a name (it then belongs to no profile).
+export function personaNameOf(name) {
+  const file = personaFile(name);
+  try {
+    if (!lstatSync(file).isFile()) return null;
+    const raw = JSON.parse(readFileSync(file, "utf8"));
+    return typeof raw?.name === "string" ? raw.name : null;
+  } catch (e) {
+    return e?.code === "ENOENT" ? undefined : null;
+  }
 }
 
 // The sessions assigned a profile id (the store's assignedTo: a profile in use isn't removed). A

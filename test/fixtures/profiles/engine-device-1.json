@@ -1,0 +1,13 @@
+{
+  "meta": { "schema_version": 1, "captured_at": "2026-10-01T09:00:00.000Z", "href": "http://127.0.0.1:9/?private=1", "note": "hand-written test fixture" },
+  "navigator": { "user_agent": "Mozilla/5.0 (Test)", "platform": "MacIntel", "vendor": "Test", "language": "de-DE", "languages": ["de-DE", "de", "en"],
+    "hardware_concurrency": 10, "device_memory": 8, "max_touch_points": 0, "do_not_track": null, "cookie_enabled": true, "webdriver": false, "uadata": { "mobile": false } },
+  "screen": { "width": 1512, "height": 982, "avail_width": 1512, "avail_height": 945, "color_depth": 30, "pixel_depth": 30, "device_pixel_ratio": 2, "inner_width": 1200, "screen_x": 0 },
+  "hardware_concurrency": 10, "device_memory": 8, "max_touch_points": 0, "do_not_track": null,
+  "plugins": [], "mime_types": [], "speech": [{ "name": "Test Voice" }],
+  "webgl": { "UNMASKED_RENDERER_WEBGL": "Test GPU" }, "webgpu": { "available": true, "info": { "vendor": "test" } }, "webrtc": {},
+  "fonts": ["Test Sans"], "codecs": {}, "css": { "color": 10 }, "audio": { "sum": 1 }, "perf_memory": { "jsHeapSizeLimit": 1 },
+  "connection": null, "media_devices": [], "battery": null, "permissions": {},
+  "intl": { "timeZone": "Europe/Berlin", "locale": "de-DE", "calendar": "gregory" },
+  "math": { "acos": 1.4 }, "canvas": { "hash": "0" }, "client_rects": {}, "keyboard": null, "network": null
+}

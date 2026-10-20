@@ -7,7 +7,7 @@ import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { checkProfile, profileProblem, profileDefaults, PROFILE_SCHEMA, FORBIDDEN_KEYS, SCHEMA_VERSION, FORMAT_VERSION, HISTORY_MAX } from "../scripts/profiles/schema.mjs";
+import { checkProfile, profileProblem, profileDefaults, PROFILE_SCHEMA, FORBIDDEN_KEYS, SCHEMA_VERSION, FORMAT_VERSION, HISTORY_MAX, licenseRank, mostRestrictive, forbiddenWhy, canonicalJson } from "../scripts/profiles/schema.mjs";
 
 const RECORD = JSON.parse(readFileSync(new URL("./fixtures/profiles/record-1.json", import.meta.url), "utf8"));
 const record = (change = {}) => ({ ...structuredClone(RECORD), ...structuredClone(change) });
@@ -166,4 +166,25 @@ test("provenance, validation and history keep their shapes, bounded", () => {
   refused(record({ history: [{ revision: 1, at: "2026-10-20T10:00:00Z", change: [], by: "agent" }] }), /^history\[0\]\.by is "person", "config", "migration" or "upgrade"/);
   const many = Array.from({ length: HISTORY_MAX + 1 }, () => ({ revision: 1, at: "2026-10-20T10:00:00Z", change: [], by: "person" }));
   refused(record({ history: many }), new RegExp(`^history holds at most ${HISTORY_MAX} entries`));
+});
+
+test("license: never looser than the most restrictive source; ranks read SPDX expressions", () => {
+  const prov = { format: "engine-device/1", file: "a.json", sha256: "a".repeat(64), importedAt: "2026-10-20T10:00:00Z", by: "person",
+    source: "s", license: "GPL-3.0-only", terms: null, collectedAt: null, tool: null };
+  assert.deepEqual(problems(record({ provenance: [prov], license: "GPL-3.0-only" })), []);
+  assert.deepEqual(problems(record({ provenance: [prov], license: "AGPL-3.0-only" })), [], "stricter than its sources is allowed");
+  refused(record({ provenance: [prov], license: "MIT" }), /^license is looser than its sources'/);
+  refused(record({ provenance: [{ ...prov, license: "unknown" }], license: "GPL-3.0-only" }), /"unknown"/);
+  assert.ok(licenseRank("own-capture") < licenseRank("MIT"));
+  assert.ok(licenseRank("MIT") < licenseRank("CC-BY-SA-4.0"));
+  assert.ok(licenseRank("LGPL-2.1-only") < licenseRank("GPL-2.0-only"));
+  assert.ok(licenseRank("GPL-3.0-only") < licenseRank("AGPL-3.0-only"));
+  assert.ok(licenseRank("Some-Other-1.0") > licenseRank("AGPL-3.0-only"), "an id not known ranks under unknown only");
+  assert.equal(licenseRank("MIT OR GPL-3.0-only"), licenseRank("MIT"));
+  assert.equal(licenseRank("GPL-2.0-only WITH Classpath-exception-2.0"), licenseRank("GPL-2.0-only"));
+  assert.equal(mostRestrictive([]), "own-capture");
+  assert.equal(mostRestrictive(["MIT", "Apache-2.0"]), "MIT", "the first of equals");
+  assert.equal(forbiddenWhy("gpuVendor"), "hardware value");
+  assert.equal(forbiddenWhy("timezone"), null);
+  assert.equal(canonicalJson({ b: [1, { d: 2, c: null }], a: undefined }), '{"a":null,"b":[1,{"c":null,"d":2}]}');
 });

@@ -65,6 +65,8 @@ export const ITEM_CLASSES = ["C", "M", "D", "U"];
 export const ITEM_SEVERITIES = ["error", "warning", "info"];
 export const HISTORY_MAX = 1000;
 export const PROVENANCE_MAX = 50;
+// The settings a person chooses (section 3.3); everything else in a record is the store's.
+export const SETTINGS = ["browser", "locale", "screen", "window", "display", "graphics", "persona", "payments", "network", "adBlocker"];
 const SCREEN = { type: "integer", min: 320, max: 16384 };
 
 const iso = (hint) => ({ type: "string", pattern: ISO_TIME, hint: hint || "a UTC time like \"2026-10-20T10:00:00Z\"" });
@@ -180,6 +182,47 @@ const NEVER_HELP = {
   "hardware value": "graphics and hardware are measured from this computer, never set (spec D-AP2)",
 };
 export const FORBIDDEN_KEYS = [...NEVER_WHY.keys()];
+// Why a profile can never hold key ("path", "proxy server", "hardware value", ...), or null.
+export const forbiddenWhy = (key) => (typeof key === "string" && NEVER_WHY.get(key)) || null;
+
+// How much a license asks of whoever uses the data, higher asking more (D17, D18): a record's
+// license is never looser than the most restrictive of its sources. Checked in order, first match;
+// an id not listed ranks just under "unknown" (what it allows can't be told).
+const LICENSE_RANKS = [
+  [/^unknown$/, 100],
+  [/^(?:AGPL|SSPL)-/i, 90],
+  [/^CC-BY-NC/i, 85],
+  [/^GPL-/i, 80],
+  [/^(?:CC-BY-SA|CC-BY-ND|ODbL)/i, 70],
+  [/^LGPL-/i, 60],
+  [/^(?:MPL|EPL|CDDL|EUPL|OSL|CPL)-/i, 50],
+  [/^(?:CC-BY-\d|ODC-By)/i, 30],
+  [/^(?:MIT|Apache-|BSD-|ISC$|Zlib$|BSL-1\.0$|Python-|PSF-)/i, 20],
+  [/^(?:CC0-|0BSD$|Unlicense$|PDDL-)/i, 10],
+  [/^own-capture$/, 0],
+];
+const rankOfId = (id) => (LICENSE_RANKS.find(([re]) => re.test(id))?.[1] ?? 95);
+// A license expression's rank: "A OR B" asks the least of the two, "A AND B" the most, "A WITH
+// exception" what A asks.
+export function licenseRank(license) {
+  if (typeof license !== "string" || !LICENSE.test(license)) return rankOfId("");
+  return Math.min(...license.split(" OR ").map((all) => Math.max(...all.split(" AND ").map((part) => rankOfId(part.split(" WITH ")[0])))));
+}
+// Why a license is looser than its sources', naming no string from a file: only the fixed word
+// "unknown" (an id, even a listed family's, can carry any token).
+export const looserWhy = (strictest) => (strictest === "unknown" ? " (a source's license is \"unknown\")" : "");
+// The most restrictive of some licenses (the first of equals), or "own-capture" for none.
+export function mostRestrictive(licenses) {
+  let best = null;
+  for (const l of licenses || []) if (best === null || licenseRank(l) > licenseRank(best)) best = l;
+  return best ?? "own-capture";
+}
+
+// JSON with every object's keys sorted: the same value always gives the same text (the
+// config-backed profile's hash, an export's SHA-256). Recursive: callers bound the depth first.
+export const canonicalJson = (v) => (Array.isArray(v) ? `[${v.map(canonicalJson).join(",")}]`
+  : plainObject(v) ? `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canonicalJson(v[k])}`).join(",")}}`
+    : JSON.stringify(v ?? null));
 
 const plainObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 // Keys named only when they look like a field name; others counted.
@@ -273,6 +316,8 @@ function crossFieldProblems(p) {
   if (p.kind === "config" && p.name !== DEFAULT_PROFILE) out.push(`kind "config" is only the "${DEFAULT_PROFILE}" profile's (it is computed from config.json)`);
   if (p.kind === "store" && isDefault) out.push(`the name "${p.name}" is the config-backed profile's; choose another name`);
   if (p.kind === "config" && p.provenance.length) out.push(`the "${DEFAULT_PROFILE}" profile comes from config.json and has no imported provenance`);
+  const strictest = mostRestrictive(p.provenance.map((e) => e.license));
+  if (p.provenance.length && licenseRank(p.license) < licenseRank(strictest)) out.push(`license is looser than its sources'${looserWhy(strictest)}`);
   if (p.persona.source === "host" && p.persona.seed !== null) out.push("persona.seed is null when persona.source is \"host\" (this computer's own values)");
   const late = p.history.find((h) => h.revision > p.revision);
   if (late) out.push(`history has revision ${late.revision}, after the record's revision ${p.revision}`);

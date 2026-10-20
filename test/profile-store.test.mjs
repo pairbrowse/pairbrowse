@@ -10,8 +10,8 @@ import { mkdtempSync, readFileSync, writeFileSync, statSync, existsSync, readdir
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
-import { createProfileStore, changedFields, SETTINGS } from "../scripts/profiles/store.mjs";
-import { checkProfile, SCHEMA_VERSION } from "../scripts/profiles/schema.mjs";
+import { createProfileStore, changedFields } from "../scripts/profiles/store.mjs";
+import { checkProfile, SCHEMA_VERSION, SETTINGS } from "../scripts/profiles/schema.mjs";
 import { paths, DEFAULT_CONFIG, loadConfig } from "../scripts/paths.mjs";
 import { checkConfig } from "../scripts/config-schema.mjs";
 

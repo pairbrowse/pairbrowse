@@ -24,12 +24,10 @@ import { join } from "node:path";
 import { paths } from "../paths.mjs";
 import { writeJsonAtomic, keepCorrupt, sha256 } from "../util.mjs";
 import { withInstallLockSync } from "../install-lock.mjs";
-import { SCHEMA_VERSION, PROFILE_ID, DEFAULT_PROFILE, HISTORY_MAX, checkProfile, profileDefaults } from "./schema.mjs";
+import { SCHEMA_VERSION, PROFILE_ID, DEFAULT_PROFILE, HISTORY_MAX, SETTINGS, checkProfile, profileDefaults, canonicalJson as canonical } from "./schema.mjs";
 import { upgradeProfile } from "./upgrade.mjs";
 import { validName } from "../sessions.mjs";
 
-// The settings a person chooses (section 3.3); everything else in a record is the store's.
-export const SETTINGS = ["browser", "locale", "screen", "window", "display", "graphics", "persona", "payments", "network", "adBlocker"];
 // What update() takes: the settings and the name. Provenance and license come with an import
 // (create), engine and validation with a launch, status with retire and restore.
 const EDITABLE = new Set(["name", ...SETTINGS]);
@@ -43,10 +41,6 @@ const LOCK_STALE_MS = 60_000;
 
 const plainObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 const fail = (code, message) => Object.assign(new Error(message), { code });
-// JSON with every object's keys sorted: the same settings always hash the same.
-const canonical = (v) => (Array.isArray(v) ? `[${v.map(canonical).join(",")}]`
-  : plainObject(v) ? `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canonical(v[k])}`).join(",")}}`
-    : JSON.stringify(v ?? null));
 const sameValue = (a, b) => canonical(a) === canonical(b);
 // A caller's ref or session as a message may name it: an id or a plain name, else "(that name)"
 // (it reaches logs and status, so a path or a line break never does).

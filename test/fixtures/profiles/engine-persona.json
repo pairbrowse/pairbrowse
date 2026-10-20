@@ -1,0 +1,11 @@
+{
+  "name": "travel laptop",
+  "options": {
+    "timezone": "America/New_York", "acceptLanguage": "en-US,en;q=0.9", "screenWidth": 1920, "screenHeight": 1080, "availWidth": 1920, "availHeight": 1040,
+    "colorDepth": 24, "devicePixelRatio": 1, "fingerprint": "travel-seed-1",
+    "gpuVendor": "Test Vendor", "gpuRenderer": "Test Renderer", "hardwareConcurrency": 16, "deviceMemory": 32, "maxTouchPoints": 0, "platform": "windows",
+    "proxy": "http://fixture-user:fixture-secret-pw@proxy.invalid:3128", "canvasBridge": true, "webrtcIp": "203.0.113.9", "location": "40.7,-74.0",
+    "fingerprintProfile": "some-library-device", "browserArgs": ["--no-sandbox"], "executablePath": "/tmp/x", "humanize": false, "brandVersion": "150.0.0.0",
+    "fingerprintNoise": true
+  }
+}

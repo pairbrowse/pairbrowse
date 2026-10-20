@@ -869,7 +869,8 @@ one.
 - **D16. Import checks**, each a pure function of the file and a `host` object, written as items: size
   (file at most 1 MiB, refused before parsing); strict JSON and shape with sane ranges (screen 320 to
   16384, DPR 0.5 to 5); format version known; field report (every top-level section classed); coherence
-  (`scripts/rules/coherence.mjs` `screen.believable`); provenance and license present.
+  (`scripts/rules/coherence.mjs` `screen.believable`, warnings only); provenance and license present.
+  A PairBrowse export's SHA-256 is checked before its version (step 35).
 - **D17. Provenance**: `{ format, file (base name), sha256, importedAt, by: "person", source, license,
   terms, collectedAt, tool }`. `source` and `license` required (from the file or `--source`,
   `--license`: an SPDX id, `own-capture`, or `unknown`, which imports as `unverified` with a warning on
@@ -1977,6 +1978,52 @@ it depends on.
    into `engine-profiles/` or saved personas would be left behind. Tests: `test/profile-store.test.mjs`.
 35. `profiles/device.mjs`, `import.mjs` (settings only, hardware unsupported), `export.mjs` (D-AP2,
     D15 to D18). -> 34
+   Landed as: `scripts/profiles/device.mjs` (pure): `DEVICE_SECTIONS`, the collector's top-level
+   sections each with its section 9 class, what an import does with it and the engine patch the
+   property matrix names (`140` screen, `002` persona hardware, `040` fonts, `146` memory, `147`
+   codecs, `961` WebGPU); `classifySection`, `fieldReport(format, raw)`, `deviceSettings` and
+   `personaSettings` (`PERSONA_APPLIED`; GPU, cores, memory, touch points, platform, library
+   profiles, WebRTC address, location, proxy, canvas bridge and every D6 name `unsupported`,
+   `platformVersion`/`brand`/`brandVersion` `derived`, other engine options `not-applied`). Items
+   take D10's shape with `field` naming the file's own key and `requested` set only on applied
+   values. A screen with only a width and height takes the whole screen as available, depth 24 and
+   ratio 1, each reported `derived`; languages are deduplicated and the first ten kept (the rest
+   reported); a persona's Accept-Language loses its weights, a numeric seed becomes its string.
+   `scripts/profiles/import.mjs`: `checkImport(bytes, host)` (pure; host `{ file, at, source,
+   license, terms, name }`) runs `IMPORT_CHECKS` in order: `size` (1 MiB, before parsing), `json`
+   (fatal UTF-8, `JSON.parse`), `shape` (an object, at most 32 deep, checked without recursion),
+   `format` (`detectFormat`: `format` key, else a `navigator` object, else an `options` object;
+   both refused as ambiguous), `integrity` (an export's `sha256` over the canonical JSON of the rest,
+   so a reformatted file passes and an edited one fails), `version` (`upgradeExport`, or
+   `meta.schema_version`), `fields` (an export's `profile` holds only `name`, the settings and
+   `history`; the settings read are checked as the whole record the store will make), `provenance`.
+   The first failing check refuses with "Import of "<file>" refused at the <check> check: ..." and the
+   field report without values. Coherence (`rules/coherence.mjs` `screenBelievable`, landed here
+   rather than with step 43: aspect over 3.6, available area under half, over 16384 device pixels a
+   side, a ratio off the 0.25 steps) only warns, as `mismatch` items. Provenance: from a PairBrowse
+   export the file's license and a source naming the export's version (a different `--license`
+   refused naming the file's), the export's own sources kept before the new entry (at most 50 in
+   all); from a device or persona file `source` and `license` are the person's and required.
+   `license: "unknown"` imports with `unverified: true` and a warning item; the launch warning comes
+   with step 37, which reads the record's `license`. Network ids in an export are reported and never
+   applied; an export's `history` is reported and not applied (the new profile starts its own).
+   `importInto(store, bytes, host)` (with `dryRun`, which writes nothing) writes through
+   `store.create`, naming the profile from the file (cleaned; `-imported` added to `default` or an
+   id-shaped name; `-2`, `-3` when taken) unless the person names it; `readImportFile` opens one
+   regular file with `O_NOFOLLOW` and checks its size by `fstat` before reading at most 1 MiB plus one
+   byte; `importFile` joins them. `scripts/profiles/export.mjs`: `exportProfile(record, {
+   withHistory, includeIdentity, at, version })` and `exportToFile` (0600, never over a link or
+   folder, an existing file only with `overwrite`); the export's `profile` is the name and settings
+   with `network` null and the seed null unless asked; `license` is the most restrictive of the
+   sources and the record's own. `scripts/profiles/schema.mjs` gained `SETTINGS` (moved from the
+   store), `canonicalJson` (moved too), `licenseRank` and `mostRestrictive` (unknown, then any id not
+   listed, AGPL/SSPL, CC-BY-NC, GPL, share-alike and no-derivatives, LGPL, weak copyleft,
+   attribution, permissive, public domain, own-capture; `OR` takes the least, `AND` the most), a
+   cross-field rule that a record's `license` is never looser than its provenance's most
+   restrictive, and `forbiddenWhy`. Tests: `test/profile-import.test.mjs`,
+   `test/profile-export.test.mjs`, `test/fuzz/profile-import.test.js` (every file system read
+   throws while `checkImport` runs), `test/coherence.test.mjs`, `test/profile-schema.test.mjs`;
+   fixtures `test/fixtures/profiles/engine-device-1.json` and `engine-persona.json` (hand-written).
 36. `profiles/map.mjs`; session assignment in `sessions.mjs` (D1, D6, D11, D12). -> 34, 24
 37. `daemon/sessions/profiles.mjs`, binding, persona under the profile id, launch wiring (D2, D10,
     D13). -> 36, 27
@@ -1990,7 +2037,7 @@ it depends on.
 40. `native/properties.mjs`, `validate.mjs`, validation shape in the store (E5, E6, E8). -> 34
 41. `native/graphics.mjs`, `backend.mjs`, `pairbrowse.graphics` (E2, E3, E9). -> 39
 42. `native/probe.mjs`, `probeLaunch`, self-check step (E4). -> 39, 40
-43. `rules/coherence.mjs` and `tzcountry.mjs` (the locale rules and the table landed with 32b); wired into D validation, C verdicts and the B report;
+43. `rules/coherence.mjs` and `tzcountry.mjs` (the locale rules and the table landed with 32b, `screen.believable` with 35); wired into D validation, C verdicts and the B report;
     `test/compat-vs-verification.test.mjs` (E13, C13, D16, B14). -> 29, 37, 21
 44. Launch steps 4 and 7, status part, diagnostics (E7, E9). -> 41, 42, 37
 45. Saved card: profile field, key-store check, prefs, owner "Add a saved card", "Fill saved card",

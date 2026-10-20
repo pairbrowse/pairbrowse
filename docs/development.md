@@ -183,7 +183,7 @@ picks who the helper is or relaxes a check is removed when one of those files na
 | `PAIRBROWSE_ENGINE_PROFILE_DIR` | the engine pack, set by the helper (`profiles/migrate.mjs`) | no: the helper sets its own | Where the engine pack keeps its personas: `engine-profiles/profiles` in the home, once the home is moved to browser profiles (spec server-mode D4); an inherited value is replaced |
 | `PAIRBROWSE_ENGINE_PROFILE_SOURCE` | the engine pack, set by the helper | no: the helper sets its own | The folder the pack imports personas from: `engine-profiles/source`, empty and owner-only, so nothing from elsewhere is read |
 | `PAIRBROWSE_ENGINE_CACHE` | the engine pack, set by the helper | no: the helper sets its own | The pack's cache (its GeoIP database): `engine-profiles/cache` in the home |
-| any other `PAIRBROWSE_ENGINE_*` | the engine pack | no: removed | The pack's persona library, converter, license and service settings: never read, since PairBrowse picks no other device's persona (spec server-mode D8, D9; `scripts/launcher/daemon-connect.mjs` `helperEnv` drops every inherited `PAIRBROWSE_ENGINE_*`) |
+| `PAIRBROWSE_ENGINE_*` | the engine pack (any other than the three above) | no: removed | The pack's persona library, converter, license and service settings: never read, since PairBrowse picks no other device's persona (spec server-mode D8, D9; `scripts/launcher/daemon-connect.mjs` `helperEnv` drops every inherited `PAIRBROWSE_ENGINE_*`) |
 
 Not ours but read: `CLAUDE_PROJECT_DIR` (the project folder, for the hooks and the bridge alike: `projectDir` in `scripts/home.mjs`; `.mcp.json` passes it to the MCP servers), `CLAUDE_CODE_REMOTE` and
 `CLAUDE_CODE_ENTRYPOINT` (which surface, for wording and the session picker), `SSH_CONNECTION`

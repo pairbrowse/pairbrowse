@@ -81,10 +81,12 @@ test("every PAIRBROWSE_* variable the scripts read is in development.md, and eve
     if (n.startsWith("PAIRBROWSE_TEST_")) {
       const s = n.slice("PAIRBROWSE_TEST_".length);
       assert.ok(knobs.includes(s) || gates.includes(s), `${n} (scripts/) isn't in development.md's test switches`);
-    } else assert.ok(other.includes(n), `${n} (scripts/) isn't in development.md's "Every other variable"`);
+    } else assert.ok(other.includes(n) || (n.endsWith("_") && other.includes(`${n}*`)), `${n} (scripts/) isn't in development.md's "Every other variable"`);
   }
   for (const n of other) {
     if (n === "PAIRBROWSE_TEST_*") continue;
+    // A prefix row (PAIRBROWSE_ENGINE_*): a script names the prefix itself.
+    if (n.endsWith("_*")) { assert.ok(inScripts.has(n.slice(0, -1)), `development.md lists ${n}, a prefix no script names`); continue; }
     assert.ok(inScripts.has(n), `development.md lists ${n}, which no script reads`);
   }
 

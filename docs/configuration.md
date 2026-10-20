@@ -135,6 +135,35 @@
   say the browser runs on a server; and the crash-loop limit above and the server-mode sandbox rule
   (`browserSandbox`) apply. `pairbrowse_status` says "keep-alive on", or when the browser starts
   again. With `false`, a helper started over SSH keeps today's lifetime.
+- `handoff`: hand-off messages to your phone, for when the browser runs on a server or you are away
+  from it: `{ "enabled": false, "away": false, "publicLink": false, "grantMinutes": 15,
+  "remindMinutes": 10, "channels": [] }` (default). On a computer you sit at, a step handed to you
+  stays in the PairBrowse window as before; messages go only with `enabled` `true`, and then always
+  in server mode, or on a desktop while `away` is `true`. `grantMinutes` (1 to 120) is how long a
+  link works; `remindMinutes` (1 or more) when the one reminder comes (at or after `grantMinutes` it falls back
+  to two thirds of it, with a warning). `publicLink` (lets a link go through the sharing tunnel) is
+  read and kept for the hand-off link that uses it. `channels` lists where messages go, each
+  naming its credentials by a `PAIRBROWSE_` name you save in `secrets.env` (below), never the value:
+  `{ "type": "webhook", "urlSecret": "PAIRBROWSE_WEBHOOK_URL" }` (a JSON POST of the event, id, step
+  kind, site host, link and expiry to your own https address);
+  `{ "type": "ntfy", "server": "https://ntfy.sh", "topicSecret": "PAIRBROWSE_NTFY_TOPIC",
+  "tokenSecret": "PAIRBROWSE_NTFY_TOKEN", "link": "auto" }` (`server` and `tokenSecret` optional;
+  `link` `"auto"` leaves the link out on `https://ntfy.sh` without a token, where anyone who knows
+  the topic reads it, `"always"` or `"never"`);
+  `{ "type": "telegram", "tokenSecret": "PAIRBROWSE_TELEGRAM_TOKEN", "chatSecret": "PAIRBROWSE_TELEGRAM_CHAT" }`
+  (a bot's token and a chat id or `@channel`; optional `server` for a Bot API server of your own);
+  `{ "type": "discord", "urlSecret": "PAIRBROWSE_DISCORD_WEBHOOK" }` and
+  `{ "type": "slack", "urlSecret": "PAIRBROWSE_SLACK_WEBHOOK" }` (a channel webhook's address).
+  Addresses are https (plain http only to this computer's loopback); a channel with an unknown type,
+  a missing secret, a name without the `PAIRBROWSE_` prefix or a value that doesn't fit is skipped
+  with a warning in `daemon.log` naming it, never its value. A message says only the step ("Sign in
+  on example.com"), the site's host, the expiry time (UTC) and the link: never the agent's words,
+  codes, passwords, card details or page text. Link previews are turned off where the service
+  allows (Telegram, Discord, Slack). Messages go straight from the helper, never through a browser
+  session's proxy, never following a redirect, each try bounded to 10 s with one retry after 5 s on
+  a server or network error. The hand-off flow that sends them (the link and the phone viewer), and
+  the Away switch in the side panel and Settings, come in a later version; until then these keys are
+  read and checked only.
 - `reportUrl`: where a problem report you send yourself goes (default
   `https://pairbrowse.com/api/report`): an https address with no user, query or fragment.
   `null`: no report is ever sent, and Settings doesn't offer it.

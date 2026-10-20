@@ -4,7 +4,7 @@ import { mkdirSync, chmodSync, appendFileSync, writeSync } from "node:fs";
 import { writeJsonAtomic, sha256, readJson, onCorruptJson, corruptLine } from "./util.mjs";
 import { resolveHome, gateProjectEnv, BAD_INSTANCE } from "./home.mjs";
 import { checkDownloads } from "./rules/downloads.mjs";
-import { checkConfig, configProblem, configWarnings } from "./config-schema.mjs";
+import { checkConfig, configProblem, configWarnings, handoffTimes } from "./config-schema.mjs";
 import { screenBrowserArgs, droppedWarning, sandboxOffAllowed, sandboxOffAsked, sandboxRefusal, argsKey, browserArgsOf, browserSandboxOf } from "./browser-args.mjs";
 
 // Everything PairBrowse writes is private to your user account.
@@ -159,6 +159,12 @@ export const DEFAULT_CONFIG = {
   // Server mode (display.mjs serverMode): keepAlive true marks this helper as a server even with a
   // screen of its own.
   server: { keepAlive: false },
+  // Hand-off links to a person away from the window (spec server-mode B1, decision 8): enabled
+  // turns them on; they are sent in server mode, or on a desktop while away is true; publicLink
+  // lets them go through the sharing tunnel (decision U2); grantMinutes (1 to 120) is a link's
+  // life, remindMinutes the one reminder; channels where messages go (scripts/daemon/notify/), their
+  // credentials only in secrets.env under PAIRBROWSE_ names.
+  handoff: { enabled: false, away: false, publicLink: false, grantMinutes: 15, remindMinutes: 10, channels: [] },
   // Fixed live view port, so an SSH tunnel command stays the same. 0 picks a random port.
   liveViewPort: 0,
   // Extra host names the live view answers to, for invite links only (say, this computer's
@@ -238,6 +244,11 @@ export function loadConfig(file = paths.config, log = () => {}) {
   if (dropped.length || refused.length) config.browserArgs = kept;
   if (dropped.length) CONFIG_WARNINGS.push(droppedWarning(dropped, key));
   if (refused.length && asked !== `${key} has --no-sandbox`) CONFIG_WARNINGS.push(`config.json: ${sandboxRefusal(`${key} has --no-sandbox`, process.platform)}`);
+  // The hand-off's fields each from the file or its default; a reminder past the link's life falls back.
+  const handoff = { ...DEFAULT_CONFIG.handoff, ...(checked.config.handoff && typeof checked.config.handoff === "object" ? checked.config.handoff : {}) };
+  const times = handoffTimes(handoff);
+  config.handoff = { ...handoff, remindMinutes: times.remindMinutes };
+  if (times.warning) CONFIG_WARNINGS.push(times.warning);
   for (const w of CONFIG_WARNINGS) try { log(w); } catch {}
   if (config.downloadsDir != null && (typeof config.downloadsDir !== "string" || (config.downloadsDir && checkDownloads(config.downloadsDir, { home: paths.home }).problem))) config.downloadsDir = null;
   return config;

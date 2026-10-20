@@ -41,6 +41,20 @@ export const CONFIG_SCHEMA = {
   // Depth 30 stays out until measured on a server's Xvfb.
   virtualScreen: { type: "object", fields: { width: { type: "integer", min: 800, max: 7680 }, height: { type: "integer", min: 600, max: 4320 }, depth: { values: [16, 24] } } },
   server: { type: "object", fields: { keepAlive: { type: "boolean" } } },
+  // Hand-off to a person away from the window (spec server-mode B1, B6, B11, decisions U2 and 8).
+  // channels: each an object whose own fields daemon/notify/ checks (a channel it can't use is
+  // skipped with a warning naming it); remindMinutes at or above grantMinutes falls back
+  // (handoffTimes).
+  handoff: {
+    type: "object", fields: {
+      enabled: { type: "boolean" },
+      away: { type: "boolean" },
+      publicLink: { type: "boolean" },
+      grantMinutes: { type: "integer", min: 1, max: 120 },
+      remindMinutes: { type: "integer", min: 1 },
+      channels: { type: "array", items: "object" },
+    },
+  },
   liveViewPort: PORT,
   liveViewHosts: NAMES,
   inviteBaseUrl: { type: "string", nullable: true },
@@ -106,7 +120,7 @@ export function fits(spec, v) {
     case "integer": case "number":
       if (typeof v !== "number" || !Number.isFinite(v) || (spec.type === "integer" && !Number.isInteger(v))) return false;
       return (spec.min === undefined || v >= spec.min) && (spec.max === undefined || v <= spec.max);
-    case "array": return Array.isArray(v) && (!spec.items || v.every((x) => typeof x === spec.items));
+    case "array": return Array.isArray(v) && (!spec.items || v.every((x) => (spec.items === "object" ? plainObject(x) : typeof x === spec.items)));
     case "object": return plainObject(v);
     default: return true;
   }
@@ -147,6 +161,15 @@ export function configProblem(fields) {
   if (!plainObject(fields)) return "config.json's settings are an object { ... }; nothing was written.";
   const { wrong } = checkConfig(Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined)));
   return wrong.length ? `${wrong[0]}; nothing was written.` : "";
+}
+
+// The hand-off's grant life and reminder time in minutes: { grantMinutes, remindMinutes, warning }.
+// A reminder at or after the grant's end would never come, so it falls back to two thirds of the
+// grant's life (at least a minute), with a warning saying so ("" when none).
+export function handoffTimes({ grantMinutes, remindMinutes }) {
+  if (remindMinutes < grantMinutes) return { grantMinutes, remindMinutes, warning: "" };
+  const fallback = Math.max(1, Math.floor((grantMinutes * 2) / 3));
+  return { grantMinutes, remindMinutes: fallback, warning: `config.json: handoff.remindMinutes (${remindMinutes}) is at or after handoff.grantMinutes (${grantMinutes}); reminding after ${fallback} minute${fallback === 1 ? "" : "s"} instead` };
 }
 
 // The warnings loadConfig gives (one line each), naming the file and what to do.

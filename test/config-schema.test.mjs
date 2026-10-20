@@ -9,7 +9,7 @@ import { mkdtempSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_CONFIG, loadConfig, saveConfig, CONFIG_WARNINGS } from "../scripts/paths.mjs";
-import { CONFIG_SCHEMA, checkConfig, configProblem, expected, wrongValue } from "../scripts/config-schema.mjs";
+import { CONFIG_SCHEMA, checkConfig, configProblem, expected, wrongValue, handoffTimes } from "../scripts/config-schema.mjs";
 import { statusLine } from "../scripts/daemon/serve/tools/status.mjs";
 import { createSettings } from "../scripts/liveview/settings.mjs";
 
@@ -192,4 +192,36 @@ test("browserSandbox \"required\" is kept by loadConfig; other strings are refus
   assert.match(CONFIG_WARNINGS.join("\n"), /browserSandbox is true, false or "required", not "always"/);
   assert.equal(refused.browserSandbox, true, "the default");
   assert.match(configProblem({ browserSandbox: "yes" }), /^browserSandbox is true, false or "required"/);
+});
+
+test("handoff: types and defaults; a field left out takes its default; remindMinutes at or after grantMinutes falls back", () => {
+  assert.deepEqual(DEFAULT_CONFIG.handoff, { enabled: false, away: false, publicLink: false, grantMinutes: 15, remindMinutes: 10, channels: [] });
+  let config = loadConfig(file({ handoff: { enabled: true, channels: [{ type: "ntfy", topicSecret: "PAIRBROWSE_NTFY_TOPIC" }] } }));
+  assert.deepEqual(CONFIG_WARNINGS, []);
+  assert.deepEqual(config.handoff, { ...DEFAULT_CONFIG.handoff, enabled: true, channels: [{ type: "ntfy", topicSecret: "PAIRBROWSE_NTFY_TOPIC" }] });
+  // Wrong types refused (the default for each), one line each.
+  config = loadConfig(file({ handoff: { enabled: "yes", away: 1, publicLink: "no", grantMinutes: 121, remindMinutes: 0, channels: ["webhook"] } }));
+  const w = CONFIG_WARNINGS.join("\n");
+  for (const k of ["enabled", "away", "publicLink", "grantMinutes", "remindMinutes", "channels"]) assert.match(w, new RegExp(`^config\\.json: handoff\\.${k} is `, "m"), k);
+  assert.match(w, /handoff\.grantMinutes is a whole number from 1 to 120, not 121/);
+  assert.match(w, /handoff\.channels is a list of objects, not \["webhook"\]/);
+  assert.deepEqual(config.handoff, DEFAULT_CONFIG.handoff);
+  // A channel's own fields aren't the schema's: daemon/notify/ checks them (and names what it skips).
+  assert.equal(loadConfig(file({ handoff: { channels: [{ type: "nope", x: 1 }] } })).handoff.channels.length, 1);
+  assert.deepEqual(CONFIG_WARNINGS, []);
+  // The reminder must come before the link's end.
+  config = loadConfig(file({ handoff: { grantMinutes: 30, remindMinutes: 30 } }));
+  assert.equal(config.handoff.remindMinutes, 20);
+  assert.deepEqual(CONFIG_WARNINGS, ["config.json: handoff.remindMinutes (30) is at or after handoff.grantMinutes (30); reminding after 20 minutes instead"]);
+  config = loadConfig(file({ handoff: { grantMinutes: 5 } }));
+  assert.equal(config.handoff.remindMinutes, 3, "the default 10 against a 5 minute link");
+  assert.equal(CONFIG_WARNINGS.length, 1);
+  assert.deepEqual(handoffTimes({ grantMinutes: 1, remindMinutes: 5 }).remindMinutes, 1, "never under a minute");
+  // Any reminder from 1 up is read, so one at or past a 120-minute link falls back, not to the default.
+  config = loadConfig(file({ handoff: { grantMinutes: 120, remindMinutes: 120 } }));
+  assert.equal(config.handoff.remindMinutes, 80);
+  assert.deepEqual(CONFIG_WARNINGS, ["config.json: handoff.remindMinutes (120) is at or after handoff.grantMinutes (120); reminding after 80 minutes instead"]);
+  config = loadConfig(file({ handoff: { remindMinutes: 500 } }));
+  assert.equal(config.handoff.remindMinutes, 10, "500 against the default 15: two thirds of it");
+  assert.deepEqual(handoffTimes({ grantMinutes: 120, remindMinutes: 90 }), { grantMinutes: 120, remindMinutes: 90, warning: "" });
 });

@@ -467,12 +467,14 @@ Config (`scripts/config-schema.mjs`, `DEFAULT_CONFIG`, `docs/configuration.md`; 
 ```json
 "handoff": {
   "enabled": false,
+  "away": false,
+  "publicLink": false,
   "grantMinutes": 15,
   "remindMinutes": 10,
   "channels": [
     { "type": "webhook", "urlSecret": "PAIRBROWSE_WEBHOOK_URL" },
     { "type": "ntfy", "server": "https://ntfy.sh", "topicSecret": "PAIRBROWSE_NTFY_TOPIC", "tokenSecret": "PAIRBROWSE_NTFY_TOKEN", "link": "auto" },
-    { "type": "telegram", "tokenSecret": "PAIRBROWSE_TELEGRAM_TOKEN", "chatSecret": "PAIRBROWSE_TELEGRAM_CHAT" },
+    { "type": "telegram", "tokenSecret": "PAIRBROWSE_TELEGRAM_TOKEN", "chatSecret": "PAIRBROWSE_TELEGRAM_CHAT", "server": "https://api.telegram.org" },
     { "type": "discord", "urlSecret": "PAIRBROWSE_DISCORD_WEBHOOK" },
     { "type": "slack", "urlSecret": "PAIRBROWSE_SLACK_WEBHOOK" }
   ]
@@ -1275,6 +1277,38 @@ it depends on.
    handlers moved there from `daemon.mjs`. Not masked: a value split across two stream writes,
    and the runtime's own print of a fatal error outside any handler.
 16. `handoff` schema; senders (webhook, ntfy, Telegram, Discord, Slack) and the interface (B6, B7). -> 15
+   Landed as: `config.json` `handoff` `{ enabled, away, publicLink, grantMinutes, remindMinutes,
+   channels }` (defaults false, false, false, 15, 10, []; `channels` a list of objects whose own
+   fields `daemon/notify/` checks), `away` (decision 8) and `publicLink` (U2) read and kept for
+   their steps; `loadConfig` fills each field from its default and `config-schema.mjs`
+   `handoffTimes` gives the remind fallback, `max(1, floor(grantMinutes * 2 / 3))`, with a warning
+   (`remindMinutes` is any whole number from 1, so a value at or above `grantMinutes` falls back
+   rather than being refused).
+   `scripts/daemon/notify/`: `post.mjs` `httpsPost(url, body, { headers, timeoutMs, retryMs, wait,
+   request })` answers `{ ok, status?, error }` (never the address; own `http`/`https` agents, so no
+   proxy from the environment), `addressProblem`, `isLoopbackHost`; `message.mjs` `ACTIONS`,
+   `END_REASONS`, `messageProblem` (unknown fields and values outside their rule refuse the whole
+   message; `link` at most 1600 characters, so the longest message stays under Discord's 2000 whole;
+   `expiresAt` a whole number of ms up to the last time a `Date` holds; `reason` is an ended message's B15 reason, or `browser-restarted` on a replacement turn,
+   B16), `messageText(message, { withheld })` (times in UTC: the person's zone is unknown to a
+   server); `channel.mjs` the field rules (`secret`, `address`, `values`, `pattern`) and
+   `secretFor` (secrets read at each send, so a changed token counts at once); one file per sender
+   with `{ type, fields, create(channel, { secret, post, messageText }) }`; `index.mjs` `SENDERS`,
+   `buildSenders(channels, { secret, post, table })` (warnings name the channel and the secret's
+   name, never a value), `createNotifier({ channels, secret, log, post, table, sendMaxMs })` with
+   `send(message)` answering `{ sent, failed: [{ type, error }], withheld }` (each sender bounded at
+   30 s, one failing never holds up the others), `usable()`, `warnings()`, `describe()`, and
+   `handoffSends(config, { server })` (decision 8: `enabled` and server mode or `away`). Request
+   shapes as checked against the providers' documentation on 2026-10-20: Telegram `sendMessage`
+   with `link_preview_options: { is_disabled: true }` and no `parse_mode` (optional channel field
+   `server` for a Bot API server of your own, default `https://api.telegram.org`); Discord Execute
+   Webhook with `flags: 4` (SUPPRESS_EMBEDS) and `allowed_mentions: { parse: [] }`, a message over 2000
+   characters refused rather than cut; Slack incoming
+   webhook with `unfurl_links` and `unfurl_media` false, text escaped; ntfy `X-Title`,
+   `X-Priority` (4, an end 3), `X-Tags: pairbrowse`, `X-Click`, `Authorization: Bearer`; ntfy
+   `link` is `"auto" | "always" | "never"`. Topic, bot token and chat id values are checked by
+   pattern before they reach an address. Not wired into `daemon.mjs` yet: `yourturn.mjs` (step 21)
+   makes the notifier. Security row B-3 lands here with "nothing sends them yet".
 17. `daemon/grants.mjs` (B2, B3, B4). -> 14
 18. `char` input and fuzz (B8).
 19. Live view grant server: redeem page, stream gate, `routes/turn.mjs`, pinning, filters, events

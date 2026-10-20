@@ -217,6 +217,7 @@ test("only known modules reach beyond this computer", async () => {
   const { join: j } = await import("node:path");
   const KNOWN = {
     "daemon/phishing.mjs": "the phishing list (Phishing.Database) every 6 hours, checked on this computer",
+    "daemon/notify/post.mjs": "hand-off messages to the channels you list in handoff.channels",
     "liveview/report.mjs": "a problem report you send yourself, to reportUrl",
     "sharing/join-client.mjs": "the host of a join code you entered",
     "tunnels/quick.mjs": "checks that this helper's own tunnel answers",

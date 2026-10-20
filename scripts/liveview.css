@@ -455,3 +455,29 @@ body[data-role="turn"] .frame { transform-origin: 0 0; }
 .turnkeys .type-box { flex: 1; height: 44px; font-size: 1rem; }
 .turnkeys .mini { min-width: 44px; height: 44px; color: var(--ink-2); font-size: var(--fs-3); }
 .turnkeys .turn-level { font-variant-numeric: tabular-nums; }
+
+/* Network (ui/network.js) in the Profile drawer, the owner's only: proxies, the form, a test's
+   result, each session's choice. */
+#network-panel .net-list { list-style: none; margin: 0; padding: 0; }
+#network-panel .net-list .row { grid-template-columns: minmax(0, 1fr) auto; }
+#network-panel .net-list .row .sites { grid-column: 1 / -1; grid-row: 2; }
+#network-panel .net-list .row > .fail { grid-column: 1 / -1; font-size: var(--fs-2); color: var(--bad); overflow-wrap: anywhere; }
+#network-panel .net-sessions .row { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); }
+#network-panel .net-acts { display: flex; gap: 2px; align-items: center; }
+#network-panel .ask { font-size: var(--fs-2); color: var(--muted); }
+#network-panel .lab { display: grid; gap: 2px; font-size: var(--fs-2); color: var(--muted); }
+#network-panel .check { display: flex; gap: 6px; align-items: center; font-size: var(--fs-2); color: var(--ink-2); }
+#network-panel .acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+#network-panel .action { height: 30px; padding: 0 10px; border: 1px solid var(--edge); border-radius: 8px; background: transparent; color: var(--ink); font: inherit; font-size: var(--fs-2); cursor: pointer; }
+#network-panel .action:hover { background: var(--hover); }
+#network-panel .action:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+#network-panel .empty, #network-panel .help, #network-panel .net-cred { font-size: var(--fs-2); color: var(--muted); margin: 4px 0; }
+#network-panel .net-cred:empty { display: none; }
+#network-panel .net-form-h { margin: 4px 0 0; font-size: var(--fs-2); color: var(--ink); }
+#network-panel .net-problem { font-size: var(--fs-2); color: var(--bad); }
+#network-panel .net-result { margin-top: 8px; padding: 6px 8px; border: 1px solid var(--edge); border-radius: 8px; font-size: var(--fs-2); color: var(--ink-2); }
+#network-panel .net-result p { margin: 2px 0; }
+#network-panel .net-result .net-verdict { color: var(--ok); }
+#network-panel .net-result[data-kind="error"] .net-verdict, #network-panel .net-result .net-warn { color: var(--bad); }
+#network-panel .net-choices { display: grid; gap: 6px; margin-top: 8px; }
+#network-panel button:disabled, #network-panel select:disabled { opacity: 0.5; cursor: default; }

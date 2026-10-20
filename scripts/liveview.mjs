@@ -38,6 +38,7 @@ import { createPagesRoutes } from "./liveview/routes/pages.mjs";
 import { createOwnerRoutes, inviteItems } from "./liveview/routes/owner.mjs";
 import { createViewerRoutes } from "./liveview/routes/viewer.mjs";
 import { createTurnRoutes } from "./liveview/routes/turn.mjs";
+import { createNetworkRoutes } from "./liveview/routes/network.mjs";
 import { createTurnGate, TURN_ROLES } from "./liveview/grants.mjs";
 import { NO_CAPTURE_SHARE, targetIdOf } from "./daemon/capture.mjs";
 import { STRICT_SHARE } from "./daemon/screenshare.mjs";
@@ -103,7 +104,8 @@ const sharedDefaults = { readForm: async () => null, applyForm: async () => {}, 
 // mask(text): as results are masked (saved passwords), for the tab strip's titles and the timeline.
 // timeline: the session's pictures (daemon/timeline.mjs), or null. layoutDefaults: config.layout,
 // or a function returning it (read whenever a session's layout starts). settings: the browser's
-// own Settings page's three fields ({ read(), write(given) }, liveview/settings.mjs), or null.
+// own Settings page's fields ({ read(), write(given), network }, liveview/settings.mjs; network: its
+// Network section, liveview/network.mjs, or null), or null.
 // sessionOps: the session card and the sessions page ({ state() -> { canRename, canSave, savedAt,
 // canRenameSaved (this helper renames saved sessions that aren't open: POST session's from) },
 // current() -> the open session's name, rename(name, from?), save() }), or null. outlines: the Page tab's outlines (daemon/outline.mjs), or null.
@@ -567,6 +569,7 @@ export async function startLiveView({ grants = null, covers = null, activityLog 
     ...createTurnRoutes(turnGate),
     ...createOwnerRoutes({ approvals, clickApprovals, joiners, push, stopJoinerKey, collaborationChanged, log, devPanel, joinHost, profile, journal, invites, makeInvite, broadcast, onRecord, tools, mask, recordState }),
     ...createSessionRoutes({ picker, sessionOps, broadcast, ownerSession, linkGuests, layouts, joinersNow, recordState, clickApprovals }),
+    ...createNetworkRoutes({ network: settings?.network || null, broadcast }),
     ...createPagesRoutes({ history, layoutNow, layouts, sessionName: () => sessionInfo.name, broadcast, settings, reporter, outlines, webPages, getContext, idOf, mask, watchPages, tabsStrip, agentTabs, tabOrder, capture, captureOk }),
     ...timelineRoutes.routes,
     ...toolRoutes.routes,

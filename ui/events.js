@@ -40,6 +40,7 @@ export const SERVER_EVENTS = Object.freeze({
   handoffs: { to: "owner", pages: "shared", delta: true },
   sessions: { to: "owner", pages: "shared" },
   invites: { to: "owner", pages: "shared" },
+  network: { to: "owner", pages: "shared" },
   "joiner-pointers": { to: "owner" },
   capture: { to: "pages", kind: "capture", pages: "own" },
   "tab-order": { to: "pages", pages: "shared", delta: true },

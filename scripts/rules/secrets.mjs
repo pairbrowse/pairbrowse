@@ -100,14 +100,34 @@ export function hostAllowed(url, allowed) {
 // added in the Profile panel at once.
 // save(next) throws (with the reason) when the file on disk fails a check: its passwords weren't
 // read, so writing `next` over it would lose them.
+// reload(): the file as it is on disk now ({ values, domains, problem }), for a part that must see
+// entries added to it by hand; kept as the store's copy when it reads cleanly (one that fails a
+// check leaves the copy, so what was masked stays masked).
+// update(fn): writes fn(the file on disk now) (throws as save does, and with fn's { error }), so a
+// change never drops what was added to the file by hand since the store last read it.
 export function secretStore(file, log = () => {}) {
   let current = loadSecrets(file);
   if (current.problem) log(current.problem);
+  const fresh = () => {
+    const now = loadSecrets(file);
+    if (now.problem) { current = now; throw new Error(now.problem); }
+    return now;
+  };
   return {
     get: () => current,
-    save(next) {
+    reload() {
       const now = loadSecrets(file);
-      if (now.problem) { current = now; throw new Error(now.problem); }
+      if (!now.problem) current = now;
+      return now;
+    },
+    save(next) {
+      fresh();
+      writeSecrets(file, next);
+      current = loadSecrets(file);
+    },
+    update(fn) {
+      const next = fn(fresh());
+      if (next?.error) throw new Error(next.error);
       writeSecrets(file, next);
       current = loadSecrets(file);
     },

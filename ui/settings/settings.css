@@ -221,3 +221,20 @@ button:disabled { opacity: 0.5; cursor: default; }
 }
 /* Framed, the review screen opens where it was asked for (settings.js openReport). */
 :root[data-embedded] .report { margin-top: var(--report-top, 16px); margin-bottom: auto; }
+
+/* Network (ui/network.js): proxies, the form, a test's result, each session's choice. */
+.net-list { list-style: none; margin: 0; padding: 0; }
+.net-list .row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
+.net-list .row > .fail { grid-column: 1 / -1; font-size: var(--fs-2); color: var(--bad-ink); overflow-wrap: anywhere; }
+.net-sessions .row { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); }
+.net-form-h { margin: 0; font-size: var(--fs-3); font-weight: var(--fw-name); color: var(--ink); }
+.net-form .acts { margin-top: 0; }
+.net-cred:empty { display: none; }
+.net-cred { font-size: var(--fs-2); color: var(--ink-2); }
+.net-problem { margin: 0 0 var(--sp-2); font-size: var(--fs-2); color: var(--bad-ink); }
+.net-result { margin-top: var(--sp-3); padding: var(--sp-2) var(--sp-3); border: 1px solid var(--edge); border-radius: var(--r-2); font-size: var(--fs-2); color: var(--ink-2); }
+.net-result p { margin: var(--sp-1) 0; }
+.net-result .net-verdict { color: var(--ok); font-weight: var(--fw-name); }
+.net-result[data-kind="error"] .net-verdict, .net-result .net-warn { color: var(--bad-ink); }
+.net-choices { margin-top: var(--sp-3); display: grid; gap: var(--sp-2); }
+@media (max-width: 559px) { .net-list .row { grid-template-columns: minmax(0, 1fr) auto; } .net-list .row .sites { grid-column: 1 / -1; grid-row: 2; } }

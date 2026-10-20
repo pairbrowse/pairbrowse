@@ -42,6 +42,12 @@
 // downloads path with "missing" in it isn't a folder). GET invites.json { items: [{ id, role,
 // label, share, expires }] } and POST invite { op: "revoke", id } (8-hex id: 200 { ok, id } and an
 // `invites` event, 404 for an id not out, 409 for any other body with an op).
+// GET network.json / POST network (liveview/routes/network.mjs, spec server-mode C14): the
+// `network` fixture is the summary (null: 404, a helper without the route); add, edit, remove,
+// default and session change it as net/settings.mjs does in outline (a SOCKS5 proxy with auth is
+// refused with the U4 sentence; the username and password only mark it saved, never kept) and push
+// a `network` event; test answers the `networkTest` fixture. The real checks are tested in
+// test/liveview-network-routes.test.mjs.
 // POST capture/reply (the capture page's answers and hellos, plans/550 D4): recorded, 204, the
 // body up to the helper lane's 2 MB; the test pushes `capture` events itself.
 // GET activity.json?before=<t>&limit=<n> (the helper lane's daemon/activitylog.mjs): the session's
@@ -116,6 +122,9 @@ export const defaultFixtures = () => ({
   // GET invites.json: the invites out now, never a key, code or link (null: 404).
   invites: { items: [] },
   running: "pairbrowse",
+  // GET network.json (null: 404) and POST network { op: "test" }'s answer.
+  network: null,
+  networkTest: { verdict: "ok", reason: "", exit: { ip: "203.0.113.7", country: "US" }, sameAsDirect: false, coherence: [], locale: { timezone: "Europe/Berlin", languages: ["de-DE"] }, note: "The browser's own read, WebRTC and its name lookups are checked when a session using this proxy starts." },
   // POST report's answer while config.report is true: { status, body }.
   sent: { status: 200, body: { ok: true, id: "PB-1042" } },
 });
@@ -123,7 +132,7 @@ export const defaultFixtures = () => ({
 // The event each fixture goes out as (the names liveview.mjs broadcasts); null: none.
 const EVENT = { status: "status", session: "session", collaboration: "collaboration", activity: "activity", join: "join", tabs: "tabs", layout: "layout",
   agentTabs: "agent-tabs", config: "config", profile: "profile", dev: "dev", joinhost: "joinhost", board: "board", pause: "pause", record: "record", timeline: "timeline",
-  sessions: "sessions", invites: "invites" };
+  sessions: "sessions", invites: "invites", network: "network" };
 
 const plainObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 export function merge(base, over) {
@@ -259,6 +268,40 @@ function pickAnswer(body, fx, push) {
   return { status: 200, body: { text: body.action === "new" ? "Starting a fresh session." : `Opening ${to}.` } };
 }
 
+// POST network as the helper answers it, in outline (fx: the fixtures; push: the stream).
+const SOCKS5_AUTH = "A SOCKS5 proxy with a user name and password isn't supported yet; use an HTTP or HTTPS proxy for it, or a SOCKS5 proxy without one.";
+function networkAnswer(body, fx, push) {
+  if (fx.network === null) return { status: 404 };
+  if (body?.op === "test") return { status: 200, body: fx.networkTest };
+  const refuse = (error) => ({ status: 409, body: { error } });
+  const n = { ...fx.network, proxies: [...fx.network.proxies], sessions: [...fx.network.sessions] };
+  const has = (id) => n.proxies.some((p) => p.id === id);
+  let text;
+  if (body?.op === "add" || body?.op === "edit") {
+    if (body.type === "socks5" && body.auth) return refuse(SOCKS5_AUTH);
+    if (body.op === "add" && has(body.id)) return refuse(`A proxy named "${body.id}" is there already: edit it, or choose another name.`);
+    const old = n.proxies.find((p) => p.id === body.id) || { username: false, password: false };
+    const p = { id: body.id, type: body.type, host: body.host, port: body.port ?? null, auth: !!body.auth,
+      username: !!body.auth && (old.username || !!body.username), password: !!body.auth && (old.password || !!body.password), problem: "" };
+    if (p.auth && !(p.username && p.password)) return refuse("Enter the proxy's username.");
+    n.proxies = body.op === "add" ? [...n.proxies, p] : n.proxies.map((x) => (x.id === p.id ? p : x));
+    text = `${body.op === "add" ? "Added" : "Saved"} proxy "${p.id}".`;
+  } else if (body?.op === "remove") {
+    if (n.default === body.id) return refuse(`"${body.id}" is the default: choose another for it first, then remove it.`);
+    n.proxies = n.proxies.filter((p) => p.id !== body.id);
+    text = `Removed proxy "${body.id}".`;
+  } else if (body?.op === "default") {
+    n.default = body.id;
+    text = "Saved.";
+  } else if (body?.op === "session") {
+    n.sessions = n.sessions.map((s) => (s.name === body.session ? { name: s.name, choice: body.choice, id: body.choice === "proxy" ? body.id : null } : s));
+    text = `Session "${body.session}" saved.`;
+  } else return refuse("Unknown change.");
+  fx.network = n;
+  push("network", n);
+  return { status: 200, body: { text, network: n } };
+}
+
 const sse = (event, data) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 const json = (res, code, body) => { res.writeHead(code, { "content-type": "application/json" }); res.end(JSON.stringify(body)); };
 // undefined when the body is not JSON; an empty body is null (a route that takes none).
@@ -321,10 +364,10 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
     "joins.json": () => fx.joins, "tabs.json": () => fx.tabs, "agent-tabs.json": () => fx.agentTabs, "timeline.json": () => fx.timeline, "layout.json": () => fx.layout,
     "approvals.json": () => fx.approvals, "config.json": () => fx.config, "outline.json": () => fx.outline,
     "handoffs.json": () => fx.handoffs, "downloads.json": () => fx.downloads, "recordings.json": () => fx.recordings, "diagnostics.json": () => fx.diagnostics,
-    "invites.json": () => fx.invites,
+    "invites.json": () => fx.invites, "network.json": () => fx.network,
   };
   const POSTS = new Set(["approve", "dev", "joinhost", "profile", "invite", "pick", "picker", "input", "tab", "record", "pause", "layout", "timeline", "session",
-    "handoffs", "downloads", "recordings", "diagnostics", "tab-order", "config", "report", "capture"]);
+    "handoffs", "downloads", "recordings", "diagnostics", "tab-order", "config", "report", "capture", "network"]);
   const hasItem = (name, id) => Array.isArray(fx[name]?.items) && fx[name].items.some((it) => it && String(it.id) === id);
 
   // The answer to a POST without a reply of the test's own.
@@ -400,6 +443,7 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
       push("config", out);
       return { status: 200, body: out };
     }
+    if (route === "network") return networkAnswer(body, fx, push);
     if (route === "report") {
       if (fx.config?.report !== true) return { status: 404 };
       return fx.sent;

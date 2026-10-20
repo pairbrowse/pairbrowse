@@ -26,6 +26,8 @@
 // server it can't be changed: hand-offs always go there). Anything else in the body, or an
 // invalid value, is refused (409, { error }) and nothing is written. Tunnel tokens, join
 // addresses, the report address and every other setting are never in an answer.
+// The Network section (config.json's network and the proxies' credentials) has routes of its own:
+// createSettings answers it as `network` (liveview/network.mjs, liveview/routes/network.mjs).
 import { isAbsolute, dirname, basename } from "node:path";
 import { statSync } from "node:fs";
 import { homedir } from "node:os";
@@ -40,6 +42,7 @@ import { configProblem, wrongValue } from "../config-schema.mjs";
 import { cleanName } from "../sharing/join.mjs";
 import { readLayout, layoutFrom } from "./layout.mjs";
 import { reportUrlFrom } from "./report.mjs";
+import { createNetworkSettings, localeOf } from "./network.mjs";
 
 export const SETTINGS_KEYS = ["browser", "timeline", "layout", "name", "downloads", "pictures", "cookies", "maxTabs", "askSession", "away"];
 export const CAP_MIN = 1, CAP_MAX = 200;
@@ -195,11 +198,18 @@ export function applySettings(given, config, { native = false, exists, executabl
 // vouch(path): browserProblem's check for a browser path of your own (tests pass a stand-in).
 // away(): { server, enabled, channels } now (the Away switch). savedHandoff(): config.json's own
 // handoff (read for the write, so the running config's filled-in defaults never land in the file).
+// secrets: the helper's secret store (rules/secrets.mjs secretStore), for the Network section
+// (network, liveview/network.mjs: proxies in config.json's network, their credentials in
+// secrets.env); null: no Network section. networkDeps: that part's other deps (tests).
 export function createSettings({ config, choiceConfig = () => config, native = false, settingsSection = () => false, browserInUse = () => null, save = (fields) => saveConfig(fields), exists, executable, folder, home, user, vouch = (p) => browserProblem(p), onChange = () => {},
-  away = () => ({}), savedHandoff = () => readJson(paths.config)?.handoff }) {
+  away = () => ({}), savedHandoff = () => readJson(paths.config)?.handoff, secrets = null, log = () => {}, networkDeps = {} }) {
   const read = () => readSettings(choiceConfig(), { native, exists, executable, settingsSection: settingsSection(), away: away() });
+  // The browser's time zone and languages for the Test's coherence items: the native build's own
+  // settings when it is the browser chosen, else this computer's.
+  const locale = () => localeOf(choiceConfig(), { native: read().browser === "pairbrowse" });
   return {
     read,
+    network: secrets ? createNetworkSettings({ secrets, locale, log, ...networkDeps }) : null,
     async write(given) {
       const r = applySettings(given, choiceConfig(), { native, exists, executable, ...(folder ? { folder } : {}), ...(home ? { home } : {}), ...(user ? { user } : {}), away: away() });
       if (r.error) return r;

@@ -1,18 +1,19 @@
 // PairBrowse Settings (in the PairBrowse browser the engine settings' PairBrowse section,
 // pairbrowse://settings/pairbrowse, which frames chrome://pairbrowse/settings/; settings/index.html,
 // the extension's options page, in the open build). Organized by what people come for (DESIGN.md Part H):
-// General, Agents and approvals, Sharing, Your data, About and diagnostics, and one link to the
+// General, Agents and approvals, Sharing, Network, Your data, About and diagnostics, and one link to the
 // browser's own settings. Every control reads the helper's current value and writes through a real
 // owner route with the owner's key: config.json / config (the browser, the docks at a session's
 // start, the timeline, the session question at start, downloads, pictures with results, cookie
 // banners, open tabs, your name, Away), profile.json / profile (passwords, remembered details), the
 // joinhost event / joinhost (join addresses), invites.json / invite { op: "revoke" } (invites out
-// now), diagnostics.json and diagnostics/report, and report (Report a problem; shown only while the
+// now), network.json / network (proxies, the default, each session's choice: ui/network.js; shown
+// only when the helper answers), diagnostics.json and diagnostics/report, and report (Report a problem; shown only while the
 // helper says it relays reports). Saved sessions link to the sessions page, their one home. The
-// config and invites events keep them current. This is a tab page: in the browser only window.pairbrowse.session exists here, so the
+// config, invites and network events keep them current. This is a tab page: in the browser only window.pairbrowse.session exists here, so the
 // page never calls another interface. Nothing ticks: no timer, no observer (framed, one
 // ResizeObserver while it shows); one shared event stream.
-import { $, el, avatar, hostPanel, profilePanel, helperConnection, reportPayload, sendReport, NO_AGENT, noAgentLine, awaySwitch } from "../common.js";
+import { $, el, avatar, hostPanel, profilePanel, helperConnection, reportPayload, sendReport, NO_AGENT, noAgentLine, awaySwitch, networkPanel } from "../common.js";
 import { hostKind, followHelper, postReply, UNREACHABLE } from "../helper.js";
 import { servedByBrowser, settingsHomeFor, ENGINE_SETTINGS_ORIGIN } from "../urls.js";
 
@@ -65,6 +66,8 @@ let config = null; // GET config.json, null until read (or the helper has no suc
 let diag = null; // GET diagnostics.json
 // Agents and approvals: Away (hand-offs to your phone; panels.js awaySwitch posts it, drawConfig draws it).
 const away = awaySwitch($("away-on"), $("away-state"), () => base);
+// Network (ui/network.js): its section and nav link show once the helper answers network.json.
+const network = networkPanel($("network-panel"), () => base, { shown: (on) => { $("network").hidden = !on; $("nav-network").hidden = !on; applySearch(); } });
 
 const say = (node, text, kind = "") => { node.textContent = text; node.dataset.kind = kind; };
 const getJson = (path) => fetch(base + path).then(async (r) => ({ status: r.status, body: r.ok ? await r.json().catch(() => null) : await r.text().catch(() => "") })).catch(() => ({ status: 0, body: null }));
@@ -565,7 +568,7 @@ $("search").addEventListener("keydown", (e) => {
   if (e.key === "Escape" && $("search").value) { e.preventDefault(); $("search").value = ""; applySearch(); }
   else if (e.key === "Enter") {
     e.preventDefault();
-    const first = items.find((it) => !it.classList.contains("miss") && !it.hidden);
+    const first = items.find((it) => !it.classList.contains("miss") && !it.closest("[hidden]"));
     if (first) { first.scrollIntoView({ block: "start" }); first.querySelector("input, button, select, textarea, a, [tabindex]")?.focus({ preventScroll: true }); }
   }
 });
@@ -613,7 +616,7 @@ const connect = helperConnection({
   },
   onOpen: async () => {
     await loadConfig();
-    loadInvites(); profile.load(); loadTimelineCount(); loadDiag();
+    loadInvites(); profile.load(); loadTimelineCount(); loadDiag(); network.load();
     if (location.hash === "#report") openReport();
   },
 }, (stream, url) => {
@@ -624,6 +627,7 @@ const connect = helperConnection({
   on("config", (c) => { const { restart, ...rest } = c || {}; drawConfig({ ...rest, ...(restart !== undefined ? { restart } : {}) }); });
   on("timeline", () => loadTimelineCount());
   on("invites", drawInvites);
+  on("network", network.draw);
 });
 
 setConn("connecting", "Connecting to PairBrowse…");

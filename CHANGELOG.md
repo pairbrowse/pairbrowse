@@ -7,6 +7,10 @@ release check and VirusTotal reports. No release so far fixed a vulnerability wi
 
 ## Unreleased
 
+**New**
+
+- **Set up proxies in Settings:** Settings has a Network section (also in the Profile panel of your own live view link) where you add, edit, test and remove a proxy (HTTP, HTTPS or SOCKS5, with an optional username and password) and choose which sessions use it, or the default for all of them. The username and password are saved only in PairBrowse's private passwords file on this computer and never shown again: the page says "saved" or "not set". **Test** shows the address and country your traffic would leave from, whether it really leaves through the proxy, and a warning when your browser's time zone or languages don't fit that country. Agents and people who join your session can't open or change any of it. A proxy that needs a username and password can be saved and tested now, but still starts no session until a PairBrowse browser build can take them safely.
+
 **Changed**
 
 - **Card details are yours to type, always:** an agent can no longer type, fill, paste or choose a payment card's number, security code or expiry date, in any session, app or permission mode, test cards on your own checkout included. The agent fills the rest of the checkout (the name on the card, the billing address) and then hands the step to you: you type the card in the PairBrowse window and press Pay yourself. A card number is also never kept among remembered details. If you used to let an agent fill test cards on localhost, type them yourself now, or let the agent hand you that step.

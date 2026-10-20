@@ -28,7 +28,8 @@ both({ fixtures, viewport: VIEW }, async ({ helper, until, inPage, errors }) => 
   await until("the config", () => document.querySelector("input[name=browser][value=pairbrowse]").checked);
   const top = await inPage(() => ({
     ids: [...document.querySelectorAll("main > section.sec")].map((s) => s.id),
-    nav: [...document.querySelectorAll(".nav a")].map((a) => [a.textContent.trim(), a.getAttribute("href")]),
+    nav: [...document.querySelectorAll(".nav a")].filter((a) => !a.hidden).map((a) => [a.textContent.trim(), a.getAttribute("href")]),
+    network: [document.getElementById("network").hidden, document.getElementById("nav-network").hidden],
     host: document.body.dataset.host,
     docks: ["left", "right"].map((s) => document.querySelector(`input[name=dock-${s}]:checked`)?.value),
     docksShown: !document.getElementById("docks").hidden,
@@ -38,7 +39,8 @@ both({ fixtures, viewport: VIEW }, async ({ helper, until, inPage, errors }) => 
     appearance: !!document.getElementById("appearance"),
     report: document.getElementById("report-open").hidden,
   }));
-  assert.deepEqual(top.ids, ["general", "agents", "sharing", "data", "about"]);
+  assert.deepEqual(top.ids, ["general", "agents", "sharing", "network", "data", "about"]);
+  assert.deepEqual(top.network, [true, true], "a helper without network.json: no Network section");
   assert.deepEqual(top.nav, [["General", "#general"], ["Agents and approvals", "#agents"], ["Sharing", "#sharing"], ["Your data", "#data"], ["About and diagnostics", "#about"], ["Browser settings", "chrome://settings"]]);
   const ext = top.host === "open";
   assert.equal(top.host, ext ? "open" : "pairbrowse");
@@ -674,5 +676,91 @@ both({ fixtures: { ...fixtures, config: { ...fixtures.config, away: { on: false,
   const { away: _away, ...old } = helper.fixtures.config;
   helper.push("config", old);
   await until("hidden", () => document.getElementById("away").hidden);
+  assert.deepEqual(errors, []);
+});
+
+// 14. Network (spec server-mode C14): the section renders the helper's proxies, the default and
+// each session's choice; add and edit write POST network with the password only as typed (the
+// field is write-only: emptied after each save or test, the row says "saved", never the value);
+// Test shows the exit address, country, the leak verdict and a coherence warning; a SOCKS5 proxy
+// with a username is refused with the U4 sentence; the default and a session's choice write too.
+const NET = {
+  problem: "", strict: true, default: null,
+  proxies: [{ id: "us-east", type: "http", host: "203.0.113.10", port: 3128, auth: true, username: true, password: true, problem: "" }],
+  sessions: [{ name: "default", choice: "default", id: null }, { name: "shop-a", choice: "direct", id: null }],
+};
+const TEST = { verdict: "ok", reason: "", exit: { ip: "203.0.113.7", country: "US" }, sameAsDirect: false,
+  coherence: [{ id: "locale.timezone-vs-egress", severity: "error", text: "The browser's time zone Europe/Berlin is used in DE, but this proxy's exit is in US: sites can see the two don't match." }],
+  locale: { timezone: "Europe/Berlin", languages: ["de-DE"] }, note: "The browser's own read, WebRTC and its name lookups are checked when a session using this proxy starts." };
+both({ fixtures: { ...fixtures, network: NET, networkTest: TEST }, viewport: VIEW }, async ({ page, helper, until, inPage, errors }) => {
+  await until("the section", () => !document.getElementById("network").hidden && !document.getElementById("nav-network").hidden);
+  await until("the proxy row", () => document.querySelectorAll("#net-list li").length === 1);
+  const row = await inPage(() => document.querySelector("#net-list li").textContent);
+  assert.match(row, /us-east/);
+  assert.match(row, /HTTP 203\.0\.113\.10:3128/);
+  assert.match(row, /Username saved, password saved\./);
+  assert.deepEqual(await inPage(() => [...document.querySelectorAll("#net-default option")].map((o) => [o.value, o.selected])), [["", true], ["us-east", false]]);
+  assert.deepEqual(await inPage(() => [...document.querySelectorAll("#net-sessions li")].map((li) => [li.dataset.session, li.querySelector("select").value])), [["default", "default"], ["shop-a", "direct"]]);
+
+  // Edit: the password field is write-only (empty, "saved" as its placeholder), and stays empty
+  // after a save; only what was typed goes in the body.
+  await page.click('#net-list li button[aria-label="Edit us-east"]');
+  await until("the form", () => !document.getElementById("net-form").hidden);
+  const form = await inPage(() => ({ id: document.getElementById("net-id").value, ro: document.getElementById("net-id").readOnly, type: document.getElementById("net-pass").type,
+    pass: document.getElementById("net-pass").value, ph: document.getElementById("net-pass").placeholder, cred: document.getElementById("net-cred").textContent }));
+  assert.deepEqual(form, { id: "us-east", ro: true, type: "password", pass: "", ph: "Saved: leave empty to keep", cred: "Username saved, password saved." });
+  await page.fill("#net-port", "8080");
+  await page.fill("#net-pass", "s3cret-new");
+  await page.click("#net-save");
+  await posted(helper, page, "the edit", "network", { op: "edit", id: "us-east", type: "http", host: "203.0.113.10", port: 8080, auth: true, password: "s3cret-new" });
+  await until("saved", () => document.getElementById("net-msg").textContent === 'Saved proxy "us-east".' && document.getElementById("net-form").hidden);
+  assert.equal(await inPage(() => document.getElementById("net-pass").value), "", "never kept in the page");
+  assert.doesNotMatch(await inPage(() => document.body.innerText), /s3cret-new/);
+
+  // Test: exit address, country, leak verdict and the coherence warning.
+  await page.click('#net-list li button[aria-label="Test us-east"]');
+  await posted(helper, page, "the test", "network", { op: "test", id: "us-east", type: "http", host: "203.0.113.10", port: 8080, auth: true });
+  await until("the result", () => !document.getElementById("net-result").hidden);
+  const res = await inPage(() => document.getElementById("net-result").innerText);
+  assert.match(res, /^Passed\./);
+  assert.match(res, /Exit address 203\.0\.113\.7, country US\./);
+  assert.match(res, /No leak: the exit isn't this computer's own address\./);
+  assert.match(res, /time zone Europe\/Berlin is used in DE, but this proxy's exit is in US/);
+  assert.match(res, /checked when a session using this proxy starts/);
+
+  // Add a SOCKS5 proxy with a username: refused with the U4 sentence, nothing added.
+  await page.click("#net-add");
+  await page.fill("#net-id", "socks-a");
+  await page.selectOption("#net-type", "socks5");
+  await page.fill("#net-host", "198.51.100.4");
+  await page.check("#net-auth");
+  await page.fill("#net-user", "user-a");
+  await page.fill("#net-pass", "pass-a");
+  await page.click("#net-save");
+  await until("refused", () => /SOCKS5 proxy with a user name and password isn't supported yet/.test(document.getElementById("net-msg").textContent));
+  assert.equal(await inPage(() => document.querySelectorAll("#net-list li").length), 1);
+  assert.equal(await inPage(() => document.getElementById("net-pass").value), "");
+  // Without one it is added, and the list follows.
+  await page.uncheck("#net-auth");
+  await page.click("#net-save");
+  await posted(helper, page, "the add", "network", { op: "add", id: "socks-a", type: "socks5", host: "198.51.100.4", port: null, auth: false });
+  await until("two rows", () => document.querySelectorAll("#net-list li").length === 2);
+
+  // The default and a session's choice.
+  await page.selectOption("#net-default", "us-east");
+  await posted(helper, page, "the default", "network", { op: "default", id: "us-east" });
+  await page.selectOption('#net-sessions li[data-session="shop-a"] select', "proxy:socks-a");
+  await posted(helper, page, "the session", "network", { op: "session", session: "shop-a", choice: "proxy", id: "socks-a" });
+  await until("the session row", () => document.querySelector('#net-sessions li[data-session="shop-a"] select').value === "proxy:socks-a");
+  assert.deepEqual(errors, []);
+});
+
+// A secrets.env that can't be used: the section says why, and the row doesn't claim "not set".
+const SECRETS_PROBLEM = "/x/secrets.env is readable by other users; run chmod 600 on it. Secrets are disabled until then.";
+both({ fixtures: { ...fixtures, network: { ...NET, secretsProblem: SECRETS_PROBLEM, proxies: [{ ...NET.proxies[0], username: false, password: false }] } }, viewport: VIEW }, async ({ until, inPage, errors }) => {
+  await until("the proxy row", () => document.querySelectorAll("#net-list li").length === 1);
+  assert.deepEqual(await inPage(() => [document.getElementById("net-secrets-problem").hidden, document.getElementById("net-secrets-problem").textContent]), [false, SECRETS_PROBLEM]);
+  assert.match(await inPage(() => document.querySelector("#net-list li").textContent), /Username and password can't be read \(secrets\.env, above\)\./);
+  assert.equal(await inPage(() => document.getElementById("net-add").disabled), false, "changes without credentials still go through");
   assert.deepEqual(errors, []);
 });

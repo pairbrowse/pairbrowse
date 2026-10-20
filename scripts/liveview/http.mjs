@@ -126,6 +126,7 @@ const ASSETS = new Map(Object.entries({
   "checklist.js": ["../ui/checklist.js", "text/javascript; charset=utf-8"],
   "report.js": ["../ui/report.js", "text/javascript; charset=utf-8"],
   "panels.js": ["../ui/panels.js", "text/javascript; charset=utf-8"],
+  "network.js": ["../ui/network.js", "text/javascript; charset=utf-8"],
   "popover.js": ["../ui/popover.js", "text/javascript; charset=utf-8"],
   "stream.js": ["../ui/stream.js", "text/javascript; charset=utf-8"],
 }).map(([name, [file, type]]) => [name, { file, body: readFileSync(new URL(file, scripts)), type }]));

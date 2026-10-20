@@ -202,8 +202,8 @@
   line in `~/.pairbrowse/audit.jsonl` (owner-only, appended, moved to `audit.jsonl.1` at 1 MB):
   its time, the event, the hand-off's short id, the session, the page's origin and path, and words
   from a fixed list; never a key, link, secret, typed text or page content.
-- `network`: per-session proxies, for you (the operator) to set here; no agent tool can set a
-  proxy or a credential, and Settings doesn't show this block. `null` (default) or absent: every
+- `network`: per-session proxies, for you (the operator) to set here or in Settings' Network
+  section (below); no agent tool can set a proxy or a credential. `null` (default) or absent: every
   session connects directly. Its shape:
   `{ "proxies": { "us-east": { "server": "http://203.0.113.10:3128", "auth": true, "bypass": [],
   "expectEgress": ["203.0.113.0/24", "country:US"], "onEgressChange": "pause" } }, "default": null,
@@ -277,6 +277,29 @@
   shared browser mode, a session in strict mode sends joiners pictures of its tabs through the
   join channel, never a direct connection (that would reach a STUN server and the joiner outside
   the proxy), and without sound; joining from a strict session asks for those pictures too.
+  Settings' Network section (the PairBrowse browser's Settings page, the extension's options page,
+  and the Profile drawer of your own live view link) adds, edits, tests and removes
+  a proxy (its id as the name, HTTP, HTTPS or SOCKS5, host, port, and whether it needs a username
+  and password), picks `default` and each kept session's entry in `sessions` (follow the default,
+  direct, or a proxy). It writes this block in `config.json` (the rest of the file as you wrote it;
+  `bypass`, `expectEgress`, `onEgressChange`, `strict`, `checkUrl` and `recheckMinutes` stay
+  as they are, set here only) and the username and password into `secrets.env` under their
+  `PAIRBROWSE_PROXY_` names. Both are write-only: the page shows "saved" or "not set", never a
+  value; leave a field empty to keep what is saved, and turn the switch off to delete both.
+Settings reads `secrets.env` as it is each time, so names you add there by hand show as saved at
+once and a save from Settings keeps them; while `secrets.env` can't be used (a link, another
+user's file, readable by others), the section says why and refuses a username or password. A
+  SOCKS5 proxy with a username is refused (as above), and a proxy that is still the default or a
+  session's choice can't be removed until you choose another for them. While this block has a
+  problem that keeps every session from starting, or `config.json` can't be parsed, Settings
+  shows the reason and changes nothing. **Test** reads `checkUrl` through the proxy as the form has
+  it (nothing is saved) and, without `expectEgress`, this computer's own exit to compare, and shows
+  the exit address and country, whether the traffic leaves through the proxy (not from this
+  computer's own address), and a warning when the browser's time zone isn't one used in the exit's
+  country or its languages name another region (the native build's `pairbrowse.timezone` and
+  `acceptLanguage`, else this computer's; none with `geoip`, which follows the exit). The browser's
+  own read, WebRTC and its name lookups are checked when a session using the proxy starts. A
+  change counts from a session's next start.
 - `reportUrl`: where a problem report you send yourself goes (default
   `https://pairbrowse.com/api/report`): an https address with no user, query or fragment.
   `null`: no report is ever sent, and Settings doesn't offer it.

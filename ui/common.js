@@ -12,6 +12,7 @@
 //   checklist.js  the goal log's done lines and checklist
 //   report.js     report a problem
 //   panels.js     join requests, join addresses, dev servers, the profile
+//   network.js    the Network section: proxies, the default, each session's choice
 //   popover.js    Share, the session switcher, the switch question, askDock
 //   stream.js     helperStream, the one owner event stream per origin
 // The words and colors the helper shares with the pages are in vocab.js, the browser's own
@@ -26,5 +27,6 @@ export * from "./people.js";
 export * from "./checklist.js";
 export * from "./report.js";
 export * from "./panels.js";
+export * from "./network.js";
 export * from "./popover.js";
 export * from "./stream.js";

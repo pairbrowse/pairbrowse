@@ -625,6 +625,16 @@ fail closed, also after recovery.
   shows the measured exit address, country and the leak verdict, and any coherence warning (C13)
   such as a time zone that doesn't match the exit country. A SOCKS5 entry with a username is refused
   with the U4 sentence. No agent tool and no joiner can open or write this section (owner only).
+  As built (step 32b): the username is write-only too (both are "saved" or "not set"); Test runs the
+  helper's probe only (through the proxy, and this computer's own exit without `expectEgress`), since
+  the browser-side read, WebRTC and names need a browser on that proxy and run at a session's start;
+  the live view's owner page has the section in its Profile drawer (the owner key works only under a
+  loopback name, so a phone reaches it through an SSH tunnel); a proxy still named by `default` or a
+  session can't be removed. `secrets.env` is read from disk for each summary, change and Test (an
+  entry added by hand counts at once), and each credential change applies to the file as it is then,
+  so nothing added by hand meanwhile is lost; when the file can't be used (a link, another user's,
+  readable by others) the section says why, and a change that needs a username and password is
+  refused with that reason.
 - **C5. Strict mode by default** for proxied sessions: `--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE
   <proxy host>, EXCLUDE localhost` and `--webrtc-ip-handling-policy=disable_non_proxied_udp` on both
   builds, and on the open build also `--force-webrtc-ip-handling-policy=disable_non_proxied_udp` (its
@@ -1048,8 +1058,10 @@ inconsistency; remove the canvas bridge; keep the sandbox on.
   `gpu.vs-platform` (renderer family vs platform), `gpu.software-as-hardware` (page claims hardware
   on a software backend), `screen.display`, `screen.believable` (window within screen, avail within
   screen, DPR in a common set), `locale.timezone-vs-egress` (error), `locale.language-vs-egress`
-  (warning). The time-zone-to-country table is generated from the IANA tz database's `zone1970.tab`
-  (public domain) into `scripts/rules/tzcountry.mjs` by a `scripts/dev/` script.
+  (warning). The time-zone-to-country table is generated from the IANA tz database's `zone.tab`
+  and, where the system has it, `zone1970.tab` (public domain; macOS ships only `zone.tab`), each
+  zone also under the name Intl reports for it (`Asia/Saigon`), into `scripts/rules/tzcountry.mjs`
+  by `scripts/dev/tzcountry.mjs` (landed with step 32b).
 - **E14. Engine audit** (pn `native/ENGINE-AUDIT.md`, private): every switch in `000`, every data table,
   its page surface, property class and recorded provenance.
 
@@ -1846,6 +1858,49 @@ it depends on.
 32b. Settings "Network" section and owner routes: add, edit, test, remove a proxy, default and
     per-session choice, write-only password, test result with exit country and coherence warning;
     tests in `test/ui-settings.test.mjs` and `test/liveview-network-routes.test.mjs` (C14). -> 24, 29, 32
+   Landed as: `scripts/net/settings.mjs` (pure): `networkSummary(raw, { sessions, values, problem })`
+   (proxies with `username` and `password` true when saved, never the values, and a proxy's own
+   problem; the default; each kept session's choice `default`, `direct` or `proxy`; clean sessions
+   never listed), `readProxyForm` (id, type `http`/`https`/`socks5`, host, port, `auth`, credentials
+   4 to 4096 characters, one line; written back through `parseServer`, so user info, paths and SOCKS4
+   are refused as in config.json; SOCKS5 with `auth` refused with `SOCKS5_AUTH_REFUSAL`, the U4
+   clause `net/config.mjs` `SOCKS5_AUTH` now also uses), `readNetworkOp` (each op's own fields only)
+   and `networkChange(raw, op, { values })` (`add`, `edit`, `remove`, `default`, `session` ->
+   `{ network, set, remove, text }` or `{ error }`): an edit keeps the fields Settings doesn't show
+   (`bypass`, `expectEgress`, `onEgressChange`); a credential left empty keeps the saved one;
+   `auth` off (or a removal) deletes both; decided here, a proxy still named by `default` or a
+   session is not removed (its sessions would refuse to start, and quietly turning them direct
+   would break C7's spirit); a block with a top-level problem, or a change that leaves the edited
+   entry or the block with one (`checkNetwork`), is refused whole. `scripts/liveview/network.mjs`
+   `createNetworkSettings({ configFile, secrets, sessions, locale, probe, log })` reads
+   `config.json` as written (one that can't be parsed: nothing written, as `saveConfig`) and replaces
+   only its `network` with `writeJsonAtomic` (not `saveConfig`, whose schema check would refuse a
+   change over an unrelated proxy's problem); credentials go through the helper's secret store
+   (`setReservedSecret`, `deleteSecret`, `secretStore.save`), set before the config write and
+   deleted after it, so masking (`logfile.mjs` `maskWith`) has them at once. `test(op)` (one at a
+   time) probes through the form's proxy with the typed or saved credentials (used for that probe
+   only) and, without `expectEgress`, this computer's exit, judged by `egressVerdict` with the
+   helper's read for both sides; it answers `{ verdict, reason, exit: { ip, country }, sameAsDirect,
+   coherence, locale, note }` and logs only that it ran and its verdict. Decided here: the coherence
+   input is `localeOf(config, { native })`: the native build's `pairbrowse.timezone` and
+   `acceptLanguage` when it is the browser chosen, else this computer's (Intl); nothing with
+   `geoip`, which follows the exit; per-profile locale comes with Phase D. `scripts/rules/coherence.mjs`
+   lands `localeVsEgress` (`locale.timezone-vs-egress`, error; `locale.language-vs-egress`, warning,
+   from the languages' region subtags only) and `scripts/rules/tzcountry.mjs` (`countriesOf`, from
+   `scripts/dev/tzcountry.mjs`); step 43 adds the other E13 rules and wires them into D, C verdicts
+   and B. Routes `scripts/liveview/routes/network.mjs`: `GET network.json` and `POST network`
+   (bodies up to `BODY_MAX.profile`), the new owner-only right `network` (`invites.mjs` RIGHTS), the
+   new `network` event (owner streams, `ui/events.js`) with the summary after each change; Test
+   answers in its reply only. `createSettings` takes `secrets` (`daemon.mjs` passes the store on
+   its existing line) and answers `network`; `startLiveView` mounts its routes from
+   `settings.network`. UI: `ui/network.js` `networkPanel(root, base, { shown })` (flat, re-exported
+   by `common.js`, served to the live view): rows with Edit, Test and Remove (asked in the row), the
+   add/edit form (the password field `type=password`, emptied after every save or test), the test
+   result (exit, country, leak line, coherence items, what a session's start checks), the default and
+   each session's choice; Settings gets a `Network` section and nav link, shown once the helper
+   answers `network.json` (Enter in the search now skips items in hidden sections); the live view's
+   Profile drawer gets the same panel. Tests: `test/liveview-network-routes.test.mjs`,
+   `test/ui-settings.test.mjs` (14), `test/coherence.test.mjs`, `test/liveview.test.mjs` (the asset).
 33. `profiles/schema.mjs`, `upgrade.mjs` (D19). -> 12
 34. `profiles/store.mjs`, paths and config keys (D4, D5). -> 33
 35. `profiles/device.mjs`, `import.mjs` (settings only, hardware unsupported), `export.mjs` (D-AP2,
@@ -1863,7 +1918,7 @@ it depends on.
 40. `native/properties.mjs`, `validate.mjs`, validation shape in the store (E5, E6, E8). -> 34
 41. `native/graphics.mjs`, `backend.mjs`, `pairbrowse.graphics` (E2, E3, E9). -> 39
 42. `native/probe.mjs`, `probeLaunch`, self-check step (E4). -> 39, 40
-43. `rules/coherence.mjs` and `tzcountry.mjs`; wired into D validation, C verdicts and the B report;
+43. `rules/coherence.mjs` and `tzcountry.mjs` (the locale rules and the table landed with 32b); wired into D validation, C verdicts and the B report;
     `test/compat-vs-verification.test.mjs` (E13, C13, D16, B14). -> 29, 37, 21
 44. Launch steps 4 and 7, status part, diagnostics (E7, E9). -> 41, 42, 37
 45. Saved card: profile field, key-store check, prefs, owner "Add a saved card", "Fill saved card",

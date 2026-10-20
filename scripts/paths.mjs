@@ -99,6 +99,14 @@ export const paths = {
   playbooks: join(HOME, "playbooks"),
   sessions: join(HOME, "sessions"),
   currentSession: join(HOME, "session"),
+  // Browser profiles (spec server-mode D4, profiles/store.mjs): one owner-only <id>.json each
+  // (0600, the folder 0700), earlier revisions in <id>.history/<revision>.json, and the write lock.
+  browserProfiles: join(HOME, "browser-profiles"),
+  // The engine pack's persona and cache folders for this home (D4, owner-only), set up by the
+  // first-start migration (spec step 38); until then the engine keeps its own.
+  engineProfiles: join(HOME, "engine-profiles"),
+  // One lock per pinned persona seed across the instances of one shared home (D3, spec step 38).
+  identityLocks: join(SHARED, "identity-locks"),
   // Facts Claude may fill in (facts.md above is the older format, imported once).
   factsJson: join(HOME, "facts.json"),
   // Sharing's saved state (tunnels, invites), previews of downloaded files, recordings.
@@ -173,6 +181,9 @@ export const DEFAULT_CONFIG = {
   // bypass, expectEgress, onEgressChange } }, default, sessions: { <session>: <id> | null }, strict,
   // checkUrl, recheckMinutes }, credentials only in secrets.env. null: every session direct.
   network: null,
+  // Browser profiles (spec server-mode D10): true refuses a launch on a profile not validated on
+  // this browser build, or one with an error-severity consistency item.
+  requireValidatedProfiles: false,
   // Fixed live view port, so an SSH tunnel command stays the same. 0 picks a random port.
   liveViewPort: 0,
   // Extra host names the live view answers to, for invite and hand-off links only (say, this computer's

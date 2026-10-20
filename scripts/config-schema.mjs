@@ -62,6 +62,8 @@ export const CONFIG_SCHEMA = {
   // net/config.mjs checkNetwork, whose warnings loadConfig adds; never dropped for the default
   // (that would make a proxied session direct).
   network: { nullable: true, hint: 'an object { "proxies": { ... }, "default", "sessions", "strict", "checkUrl", "recheckMinutes" } (net/config.mjs)' },
+  // Browser profiles (spec server-mode D10): only validated ones launch (profiles/store.mjs records).
+  requireValidatedProfiles: { type: "boolean" },
   liveViewPort: PORT,
   liveViewHosts: NAMES,
   inviteBaseUrl: { type: "string", nullable: true },

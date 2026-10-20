@@ -303,6 +303,11 @@ user's file, readable by others), the section says why and refuses a username or
   `acceptLanguage`, else this computer's; none with `geoip`, which follows the exit). The browser's
   own read, WebRTC and its name lookups are checked when a session using the proxy starts. A
   change counts from a session's next start.
+- `requireValidatedProfiles`: `false` (default). For browser profiles, which server mode brings
+  (kept owner-only in `~/.pairbrowse/browser-profiles/`): `true` will refuse to start a session on a
+  profile that hasn't been validated on the browser build in use, or one with an error in its
+  consistency checks. It is checked and kept now, and changes nothing until profiles are assigned
+  to sessions.
 - `reportUrl`: where a problem report you send yourself goes (default
   `https://pairbrowse.com/api/report`): an https address with no user, query or fragment.
   `null`: no report is ever sent, and Settings doesn't offer it.

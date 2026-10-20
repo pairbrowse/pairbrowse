@@ -1941,6 +1941,40 @@ it depends on.
    `test/profile-schema.test.mjs`, `test/profile-upgrade.test.mjs`, fixture
    `test/fixtures/profiles/record-1.json`. "profileSelect is closed" stays with step 12.
 34. `profiles/store.mjs`, paths and config keys (D4, D5). -> 33
+   Landed as: `paths.browserProfiles`, `paths.engineProfiles` (home) and `paths.identityLocks`
+   (shared home); `requireValidatedProfiles` (default false) in `DEFAULT_CONFIG` and the schema,
+   read from step 37 on. `scripts/profiles/store.mjs` `createProfileStore({ dir, now, randomId,
+   assignedTo })`: `list` (the default first, then by name; a file that can't be read listed with its
+   problem), `get` (by id or name, names case-insensitively), `use(ref, { session, configSettings })`
+   (what assignment and launch call: unknown, retired, unreadable or newer refused naming the session
+   and profile, each only when it is an id or a plain name, else "(that name)", never falling back to
+   `default`; for the default, `configSettings` (`fromConfig(config)`) answers `configProfile`'s
+   whole record, and without it only the stored part marked `settings: "config.json"`, which is no
+   record to launch), `create` (settings and an import's `provenance` and `license`; anything else
+   refused by name; a name is unique case-insensitively, never `default` and never shaped like a
+   profile id), `update(ref, fields, { expectRevision })` (name and
+   settings only, object settings merged one level, nothing differing writes nothing, history entry
+   naming the changed field paths), `retire`, `restore`, `remove` (refused while `assignedTo(id)`
+   names sessions: step 36 passes `sessions.mjs`'s), and, for D4's revisions and the "history
+   offered" of a corrupt file, `revisions`, `revision(ref, n)` and `revert(id, n)` (also when the
+   current file can't be read; the unusable file is copied aside first and the new revision lands
+   above the lost one: its own number plus one when it parses, else two past the highest kept, so a
+   writer still holding it is stale; a name another profile took meanwhile is refused). Each write runs under
+   `install-lock.mjs`'s sync lock on `browser-profiles/.lock` (which gained a `what` for its
+   refusal); the file as it was is kept as `<id>.history/<revision>.json` before the next takes its
+   place (an upgraded older record is thus written at its next change, its old file kept), revision
+   files past `HISTORY_MAX` pruned. Records are read only from regular files (a link refused) through
+   `upgradeProfile`. D5: the default's file holds `{ schema, id, name, kind: "config", revision,
+   status, created, engine, validation, history, configHash, sections }` (the SHA-256 of the
+   settings' canonical JSON, and 16 hex digits per settings section so the history entry, by
+   `config`, names the sections that changed); `configProfile(settings)` (step 36 passes
+   `fromConfig(config)`) makes it at revision 1, bumps it on a changed hash and answers the whole
+   checked record; it makes one only when no file in `browser-profiles/` holds `kind: "config"`: one
+   that does but can't be used (newer, PROFILE_NEWER; invalid), or a file that can't be read at all,
+   refuses naming that file (D19: never rewritten, and the default's id, history and sessions kept); it has no revision files (its settings were never stored). Moved to step 38:
+   setting `PAIRBROWSE_ENGINE_PROFILE_DIR`, `PAIRBROWSE_ENGINE_PROFILE_SOURCE` and
+   `PAIRBROWSE_ENGINE_CACHE` (D4), which must follow the migration's copy of `~/.pairbrowse-engine`
+   into `engine-profiles/` or saved personas would be left behind. Tests: `test/profile-store.test.mjs`.
 35. `profiles/device.mjs`, `import.mjs` (settings only, hardware unsupported), `export.mjs` (D-AP2,
     D15 to D18). -> 34
 36. `profiles/map.mjs`; session assignment in `sessions.mjs` (D1, D6, D11, D12). -> 34, 24

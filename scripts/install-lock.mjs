@@ -107,9 +107,10 @@ function keepFresh(file, token, staleMs) {
   t.unref?.();
   return () => clearInterval(t);
 }
-const busy = (file) => {
+// what: the work the lock guards, as the refusal names it ("install"; the profile store passes its own).
+const busy = (file, what = "install") => {
   const pid = readHolder(file)?.pid;
-  return new Error(`another PairBrowse install is still running${pid ? ` (process ${pid})` : ""}; try again in a minute`);
+  return new Error(`another PairBrowse ${what} is still running${pid ? ` (process ${pid})` : ""}; try again in a minute`);
 };
 
 // The locks this call chain holds (absolute paths): the async form's, and the sync form's while its
@@ -140,15 +141,16 @@ export async function withInstallLock(fn, { file = paths.installLock, waitMs = W
   try { return await chain.run(held, fn); } finally { stop(); unhold(key); release(file, token); }
 }
 
-// The same for a synchronous fn (the runtime's npm ci): the wait blocks this thread, so it fails at
-// once when it is this process (another call chain) that holds the lock.
-export function withInstallLockSync(fn, { file = paths.installLock, waitMs = WAIT_MS, staleMs = STALE_MS, say = () => {} } = {}) {
+// The same for a synchronous fn (the runtime's npm ci; the profile store's writes, with a file and
+// `what` of their own): the wait blocks this thread, so it fails at once when it is this process
+// (another call chain) that holds the lock.
+export function withInstallLockSync(fn, { file = paths.installLock, waitMs = WAIT_MS, staleMs = STALE_MS, say = () => {}, what } = {}) {
   const key = resolve(file);
   if (nested(key)) return fn();
   const until = Date.now() + waitMs;
   let told = false, token;
   while (!(token = tryTake(file, staleMs))) {
-    if (ownHeld.has(key) || Date.now() > until) throw busy(file);
+    if (ownHeld.has(key) || Date.now() > until) throw busy(file, what);
     if (!told) { told = true; say("another PairBrowse helper is installing; waiting for it"); }
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, POLL_MS);
   }

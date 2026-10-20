@@ -5,6 +5,21 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.16.12 (2026-10-20)
+
+PairBrowse lets an AI agent (Claude Code, Codex or Grok) work in a real browser window on your computer while you watch and can take over. Steps that matter, like paying, publishing or opening a page on your own network, wait for your OK.
+
+**New**
+
+- **Grok works with PairBrowse like Claude Code and Codex do:** Grok uses the PairBrowse plugin you installed in Claude Code (no second install). It now gets PairBrowse's instructions with its first browser step, is shown by name ("Grok") with its own silver color, and asks for your OK in the PairBrowse window. See [docs/grok.md](docs/grok.md).
+- **One OK in the window for more steps:** for Grok, Codex without its hooks and other apps, the approval card in the PairBrowse window now also asks before opening a page on your local network or this computer, deleting a browser session, creating an invite that lets someone drive, letting a join request in, and uploading an unusual file type. The card says what the agent wants ("wants to open http://localhost:3000/"). Only you, at this computer, can answer these: people who joined your session never can.
+
+**Fixed**
+
+- **Each agent's tab shows its own app:** the icon on a tab an agent works in was always Claude's spark, only recolored. It is now each app's own mark in its color: a spark for Claude, brackets for Codex, a slash for Grok, a four-point star for Gemini, a rounded square for any other app. The live view's tab list shows the same.
+- **Gemini is named Gemini:** a Gemini agent showed as "Agent".
+- **Words for every app:** saved runs list drafted text as "Drafted by the agent" (it said Claude whatever the app), and the status badge accepts "agent" as its working state.
+
 ## 0.16.11 (2026-10-19)
 
 PairBrowse lets an AI agent (Claude Code or Codex) work in a real browser window on your computer while you watch and can take over. When the agent needs you (a login, a code, a final click), PairBrowse tells you with a system notification.

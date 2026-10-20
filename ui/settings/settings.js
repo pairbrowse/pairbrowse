@@ -349,7 +349,11 @@ function inviteRow(i) {
   li.append(acts);
   return li;
 }
+// Each list drawn counts; a read that answers after a newer list was drawn (the invites event
+// while it was on its way) is older than what shows, and is dropped.
+let invitesDrawn = 0;
 function drawInvites(body) {
+  invitesDrawn++;
   const items = Array.isArray(body?.items) ? body.items.filter((i) => i && typeof i.id === "string" && INVITE_ID.test(i.id)) : [];
   const asking = [...$("invite-list").querySelectorAll("li")].find((li) => li.querySelector(".ask"))?.dataset.id;
   const rows = items.map(inviteRow);
@@ -364,7 +368,9 @@ function drawInvites(body) {
   applySearch();
 }
 async function loadInvites() {
+  const asked = invitesDrawn;
   const r = await getJson("invites.json");
+  if (asked !== invitesDrawn) return; // a newer list came meanwhile
   if (r.status === 200) return drawInvites(r.body);
   // An older helper without the route: the help line alone, as before.
   $("invite-list").replaceChildren();

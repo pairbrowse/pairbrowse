@@ -461,6 +461,29 @@ both({ fixtures, viewport: VIEW }, async ({ page, helper, until, inPage, errors 
   assert.deepEqual(errors, []);
 });
 
+// 13b. A list read that answers after a newer list came with the event (a slow reply after a
+// revoke's 404) never draws over it: the newer list stays.
+pageTest("settings", { fixtures, viewport: VIEW }, async ({ page, helper, until, inPage, errors }) => {
+  await until("the stream", live);
+  helper.push("invites", { items: [...helper.fixtures.invites.items, { id: "deadbeef", role: "watch", label: "Old", share: "link", expires: Date.now() + 60_000 }] });
+  await until("Old", () => !!document.querySelector("button[aria-label='Revoke Old']"));
+  // The read after the 404 is held: it answers with the list as it was when asked.
+  let release;
+  const held = new Promise((r) => { release = r; });
+  await page.route("**/invites.json*", async (route) => { const response = await route.fetch(); await held; await route.fulfill({ response }); });
+  await page.click("button[aria-label='Revoke Old']");
+  await page.click("button[aria-label='Yes, revoke Old']");
+  await until("the 404", () => document.getElementById("invites-msg").textContent === "No such invite (it may have expired or been revoked already).");
+  await page.waitForTimeout(300); // the read is asked and held
+  helper.set("invites", { items: [] });
+  await until("empty", () => !document.getElementById("invites-empty").hidden && document.getElementById("invite-list").hidden);
+  release();
+  await page.waitForTimeout(500);
+  assert.equal(await inPage(() => document.getElementById("invite-list").hidden), true, "the late read drew nothing over the newer list");
+  await page.unroute("**/invites.json*");
+  assert.deepEqual(errors, []);
+});
+
 // 14. The approve role: a shared browser code's row has "Can approve" (a toggle, pressed when the
 // joiner may answer approval cards); a person's click posts invite { op: "role" }; a script's
 // click posts nothing; links and follow codes have no such button.

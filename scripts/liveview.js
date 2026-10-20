@@ -2,7 +2,7 @@
 // typing sent back. Served by liveview.mjs under the page's key, with no inline code allowed.
 // body data-role is "owner" (your own link), "drive" or "watch" (invite links): the server
 // enforces it; this only keeps refused controls out of sight.
-import { AGENT_COLOR } from "./vocab.js";
+import { AGENT_COLOR, markOf } from "./vocab.js";
 import { $, el, rich, clock, activityHead, sparkIcon, joinBanners, profilePanel, whose, avatar, splitLabel, stateWord, ago, doneLine, shareCard } from "./common.js";
 
 const base = location.pathname.replace(/\/?$/, "/");
@@ -224,6 +224,13 @@ function closeIcon() {
   svg.append(path);
   return svg;
 }
+// The followed tab's spark: its agent's app's mark (ui/vocab.js markOf) in its color.
+function agentSpark(t) {
+  const s = sparkIcon("claude", `${t.agent?.label || "An agent"} is working in this tab`, markOf(t.agent?.label || ""));
+  const color = dotColor(t.agent?.color);
+  if (color) s.style.color = color;
+  return s;
+}
 function tabChip(t) {
   const b = el("button", { className: "tab", title: t.agent?.label ? `${t.url}\n${t.agent.label}` : t.url });
   b.setAttribute("role", "tab");
@@ -243,7 +250,7 @@ function tabChip(t) {
     dot.setAttribute("aria-label", `${t.agent.label || "An agent"} is in this tab`);
     b.append(dot);
   }
-  b.append(sparkIcon("claude", "Claude is working in this tab"), close);
+  b.append(agentSpark(t), close);
   b.onclick = () => post("tab", { i: t.i });
   b.onauxclick = (e) => { if (e.button === 1) post("tab", { close: t.i }); };
   if (t.shown) setUrl(t.url);
@@ -347,7 +354,7 @@ const side = {
       if (t.waiting && t.person) who.dataset.waiting = "true";
       who.append(el("i"), el("span", { textContent: words, title: words }));
       row.append(el("span", { className: "t", textContent: tabName(t) }));
-      if (t.claude) row.append(sparkIcon("claude", "Claude is working in this tab"));
+      if (t.claude) row.append(agentSpark(t));
       row.append(who);
       row.addEventListener("click", () => { if (canDrive) post("tab", { i: t.i }); });
       return el("li", {}, row);

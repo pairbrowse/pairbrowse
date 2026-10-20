@@ -40,7 +40,8 @@ claude plugin install pairbrowse@pairbrowse
 ```
 
 Restart Claude Code. Needs Node.js 20+ and Claude Code running on your computer (not a cloud
-session). Codex: see [docs/codex.md](docs/codex.md). Update, uninstall and a local checkout:
+session). Codex: see [docs/codex.md](docs/codex.md). Grok uses the Claude Code install as it is:
+see [docs/grok.md](docs/grok.md). Update, uninstall and a local checkout:
 [docs/install.md](docs/install.md).
 
 ## Two ways to run it: the native build or the open build
@@ -131,7 +132,7 @@ build on macOS, Playwright's browser elsewhere). See [docs/browser.md](docs/brow
 ## Docs
 
 - [What it does](docs/features.md): features, how a run goes, design principles
-- [Install](docs/install.md) and [Codex](docs/codex.md)
+- [Install](docs/install.md), [Codex](docs/codex.md) and [Grok](docs/grok.md)
 - [The browser](docs/browser.md): where you see it, the desktop app pane, the native build
 - [Using PairBrowse](docs/using.md): remembered details, passwords, sessions, fast mode, popups, uploads
 - [Working together](docs/sharing.md): invites, join codes, several agents on one browser, your own tunnel

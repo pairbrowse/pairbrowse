@@ -28,8 +28,10 @@ export function createStatusTool(conn, api) {
   const { context, hud, journal, myLabel, session, updateNote = () => "" } = api;
   const { participant } = conn;
   return {
-    async pairbrowse_status(args) {
+    async pairbrowse_status(given) {
       await context.getContext();
+      // "agent" is "claude" (working) by another name, for apps that aren't Claude.
+      const args = given.kind === "agent" ? { ...given, kind: "claude" } : given;
       // The side panels and docks (session) and the badge in the tabs (hud) say the same. The
       // badge goes to every tab: bounded, so one frozen tab never holds this agent (nor the
       // others behind the shared queue).

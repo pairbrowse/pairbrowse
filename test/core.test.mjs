@@ -9,16 +9,16 @@ import { join } from "node:path";
 const root = new URL("..", import.meta.url).pathname;
 const core = readFileSync(join(root, "scripts", "core.md"), "utf8");
 
-function sessionStart(transcript_path, { config = null, remote = "" } = {}) {
-  const home = mkdtempSync(join(tmpdir(), "pb-core-"));
+function sessionStartOut(transcript_path, { config = null, remote = "", grok = "", home = mkdtempSync(join(tmpdir(), "pb-core-")), session = "", event = "" } = {}) {
   if (config) writeFileSync(join(home, "config.json"), JSON.stringify(config));
   const out = spawnSync(process.execPath, [join(root, "scripts", "session-start.mjs")], {
-    input: JSON.stringify({ transcript_path }),
-    env: { ...process.env, PAIRBROWSE_HOME: home, CLAUDE_CODE_REMOTE: remote, CLAUDE_CODE_ENTRYPOINT: "cli" },
+    input: JSON.stringify({ transcript_path, ...(event ? { hook_event_name: event } : {}) }),
+    env: { ...process.env, PAIRBROWSE_HOME: home, CLAUDE_CODE_REMOTE: remote, CLAUDE_CODE_ENTRYPOINT: "cli", GROK_HOOK_EVENT: grok, GROK_SESSION_ID: session },
     encoding: "utf8",
   });
-  return JSON.parse(out.stdout).hookSpecificOutput.additionalContext;
+  return out.stdout ? JSON.parse(out.stdout) : null;
 }
+const sessionStart = (...a) => sessionStartOut(...a).hookSpecificOutput.additionalContext;
 
 test("session start adds the core for Claude Code and for Codex", () => {
   const claude = sessionStart("/Users/a/.claude/projects/p/6b27.jsonl");
@@ -34,6 +34,47 @@ test("session start adds the core for Claude Code and for Codex", () => {
   assert.doesNotMatch(claude, /In Codex those clicks/);
   assert.match(codex, /In Codex those clicks are refused/);
   assert.match(codex, /pairbrowse: Codex\./);
+});
+
+test("Grok: nothing at session start (observe-only there); its core with the first PairBrowse result, once per session", () => {
+  const home = mkdtempSync(join(tmpdir(), "pb-core-grok-"));
+  assert.equal(sessionStartOut("", { grok: "SessionStart", home, session: "g1" }), null, "SessionStart prints nothing in Grok");
+  const out = sessionStartOut("", { grok: "PostToolUse", home, session: "g1" });
+  assert.equal(out.hookSpecificOutput.hookEventName, "PostToolUse");
+  const text = out.hookSpecificOutput.additionalContext;
+  assert.match(text, /^PairBrowse core\./);
+  assert.doesNotMatch(text, /\{\{\w+\}\}/, "no placeholder left");
+  assert.match(text, /pairbrowse: Grok\./);
+  assert.match(text, /approval card in the PairBrowse window/);
+  assert.match(text, /There is no dock/);
+  assert.match(text, /browser__<tool>/);
+  assert.doesNotMatch(text, /guard asks the user|ListAgents|pairbrowse_dock|In Codex those clicks/);
+  assert.equal(sessionStartOut("", { grok: "PostToolUse", home, session: "g1" }), null, "once per session");
+  assert.ok(sessionStartOut("", { grok: "PostToolUse", home, session: "g2" }), "a new session gets it again");
+  // Codex's transcript still decides for Codex; without the variable it's Claude Code; and a
+  // Claude Code or Codex tool hook never runs it.
+  assert.match(sessionStartOut("/x/rollout-2026-10-03T03-20-23-01a0.jsonl", { grok: "SessionStart" }).hookSpecificOutput.additionalContext, /pairbrowse: Codex\./);
+  assert.match(sessionStart("/Users/a/.claude/projects/p/6b27.jsonl"), /guard asks the user/);
+  assert.equal(sessionStartOut("/Users/a/.claude/projects/p/6b27.jsonl", { event: "PostToolUse" }), null);
+});
+
+test("log.mjs gives Grok the core too, when Grok runs it on Claude Code's tool names", () => {
+  const home = mkdtempSync(join(tmpdir(), "pb-core-log-"));
+  const run = (grok) => spawnSync(process.execPath, [join(root, "scripts", "log.mjs")], {
+    input: JSON.stringify({ tool_name: "mcp__plugin_pairbrowse_browser__browser_snapshot", tool_input: {} }),
+    env: { ...process.env, PAIRBROWSE_HOME: home, GROK_HOOK_EVENT: grok, GROK_SESSION_ID: "g3" }, encoding: "utf8",
+  }).stdout;
+  assert.equal(run(""), "", "Claude Code: the log only");
+  assert.match(JSON.parse(run("PostToolUse")).hookSpecificOutput.additionalContext, /pairbrowse: Grok\./);
+  assert.equal(run("PostToolUse"), "", "once per session, whichever hook gave it");
+});
+
+test("hooks: Grok's PairBrowse tool names reach the core's tool hook; Claude Code's and Codex's never do", async () => {
+  const post = JSON.parse(readFileSync(join(root, "hooks", "hooks.json"), "utf8")).hooks.PostToolUse;
+  const grok = post.find((e) => e.hooks[0].command.includes("session-start.mjs"));
+  const m = new RegExp(grok.matcher);
+  for (const n of ["browser__pairbrowse_run", "runs__run_save", "mcp__browser__browser_click"]) assert.ok(m.test(n), n);
+  for (const n of ["mcp__plugin_pairbrowse_browser__browser_click", "mcp__pairbrowse_browser__browser_click", "mcp__plugin_pairbrowse_runs__run_save", "other__browser__x"]) assert.ok(!m.test(n), n);
 });
 
 test("the browser asks which session unless the picker is off (or nobody sees it)", () => {
@@ -78,7 +119,7 @@ test("session start names unfinished runs in one line each, at most three, and n
   run("ancient", { name: "ancient", status: "in progress", source: "auto", updatedAt: at(8 * 24 * 3600_000) });
   run("done", { name: "done", status: "finished", updatedAt: at(1000) });
   run("merged", { name: "merged", status: "merged", source: "auto", mergedInto: "listing", updatedAt: at(1000) });
-  const out = spawnSync(process.execPath, [join(root, "scripts", "session-start.mjs")], { input: "{}", env: { ...process.env, PAIRBROWSE_HOME: home, CLAUDE_CODE_REMOTE: "", CLAUDE_CODE_ENTRYPOINT: "cli" }, encoding: "utf8" });
+  const out = spawnSync(process.execPath, [join(root, "scripts", "session-start.mjs")], { input: "{}", env: { ...process.env, PAIRBROWSE_HOME: home, CLAUDE_CODE_REMOTE: "", CLAUDE_CODE_ENTRYPOINT: "cli", GROK_HOOK_EVENT: "" }, encoding: "utf8" });
   const text = JSON.parse(out.stdout).hookSpecificOutput.additionalContext;
   const note = text.slice(text.indexOf("Unfinished runs (saved data"));
   assert.equal(note, [

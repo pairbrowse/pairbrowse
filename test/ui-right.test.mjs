@@ -1321,7 +1321,7 @@ describe("the dock's inner edge", () => pageTest("right", opts({}), async ({ shi
 describe("no agent named: no card", () => pageTest("right", opts({}), async ({ helper, inPage, until, errors }) => {
   await until("live", () => document.body.dataset.s === "live");
   const state = () => ({ card: document.getElementById("agent").checkVisibility(), none: document.getElementById("agent-none").checkVisibility(), text: document.getElementById("agent-none-title").textContent, hint: document.querySelector("#agent-none p").textContent });
-  assert.deepEqual(await inPage(state), { card: false, none: true, text: "No agent in this session", hint: "Ask Claude Code or Codex to use PairBrowse. Its task, checklist and status show here." });
+  assert.deepEqual(await inPage(state), { card: false, none: true, text: "No agent in this session", hint: "Ask Claude Code, Codex or Grok to use PairBrowse. Its task, checklist and status show here." });
   // an empty state, not a drop zone: no border, 16 px padding, the title in --ink at 14/600
   const look = await inPage(() => { const n = getComputedStyle(document.getElementById("agent-none")); const t = getComputedStyle(document.getElementById("agent-none-title")); const probe = document.createElement("i"); probe.style.color = "var(--ink)"; document.body.append(probe); const ink = getComputedStyle(probe).color; probe.remove(); return { border: n.borderTopStyle, pad: n.paddingTop, size: t.fontSize, weight: t.fontWeight, color: t.color === ink }; });
   assert.deepEqual(look, { border: "none", pad: "16px", size: "14px", weight: "600", color: true });

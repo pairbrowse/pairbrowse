@@ -68,7 +68,7 @@ export function summarize(run, { restarted = false } = {}) {
     run.session && `Session: ${run.session} (pairbrowse_session use ${run.session})`,
     run.goal && `Goal: ${run.goal}`,
     run.done?.length && `Done: ${run.done.join("; ")}`,
-    run.drafted?.length && `Drafted by Claude: ${run.drafted.join("; ")}`,
+    run.drafted?.length && `Drafted by the agent, for the user to check: ${run.drafted.join("; ")}`,
     run.yourTurn?.length && `Waiting on the user: ${run.yourTurn.join("; ")}`,
     run.left?.length && `Left: ${run.left.join("; ")}`,
     run.notes && `Notes: ${run.notes}`,

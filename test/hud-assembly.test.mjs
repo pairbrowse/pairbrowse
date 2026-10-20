@@ -11,9 +11,9 @@ import { HUD_PARTS, hudPart, hudSource } from "../scripts/hud/assemble.mjs";
 import { hudScript } from "../scripts/browser.mjs";
 
 // SHA-256 of scripts/hud.js before the split (commit 9c462de): the parts change nothing. A
-// deliberate change to the page script updates this value with it (last: the Web Store's
-// buttons name this browser).
-const PRE_SPLIT_SHA256 = "01952a6f85602c25c81d05086d4259ac670e5480837687ebc7cffc4a32b8b523";
+// deliberate change to the page script updates this value with it (last: the
+// approval card says what the agent wants, "wants to open" for a page that isn't a click; Grok named in the bar; each app's own mark on its tab icon).
+const PRE_SPLIT_SHA256 = "125d123215bc022d63e6a8e470b9dab129de2c7bd9c7aa386be5f0e40d484df0";
 const PLACEHOLDERS = ["__PB_NAME__", "__PB_TOKEN__", "__PB_TAG_HUD__", "__PB_TAG_BAR__", "__PB_TAG_CURSOR__", "__PB_AGENT_COLOR__", '"__PB_MOTION__"'];
 
 test("the parts joined are the page script as it was in one file", () => {

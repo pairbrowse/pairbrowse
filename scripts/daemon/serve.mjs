@@ -10,7 +10,7 @@ import { BLOCKED_TOOLS, HIDDEN_TOOLS, UNKNOWN_VALUES } from "../rules/policy.mjs
 const SHOWS_VALUES = /^Fields: |^\s*- (?:textbox|searchbox|spinbutton)\b|\.(?:fill|pressSequentially|type)\(/m;
 import { appName, personLabel, computerName } from "../sharing/join.mjs";
 import { describe } from "../log.mjs";
-import { decide, approvalAsk } from "../rules/decide.mjs";
+import { decide, approvalAsk, handoffAsk } from "../rules/decide.mjs";
 import { keepFocus } from "../focus.mjs";
 import { within } from "../util.mjs";
 import { stopRequestMirroring } from "./browser/tabs.mjs";
@@ -305,7 +305,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
         // "<person> · Claude Code", "<person> · Codex".
         const label = msg.params?.clientInfo?.pairbrowseParticipant;
         if (remote) { /* named by the host's side, above */ } else if (label) collaboration.register(participant, personLabel(label, appName(conn.clientName)));
-        else if (conn.clientName !== "claude-code") collaboration.register(participant, `${conn.clientName === "codex-mcp-client" ? "Codex" : "Agent"} ${participant.slice(0, 4)}`);
+        else if (conn.clientName !== "claude-code") collaboration.register(participant, `${["Codex", "Grok", "Gemini"].includes(appName(conn.clientName)) ? appName(conn.clientName) : "Agent"} ${participant.slice(0, 4)}`);
         // The same app session back within the grace (its bridge restarted, the socket dropped):
         // the same label, color and tab, and it shows again at once.
         const back = !conn.resumed && conn.resumeKey ? departures.take(conn.resumeKey) : null;
@@ -408,13 +408,14 @@ export function createServe({ config, log, host, createConnection, clients, coll
         const held = await pause.wait(disconnected.signal, participant);
         if (held) return reply(msg.id, `Paused by ${held.by}. Waiting until someone resumes; nothing was done.`, true);
       }
-      // Codex and other apps (not Claude Code, never a joiner's agent): a named final action asks
-      // in the browser and waits for the answer, before the turn (no tab or busy span held while
+      // Codex, Grok and other apps (not Claude Code, never a joiner's agent): a named final action,
+      // and the other asks (handoffAsk: a local page, a session delete, an invite), asks in the
+      // browser and waits for the answer, before the turn (no tab or busy span held while
       // it waits, so the person's click is never taken for the agent's). Allow lets it go on;
       // anything else is the hand-off, as when the browser can't ask (nothing waits then).
       if (msg.method === "tools/call" && !remote && conn.clientName !== "claude-code" && clickApprovals) {
         const args = msg.params?.arguments;
-        const ask = args && typeof args === "object" && !Array.isArray(args) && !argProblem(tool, args) ? approvalAsk(tool, args) : null;
+        const ask = args && typeof args === "object" && !Array.isArray(args) && !argProblem(tool, args) ? approvalAsk(tool, args) || handoffAsk(tool, args) : null;
         const r = ask ? await clickApprovals.open({ tool, input: args, ask, participant, client: conn.clientName }) : null;
         if (r?.shown) {
           let onAbort = () => {};

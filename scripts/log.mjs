@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { paths } from "./paths.mjs";
 import { shownValue, BROWSER_PREFIX } from "./rules/policy.mjs";
 import { loadSecrets, redact } from "./rules/secrets.mjs";
+import { grokCoreReply } from "./session-core.mjs";
 
 // values: false (the activity line, kept in the session's activity log): field names without what
 // was typed or chosen, and addresses as origin and path only (no query or fragment, which carry
@@ -46,6 +47,9 @@ if (process.argv[1]?.endsWith("log.mjs")) {
   process.stdin.on("end", () => {
     try {
       const input = JSON.parse(raw);
+      // Grok running this hook on Claude Code's tool names: the core with its first result.
+      const core = grokCoreReply(input);
+      if (core) process.stdout.write(core);
       if (!BROWSER_PREFIX.test(String(input.tool_name || ""))) return;
       const tool = input.tool_name.replace(BROWSER_PREFIX, "");
       const said = describe(tool, input.tool_input);

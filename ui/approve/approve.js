@@ -139,7 +139,7 @@ function normalize(kind, raw) {
   const it = { key, kind, id: raw.id, who: "", color: "", verb: "", target: "", host: "", tabTarget: "", from: "", reason: "", labels: {}, menu: [], at: ats.get(key) };
   if (kind === "click") {
     Object.assign(it, {
-      who: String(raw.agent?.label || "Claude"), color: raw.agent?.color || "", verb: "wants to click",
+      who: String(raw.agent?.label || "Claude"), color: raw.agent?.color || "", verb: typeof raw.verb === "string" && raw.verb ? raw.verb.slice(0, 40) : "wants to click",
       target: String(raw.target || ""), host: raw.tab?.host ? String(raw.tab.host) : "", reason: String(raw.reason || ""),
       tabTarget: typeof raw.tab?.target === "string" ? raw.tab.target : "",
       from: typeof raw.from === "string" ? raw.from.slice(0, 40) : "",

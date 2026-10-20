@@ -21,6 +21,10 @@
       {
         "matcher": "mcp__plugin_pairbrowse_browser__.*|mcp__pairbrowse_browser__.*",
         "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/log.mjs\"" }]
+      },
+      {
+        "matcher": "^(mcp__)?(browser|runs)__.*",
+        "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/session-start.mjs\"" }]
       }
     ]
   }

@@ -8,7 +8,7 @@
   // "approval-answers"), checked again by the helper (daemon/approvals.mjs). Hidden while an agent
   // takes a screenshot (peers-hidden). Its text comes as an object, never through JSON.parse.
   const AP_ARM_MS = 600, AP_KEEP = 5, AP_ID = /^ap-[0-9a-f]{32}$/;
-  const aps = new Map(); // id -> { who, color, target, reason, terminal }, oldest first
+  const aps = new Map(); // id -> { who, color, target, reason, terminal, verb }, oldest first
   let apShown = "", apAt = 0, apHidden = false;
   let apAnswered = null, apCount = 0, apDismissed = "";
   function apHint(text) { const h = bar?.querySelector(".ab .an"); if (h) { h.textContent = text; h.hidden = !text; } }
@@ -41,6 +41,7 @@
     ai.style.background = a.color;
     ai.textContent = (a.who.trim().charAt(0) || "A").toUpperCase();
     jq.querySelector(".aw b").textContent = a.who;
+    jq.querySelector(".aw .av").textContent = ` ${a.verb}`;
     jq.querySelector(".ag").textContent = a.target;
     // Codex and other apps have no prompt of their own: the third button hands the step over.
     jq.querySelector(".atm").textContent = a.terminal ? "Ask in the terminal" : "I'll do it myself";
@@ -58,7 +59,8 @@
     joinDraw();
     return true;
   }
-  // v: { id, who, color, target, reason, terminal } (terminal: the agent's app asks too).
+  // v: { id, who, color, target, reason, terminal, verb } (terminal: the agent's app asks too;
+  // verb: "wants to open" and the like for an ask that isn't a click).
   function apOn(v) {
     if (!/^https?:$/.test(location.protocol) || !v || typeof v !== "object") return false; // web pages only, like the bar
     const id = String(v.id || "");
@@ -70,7 +72,7 @@
     for (const j of joins.values()) clearTimeout(j.timer); // the join requests wait unseen: no time runs out (joinLater)
     while (aps.size >= AP_KEEP) { const old = aps.keys().next().value; apDismissed = `${apDismissed},${old}`.slice(-400); aps.delete(old); }
     const color = /^#[0-9a-fA-F]{6}$/.test(String(v.color || "")) ? String(v.color) : "__PB_AGENT_COLOR__";
-    aps.set(id, { who: String(v.who || "Agent").slice(0, 60), color, target: String(v.target || "").slice(0, 120), reason: String(v.reason || "").slice(0, 300), terminal: typeof v.terminal === "boolean" ? v.terminal : true });
+    aps.set(id, { who: String(v.who || "Agent").slice(0, 60), color, target: String(v.target || "").slice(0, 120), reason: String(v.reason || "").slice(0, 300), terminal: typeof v.terminal === "boolean" ? v.terminal : true, verb: String(v.verb || "wants to click").slice(0, 40) });
     joinDraw();
     return true;
   }

@@ -119,6 +119,25 @@ test("open(): the item's contract, a random id, the agent's name and tab, masked
   assert.deepEqual(lone.item.tab, { id: -1, host: "", target: "" });
 });
 
+test("an ask that isn't a click (handoffAsk): its own verb on the card, and never a joiner's to see or answer", async () => {
+  const page = fakePage("http://127.0.0.1:3000/");
+  const { ca, lv } = setup({ front: page });
+  lv.approveJoiners = () => 1;
+  ca.participant("p1", { client: "grok-shell-browser", remote: false, tab: () => page });
+  const ask = { reason: "http://127.0.0.1:3000/ is on your local network or this computer.", target: "http://127.0.0.1:3000/", what: "wants to open http://127.0.0.1:3000/", verb: "wants to open", hostOnly: true };
+  const r = await ca.open({ tool: "browser_navigate", input: { url: "http://127.0.0.1:3000/" }, ask, participant: "p1", client: "grok-shell-browser" });
+  assert.equal(r.shown, true);
+  assert.equal(r.item.verb, "wants to open");
+  assert.deepEqual(page.calls[0], ["approval", { id: r.item.id, who: "Alice · Codex", color: "#20c997", target: "http://127.0.0.1:3000/", reason: ask.reason, terminal: false, verb: "wants to open" }]);
+  assert.deepEqual(ca.shareable(), [], "joiners never see it");
+  assert.equal(ca.answerShared(r.item.id, "allow", { by: "Sam" }), false, "nor answer it");
+  // With an approve joiner as the only place to answer, it isn't asked at all: handed to the user.
+  const { ca: other, lv: otherLv } = setup({ front: null });
+  otherLv.approveJoiners = () => 1;
+  other.participant("p1", { client: "grok-shell-browser", tab: () => page });
+  assert.deepEqual(await other.open({ tool: "browser_navigate", input: { url: "http://127.0.0.1:3000/" }, ask, participant: "p1", client: "grok-shell-browser" }), { shown: false });
+});
+
 test("nowhere to ask: nothing kept, nothing waits", async () => {
   const page = fakePage();
   for (const opts of [{ front: null }, { front: page, sharing: true }, { front: page, guests: 1 }]) {

@@ -319,7 +319,7 @@ export function createJoinMirror(live, { context, log, hud, presence, liveView, 
       // Their agent's spark, in its color, on the copy here too; else a person using it there, as a
       // dot in their color. A picture page (shared browser) shows both in its own tab (showWho).
       if (!cur.shared) {
-        hud.setSharedSpark(page, t.agent ? (isColor(t.color) ? t.color : AGENT_COLOR) : "");
+        hud.setSharedSpark(page, t.agent ? (isColor(t.color) ? t.color : AGENT_COLOR) : "", t.agent || "");
         if (t.person) hud.setPersonMark(page, personColor(t.person));
       }
       const first = !cur.heard.has(t.id);

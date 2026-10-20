@@ -120,7 +120,7 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
   let movedFrom = null; // the last Allow refused as "moved": where it was asked (lastWhere)
 
   const emit = (change) => { for (const fn of listeners) { try { fn(change); } catch {} } };
-  const publicItem = (it) => ({ id: it.id, agent: { label: it.agent.label, color: it.agent.color }, kind: it.kind, target: it.target, reason: it.reason, tab: { id: it.tab.id, host: it.tab.host, target: it.tab.target }, at: it.at, ...(it.remote ? { from: it.from } : {}) });
+  const publicItem = (it) => ({ id: it.id, agent: { label: it.agent.label, color: it.agent.color }, kind: it.kind, ...(it.verb ? { verb: it.verb } : {}), target: it.target, reason: it.reason, tab: { id: it.tab.id, host: it.tab.host, target: it.tab.target }, at: it.at, ...(it.remote ? { from: it.from } : {}) });
   const remoteDone = new Set(); // the host's asks answered or hidden here, while the host still lists them
   const short = (id) => String(id).slice(0, 11);
   const remember = (key, answer, where = null) => {
@@ -201,6 +201,10 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
     const target = String(mask(String(ask?.target || ""))).slice(0, 120);
     const reason = String(mask(String(ask?.reason || ""))).slice(0, 300);
     const what = String(mask(String(ask?.what || ask?.target || ""))).slice(0, 140);
+    // Not a click (handoffAsk: a local page, a session delete, an invite): its own words, and the
+    // person here answers it, never a joiner.
+    const verb = typeof ask?.verb === "string" ? ask.verb.slice(0, 40) : "";
+    const hostOnly = !!ask?.hostOnly;
     const id = `ap-${random(16).toString("hex")}`;
     const at = now();
     // The in-page card: on the agent's tab in front, with nobody else looking, and only where the
@@ -214,13 +218,13 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
     let origin = "";
     try { origin = page ? originOf(page.url()) : ""; } catch {}
     const where = page ? { page, origin } : null;
-    const joinable = !!where && !info?.remote;
+    const joinable = !!where && !info?.remote && !hostOnly;
     if (page && !bubble && !lv?.sharing?.() && !lv?.guestViewers?.()) {
       const front = await within(3000, Promise.resolve(frontPage()).catch(() => null));
       if (front === page) {
         // terminal: whether the agent's app asks too (Claude Code's terminal); elsewhere the third
         // button hands the step to the person.
-        const ok = await within(2000, hud.call(page, { id, who: agent.label, color: agent.color, target, reason, terminal: client === "claude-code" }, "approval").catch(() => false));
+        const ok = await within(2000, hud.call(page, { id, who: agent.label, color: agent.color, target, reason, terminal: client === "claude-code", ...(verb ? { verb } : {}) }, "approval").catch(() => false));
         if (ok === true) shownIn = page;
       }
     }
@@ -233,7 +237,7 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
     if (!shownIn && !surface(joinable) && !noticeOnly) return { shown: false };
     let resolve;
     const answer = new Promise((r) => { resolve = r; });
-    const it = { id, key, client, participant: p, agent, kind: "click", target, reason, what, tab, at, resolve, timer: null, page: shownIn, shownAt: shownIn ? now() : 0, where, noticeOnly };
+    const it = { id, key, client, participant: p, agent, kind: "click", verb, hostOnly, target, reason, what, tab, at, resolve, timer: null, page: shownIn, shownAt: shownIn ? now() : 0, where, noticeOnly };
     items.set(id, it);
     it.timer = setTimeout(() => { if (end(it, "expired")) log(`approval ${short(id)}: no answer in ${Math.round(waitMs / 1000)} s`); }, waitMs);
     it.timer.unref?.();
@@ -326,13 +330,13 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
   // Whether a joiner with the approve role may answer this ask: one of this helper's own agents'
   // (never a joiner's agent's), held to a known tab and origin, and not a notice-only ask (the
   // terminal answers those).
-  const joinerCan = (it) => !!it && !it.remote && !it.noticeOnly && !!it.where && !participants.get(it.participant)?.remote;
+  const joinerCan = (it) => !!it && !it.remote && !it.noticeOnly && !it.hostOnly && !!it.where && !participants.get(it.participant)?.remote;
   // The asks joiners in a shared browser session may see: this helper's own agents' only (never a
   // joiner's agent's: those are never asked here). answerable: whether an approve joiner may answer
   // it (joinerCan); the others are shown to everyone as waiting. bind: the call's own key, hashed
   // (an answer is bound to the ask's id and its call, approval-share.mjs).
   function shareable() {
-    return [...items.values()].filter((it) => !it.remote && !participants.get(it.participant)?.remote)
+    return [...items.values()].filter((it) => !it.remote && !it.hostOnly && !participants.get(it.participant)?.remote)
       .map((it) => ({ ...publicItem(it), what: it.what, bind: sha256(it.key).slice(0, 32), answerable: joinerCan(it) }));
   }
   // A joiner's answer (approval-share.mjs checked who and the role): allow or deny only.

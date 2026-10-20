@@ -77,7 +77,7 @@ export function createRefusals(conn, api) {
     if (name === "pairbrowse_upload" && !(Array.isArray(args.files) && args.files.length && args.files.every((x) => typeof x === "string"))) return "pairbrowse_upload needs files: pass a list of absolute paths.";
     if (name === "pairbrowse_facts" && args.action === "forget" && !(Array.isArray(args.labels) && args.labels.every((x) => typeof x === "string"))) return "pairbrowse_facts forget needs labels: pass a list of the details' labels.";
     if (name === "pairbrowse_status") {
-      if (!STATUS_KINDS.includes(args.kind)) return 'pairbrowse_status: set kind to "claude", "you", "done" or "clear".';
+      if (!STATUS_KINDS.includes(args.kind)) return 'pairbrowse_status: set kind to "agent" (working; "claude" is the same), "you", "done" or "clear".';
       if (args.text !== undefined && (typeof args.text !== "string" || args.text.length > 140)) return "pairbrowse_status: text is up to 140 characters; shorten it.";
     }
     if (name === "browser_wait_for") {

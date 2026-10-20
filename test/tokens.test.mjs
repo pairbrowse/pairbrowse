@@ -262,7 +262,7 @@ test("Claude's owner dot in the live view is the sheet's --spark, like the spark
   const { AGENT_COLOR } = await import("../ui/vocab.js");
   const js = read("scripts/liveview.js");
   assert.equal(AGENT_COLOR, SPARK_COLORS[0]);
-  assert.match(js, /^import \{ AGENT_COLOR \} from "\.\/vocab\.js";$/m);
+  assert.match(js, /^import \{ AGENT_COLOR(, markOf)? \} from "\.\/vocab\.js";$/m);
   assert.ok(js.includes('=== AGENT_COLOR ? "var(--spark)"'));
 });
 

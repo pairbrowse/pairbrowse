@@ -1,4 +1,4 @@
-// Agent and people colors: an agent's is its app's (Claude Code orange, Codex purple, Gemini blue),
+// Agent and people colors: an agent's is its app's (Claude Code orange, Codex purple, Gemini blue, Grok silver),
 // a second agent of the same app takes a fallback no agent here has, and people's colors are never
 // near any agent's, so a tag's color alone says agent or person.
 import "./helpers/home.mjs";
@@ -26,13 +26,14 @@ const hueGap = (x, y) => { const d = Math.abs(oklab(x).h - oklab(y).h) % 360; re
 const deltaE = (x, y) => { const p = oklab(x), q = oklab(y); return Math.hypot(p.L - q.L, p.a - q.a, p.b - q.b); };
 
 test("each app has the mockup's color, by its MCP client name or its label", () => {
-  assert.deepEqual(APP_COLORS, { claude: "#e9763f", codex: "#9b7bfa", gemini: "#4b8ffb" });
-  for (const [name, key] of [["claude-code", "claude"], ["remote:claude-code", "claude"], ["Alice · Claude Code", "claude"], ["codex-mcp-client", "codex"], ["remote:codex-mcp-client", "codex"], ["Bob · Codex", "codex"], ["gemini-cli-mcp-client", "gemini"], ["Gemini", "gemini"], ["cursor-vscode", ""], ["", ""], [null, ""]]) {
+  assert.deepEqual(APP_COLORS, { claude: "#e9763f", codex: "#9b7bfa", gemini: "#4b8ffb", grok: "#c9d1dc" });
+  for (const [name, key] of [["claude-code", "claude"], ["remote:claude-code", "claude"], ["Alice · Claude Code", "claude"], ["codex-mcp-client", "codex"], ["remote:codex-mcp-client", "codex"], ["Bob · Codex", "codex"], ["gemini-cli-mcp-client", "gemini"], ["Gemini", "gemini"], ["grok-shell-browser", "grok"], ["grok-shell", "grok"], ["remote:grok-shell-browser", "grok"], ["Ada · Grok", "grok"], ["cursor-vscode", ""], ["", ""], [null, ""]]) {
     assert.equal(appKey(name), key, String(name));
   }
   assert.equal(appColor("claude-code"), "#e9763f");
   assert.equal(appColor("codex-mcp-client"), "#9b7bfa");
   assert.equal(appColor("gemini-cli"), "#4b8ffb");
+  assert.equal(appColor("grok-shell-browser"), "#c9d1dc");
   assert.equal(appColor("some-agent"), "");
   assert.equal(SPARK_COLORS[0], APP_COLORS.claude, "Claude's own first: the sheets' --spark");
   assert.deepEqual(AGENT_FALLBACKS, ["#4fd1e8", "#e9763f", "#9b7bfa", "#4b8ffb"]);
@@ -85,4 +86,16 @@ test("a person's color is stable per name and always a people color", () => {
     assert.ok(PEOPLE_COLORS.includes(personColor(name)), name);
   }
   assert.ok(new Set(["Alice", "Bob", "Carol", "Dave", "Eve", "Frank", "Grace", "Heidi"].map(personColor)).size > 1, "names spread over the palette");
+});
+
+test("each app's mark is drawn the same in the page script as in the pages (ui/vocab.js AGENT_MARKS)", async () => {
+  const { AGENT_MARKS } = await import("../ui/vocab.js");
+  const { hudPart } = await import("../scripts/hud/assemble.mjs");
+  const spark = hudPart("spark.js");
+  assert.deepEqual(Object.keys(AGENT_MARKS), ["claude", "codex", "grok", "gemini", "agent"]);
+  for (const [k, m] of Object.entries(AGENT_MARKS)) {
+    assert.ok(spark.includes(JSON.stringify(m.f || m.s)), `${k}'s path in scripts/hud/spark.js`);
+    if (m.w) assert.match(spark, new RegExp(`${k}: \\{ s: "[^"]+", w: ${m.w} \\}`), `${k}'s width`);
+  }
+  assert.match(spark, /m:\(claude\|codex\|grok\|gemini\|agent\)/, "the page script takes every mark");
 });

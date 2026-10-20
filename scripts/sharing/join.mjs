@@ -43,6 +43,8 @@ export function appName(clientName) {
   const c = textOf(clientName || "");
   if (c === "claude-code") return "Claude Code";
   if (c === "codex-mcp-client" || /^codex/i.test(c)) return "Codex";
+  if (/^grok/i.test(c)) return "Grok"; // grok-shell, grok-shell-browser
+  if (/gemini/i.test(c)) return "Gemini"; // gemini-cli-mcp-client
   return c ? cleanName(c, "Agent").slice(0, 24) : "Agent";
 }
 // Which kind of computer someone is on, as the session picker shows it ("Alice · Linux"): the

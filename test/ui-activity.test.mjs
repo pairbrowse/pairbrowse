@@ -336,7 +336,7 @@ scenario("activity: a message's markup stays text", { viewport: VIEW, fixtures: 
 scenario("activity: no helper, the resting state", { viewport: VIEW, native: false, bridge: false }, async (ctx) => {
   const { until, inPage, helper } = ctx;
   await until("none", () => document.body.dataset.s === "none");
-  assert.equal(await inPage(() => document.getElementById("sub").textContent), "No agent connected. Ask Claude Code or Codex to use PairBrowse. The session's actions show here.");
+  assert.equal(await inPage(() => document.getElementById("sub").textContent), "No agent connected. Ask Claude Code, Codex or Grok to use PairBrowse. The session's actions show here.");
   assert.deepEqual(await inPage(() => ["log", "filter", "empty", "note", "earlier"].map((id) => document.getElementById(id).checkVisibility())), [false, false, false, false, false]);
   assert.deepEqual(helper.gets, []);
   assert.deepEqual(ctx.errors, []);

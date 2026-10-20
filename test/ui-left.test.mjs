@@ -711,7 +711,7 @@ const NO_AGENT_FRAME = () => {
     question: document.body.textContent.includes("Which session?") || document.body.textContent.includes("Your agent waits"),
   };
 };
-const RESTING_FRAME = { hash: "#none", s: "none", title: "No agent connected", sub: "Ask Claude Code or Codex to use PairBrowse. Your sessions show here.", list: false, msg: "", red: [], question: false };
+const RESTING_FRAME = { hash: "#none", s: "none", title: "No agent connected", sub: "Ask Claude Code, Codex or Grok to use PairBrowse. Your sessions show here.", list: false, msg: "", red: [], question: false };
 
 scenario("left: no helper, the switcher at rest", { viewport: { width: 420, height: 936 }, native: false, bridge: false, fixtures: { sessions: SWITCHER_SESSIONS } }, async (ctx) => {
   const { page, until, inPage, helper } = ctx;

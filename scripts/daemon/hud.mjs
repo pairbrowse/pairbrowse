@@ -5,28 +5,20 @@ import { hudScript } from "../browser.mjs";
 import { isRef } from "../rules/policy.mjs";
 import { clipActivity, within, sleep } from "../util.mjs";
 import { CHALLENGE_TURN } from "../popups.mjs";
-import { APP_COLORS, AGENT_FALLBACKS } from "../../ui/vocab.js";
+import { APP_COLORS, AGENT_FALLBACKS, appKey, markOf } from "../../ui/vocab.js";
 
 const CALL_MS = 3000; // one call into a page script, at most
 
 // Each connected agent's tab carries the spark on its icon, in that agent's color; it moves when
 // that agent works in another tab. The color is its app's: Claude Code orange, Codex purple,
-// Gemini blue. An agent whose app has none, or whose app's color another agent here already has
+// Gemini blue, Grok silver. An agent whose app has none, or whose app's color another agent here already has
 // (two Claude Codes), takes the first of AGENT_FALLBACKS no agent here has (cyan first), so two
 // cursors never look the same; with all four taken it repeats. A color stays an agent's while it
 // is connected. People's colors (PEOPLE_COLORS) are never any of these.
 // The colors themselves live in ui/vocab.js (one copy for the helper, hud.js and the pages).
 export { APP_COLORS, AGENT_FALLBACKS, SPARK_COLORS } from "../../ui/vocab.js";
-// Which app: its MCP clientInfo.name ("claude-code", "codex-mcp-client", a joiner's agent's
-// "remote:..."), or the app part of a label ("Alice · Codex"). "" for any other.
-export function appKey(name) {
-  const s = String(name || "").replace(/^remote:/, "");
-  const app = s.includes(" · ") ? s.split(" · ").pop() : s;
-  if (/^claude/i.test(app)) return "claude";
-  if (/^codex/i.test(app)) return "codex";
-  if (/gemini/i.test(app)) return "gemini";
-  return "";
-}
+// Which app, and the mark on its tab icon: ui/vocab.js (appKey, markOf), shared with the pages.
+export { appKey, markOf } from "../../ui/vocab.js";
 // The color an agent of this app has when it's the only one of its app ("" when the app has none).
 export const appColor = (name) => APP_COLORS[appKey(name)] || "";
 // The color for one more agent of app, beside agents that have the colors in taken.
@@ -113,22 +105,28 @@ export function createHud({ pages, waiting, liveView, notify, pause = () => ({ b
   // Agents in the other browser of a shared tab (a joined session): their spark shows on this
   // browser's copy too, in their color, unless an agent here holds the tab. Each one lasts
   // SHARED_SPARK_MS unless it's said again.
-  const sharedSparks = new Map(); // tab -> { color, until }
-  const sharedSpark = (page) => { const s = sharedSparks.get(page); return s && Date.now() < s.until ? s.color : ""; };
-  function setSharedSpark(page, color) {
+  const sharedSparks = new Map(); // tab -> { color, mark, until }
+  const sharedFresh = (page) => { const s = sharedSparks.get(page); return s && Date.now() < s.until ? s : null; };
+  const sharedSpark = (page) => sharedFresh(page)?.color || "";
+  // who: the agent's label there ("Alice · Codex"), for its app's mark.
+  function setSharedSpark(page, color, who = "") {
     if (!page || page.isClosed()) return;
-    const before = sharedSpark(page);
-    if (color) sharedSparks.set(page, { color, until: Date.now() + SHARED_SPARK_MS }); else sharedSparks.delete(page);
-    if (before !== (color || "") && !sparkOn(page)) applySpark(page, tabIcon(page));
+    const before = tabIcon(page);
+    if (color) sharedSparks.set(page, { color, mark: markOf(who), until: Date.now() + SHARED_SPARK_MS }); else sharedSparks.delete(page);
+    if (before !== tabIcon(page) && !sparkOn(page)) applySpark(page, tabIcon(page));
   }
   // A person from the other browser of a shared tab using it by hand: a dot in their color on the
   // tab's icon (in a corner of an agent's spark, when one is there). It goes PERSON_MARK_MS after
   // their last input.
   const personMarks = new Map(); // tab -> { color, until }
   const personMark = (page) => { const m = personMarks.get(page); return m && Date.now() < m.until ? `o${m.color}` : ""; };
-  // What the tab's icon shows: the spark of an agent here, else of one there; and a person there
-  // ("#rrggbb", "o#rrggbb" or both, space apart; empty: the site's own icon).
-  const tabIcon = (page) => [sparkOn(page)?.color || sharedSpark(page), personMark(page)].filter(Boolean).join(" ");
+  // What the tab's icon shows: the spark of an agent here, else of one there, with its app's mark
+  // ("m:codex"; Claude's spark goes without one); and a person there ("#rrggbb", "o#rrggbb", space
+  // apart; empty: the site's own icon).
+  const tabIcon = (page) => {
+    const agent = sparkOn(page) || sharedFresh(page);
+    return [agent?.color, agent?.color && agent.mark !== "claude" ? `m:${agent.mark}` : "", personMark(page)].filter(Boolean).join(" ");
+  };
   function setPersonMark(page, color) {
     if (!page || page.isClosed()) return;
     const before = tabIcon(page);
@@ -212,31 +210,35 @@ export function createHud({ pages, waiting, liveView, notify, pause = () => ({ b
   // Each connected agent's color, picked once its app is known (setApp, at its MCP initialize)
   // and kept until it goes (forgetParticipant). One not known yet shows Claude's orange.
   const agentColors = new Map(); // participant -> color
+  const agentMarks = new Map(); // participant -> its app's mark on its tab's icon (markOf)
   function setApp(participant, app) {
     if (agentColors.has(participant)) return agentColors.get(participant);
     const color = pickAgentColor(app, agentColors.values());
     agentColors.set(participant, color);
+    agentMarks.set(participant, markOf(app));
     return color;
   }
-  const forgetParticipant = (participant) => { agentColors.delete(participant); };
+  const forgetParticipant = (participant) => { agentColors.delete(participant); agentMarks.delete(participant); };
   // The same app session back on a new connection (serve/departures.mjs): it keeps its color and
   // its tab's spark.
   function adoptParticipant(from, to) {
     if (agentColors.has(from)) agentColors.set(to, agentColors.get(from));
+    if (agentMarks.has(from)) agentMarks.set(to, agentMarks.get(from));
     const s = sparks.get(from);
     if (!s) return;
     sparks.delete(from);
-    sparks.set(to, { page: s.page, color: sparkColor(to) });
+    sparks.set(to, { page: s.page, color: sparkColor(to), mark: sparkMark(to) });
     sparksChanged();
   }
   const sparkColor = (participant) => agentColors.get(participant) || APP_COLORS.claude;
+  const sparkMark = (participant) => agentMarks.get(participant) || "claude";
   // Moves a participant's spark to a tab: the page itself, else the tab showing url (none: takes
   // it away). A page is exact; two tabs can show the same URL.
   async function moveSpark(participant, url) {
     const page = (url && typeof url === "object" ? url : url && (await pages()).find((p) => p.url() === url)) || null;
     const prev = sparks.get(participant);
     if (prev?.page === page) return;
-    if (page) sparks.set(participant, { page, color: sparkColor(participant) });
+    if (page) sparks.set(participant, { page, color: sparkColor(participant), mark: sparkMark(participant) });
     else sparks.delete(participant);
     sparksChanged();
     if (prev?.page && !prev.page.isClosed()) await applySpark(prev.page, tabIcon(prev.page));

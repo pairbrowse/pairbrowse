@@ -57,4 +57,4 @@ export const activityHead = (a) => [a.who, a.tab ? `in ${a.tab}` : ""].filter(Bo
 // words on every page, muted, no red and no retry line; `what` is what shows on that page once an
 // agent starts ("Its task, checklist and status", "Your sessions").
 export const NO_AGENT = "No agent connected";
-export const noAgentLine = (what) => `Ask Claude Code or Codex to use PairBrowse. ${what} show here.`;
+export const noAgentLine = (what) => `Ask Claude Code, Codex or Grok to use PairBrowse. ${what} show here.`;

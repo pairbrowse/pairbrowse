@@ -79,7 +79,15 @@
   and a system that can't run it refuses the launch instead of starting the browser without it.
   Server mode (PairBrowse's own virtual screen, or `server.keepAlive`) always works this way,
   whatever `browserSandbox` says; there is no opt-out. A container then needs user namespaces for
-  that user: a seccomp profile or host setting that allows them, and a non-root user.
+  that user: a seccomp profile or host setting that allows them, and a non-root user. With Docker,
+  start from Docker's default seccomp profile and relax only its namespace rules: allow `unshare`,
+  and `clone` and `clone3` with the user, PID and network namespace flags (the rules the default
+  keeps for containers with `CAP_SYS_ADMIN`), then pass it with `--security-opt seccomp=<profile>`
+  beside `--cap-drop ALL` and `no-new-privileges`; never `seccomp=unconfined` or `--privileged`.
+  The browser's namespace layer has been measured under such a setup only in an emulated x64
+  container (an Apple Silicon Mac), where no seccomp filter installs, so that its seccomp-BPF layer
+  also runs there is not yet confirmed on an x64 host. (PairBrowse's test container uses a looser
+  deny-list profile of its own; it is not a model for a server.)
 - `maxTabs`: most tabs open at once (default 20). When another opens, the tab used longest ago
   closes, never the one Claude is working in nor one anyone used in the last 10 minutes (then more
   stay open), and Claude is told.

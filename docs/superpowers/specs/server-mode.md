@@ -1013,11 +1013,17 @@ inconsistency; remove the canvas bridge; keep the sandbox on.
     WebGPU vendor and architecture, pn `002:740-741`, `955:155-163`) and `fingerprintNoise: false` (the
     pack's own warning: noise on real pixels).
   - `software` forces a software renderer on Linux: the engine's own software GL path, or Mesa's
-    llvmpipe under Xvfb where the host has it; which one runs is measured and named, never assumed
-    (exact switches fixed by spike E-S1; the
-    candidate `--enable-unsafe-swiftshader` is stripped by the pack's `DEFAULT_IGNORED_ARGS` today, so
-    the helper would stop ignoring it rather than allow it in `browserArgs`); refused on macOS unless
-    E-S1 shows a working software path.
+    llvmpipe under Xvfb where the host has it; which one runs is measured and named, never assumed.
+    Fixed by spike E-S1 (step 39): with no switch, Linux under Xvfb already renders in software
+    (ANGLE on desktop GL over Mesa's llvmpipe, `glImplementationParts` `gl=egl-angle,angle=opengl`),
+    so `auto` there is software and is measured as such; `software` adds `--use-angle=swiftshader`,
+    the engine's own software path (ANGLE on SwiftShader Vulkan), which works without
+    `--enable-unsafe-swiftshader` (that switch only allows the automatic fallback), so the pack's
+    `DEFAULT_IGNORED_ARGS` stay as they are and nothing new goes into `browserArgs`' allowlist.
+    `--use-angle=vulkan` over Mesa's lavapipe is rejected: SystemInfo answers, but the page never
+    answers again (every probe part timed out). macOS stays refused: SwiftShader does render there
+    (`--use-angle=swiftshader --enable-unsafe-swiftshader`), but the host-capture persona keeps
+    reporting the Metal GPU over it and WebGPU has no adapter, so the result would claim hardware.
   - `gpu` requires a hardware backend; measured software refuses the launch and closes the window.
   - `gpu` with `--disable-gpu` or `--use-angle=swiftshader` in `browserArgs` is a config refusal.
 - **E3. Backend read from the browser process**: `SystemInfo.getInfo` on a browser-level CDP session over
@@ -1033,6 +1039,13 @@ inconsistency; remove the canvas bridge; keep the sandbox on.
   seed: UA major, cores, memory, heap limit, media capabilities), unverified (no measurement).
 - **E6. `validated` only with measured evidence** for the build, pack SHA-256 and runtime key; a
   missing measurement is `unverified`; a switch without a matching page result counts as failed.
+  The `sandbox.on` rule (step 39): on macOS it reads `SANDBOX.on` only (the build has no sandbox
+  status page). On Linux it also reads the engine's sandbox status page in the probe launch: the
+  namespace layer (user, PID and network namespaces) is required, and seccomp-BPF too wherever the
+  kernel is not emulated (an x64 build on an x64 host); a page that is not shown or times out makes
+  the rule `unverified`, and a page showing a required layer missing makes it failed.
+  `SystemInfo` `auxAttributes.sandboxed` (the GPU process) is not counted yet: it was false on
+  every Linux path measured under emulation, so it is rechecked on an x64 host first.
 - **E7. Linux screen follows the display**: on Xvfb the helper passes `virtualScreen` as `screenWidth`,
   `screenHeight`, `availWidth`, `availHeight`, `colorDepth` when the profile's `screen` is unset; a
   differing profile `screen` is a compatibility error naming both.
@@ -1113,7 +1126,7 @@ backend `unverified`; with `gpu` or `require` set the launch fails ("could not c
 Spike E-S1 (first, before E8 to E10): `SystemInfo.getInfo` through the driver on macOS native and in
 the A13 container; software switch candidates (the engine's software GL and Mesa llvmpipe with the
 container's Mesa packages); WebGPU on the Linux software path; fixtures
-`test/fixtures/systeminfo-*.json`, `probe-*.json`.
+`test/fixtures/systeminfo-*.json`, `probe-*.json`. Findings in step 39's "Landed as".
 
 ### Migration
 Persisted persona with `canvasBridge`: dropped at next launch with a log line. Saved persona with it:
@@ -2231,6 +2244,48 @@ it depends on.
    the second" (the open build can't apply a seed, so only the native build reaches the identity lock).
 39. Spike E-S1: `SystemInfo`, software switches, Linux WebGPU, fixtures; lands the A13 container
     harness `test/optin/server/container.mjs`, its first user. -> 8
+    Landed as: `test/optin/server/container.mjs` (`dockerfile`, `imageTag`, `seccompProfile`,
+    `runArgs`, `startContainer`): an image built once per recipe from `node:22-bookworm` (Xvfb,
+    xauth, fontconfig and Latin, CJK and emoji fonts, Mesa GL, EGL and Vulkan drivers, the build's
+    libraries, user `pb` uid 1001), run `--platform linux/amd64` (the Linux build is x64 only; on
+    Apple Silicon under emulation) with its own test seccomp profile (a deny list: every call allowed
+    but a fixed list no browser needs: `mount`, `ptrace`, `setns`, `bpf`, `io_uring_*`, kernel
+    modules, keys, clocks, reboot; looser than Docker's default allow list for unlisted calls, so
+    `docs/configuration.md` recommends Docker's default with only its namespace rules relaxed), every
+    capability dropped, `no-new-privileges`, the label-based removal, the watcher and the two-hour
+    `--rm` lifetime of `two-machines`. `test/optin/server/graphics-measure.mjs` runs on the measured
+    machine: the pinned build installed by `native/install.mjs` `ensureNative` (SHA-256, manifest,
+    self-check, in server mode), then for each candidate and both persona modes (today's; the E2
+    Linux plan) a `launchEngine` launch as the helper's, `SystemInfo.getInfo` on
+    `newBrowserCDPSession()` (answered on both platforms), a page probe in bounded parts (WebGL,
+    WebGL2, WebGPU adapter, a device with the reported limits, one compute round trip, navigator)
+    and the engine's sandbox page, scrubbed by `scrub.mjs` (no command line beyond its graphics
+    switches, no paths, no `modelVersion`). `test/optin/graphics-spike.test.mjs` (gates `DOCKER`,
+    `EXECUTABLE`, `ENGINE`, `FIXTURES`) writes `test/fixtures/systeminfo-{macos-metal,
+    linux-xvfb-llvmpipe, linux-xvfb-swiftshader, linux-xvfb-lavapipe, linux-disable-gpu}.json` and
+    `probe-{macos-metal, linux-llvmpipe-persona, linux-llvmpipe-real, linux-swiftshader-real,
+    linux-webgpu-fallback-real, linux-disable-gpu}.json`; unit tests `test/server-container.test.mjs`,
+    `test/graphics-fixtures.test.mjs`. Findings: software switches as in E2. SystemInfo fields
+    for E3: `gpu.devices[]` (vendor and device IDs and strings, driver), `auxAttributes`
+    (`glRenderer`, `glImplementationParts`, `displayType`, `sandboxed`, `inProcessGpu`),
+    `featureStatus` (`webgl`, `webgpu`, `vulkan`, `rasterization`, ... with `disabled_off` under
+    `--disable-gpu`), `videoDecoding`, `videoEncoding`. WebGPU on Linux: no adapter without
+    `--enable-unsafe-webgpu`; with it a SwiftShader fallback adapter (`isFallbackAdapter: true`,
+    compute works); on both platforms `requestDevice` with the reported limits fails (Linux
+    `maxComputeInvocationsPerWorkgroup` 1024 reported, 256 supported; macOS
+    `maxStorageBuffersPerShaderStage` 16 reported, 10 supported), the persona limits table of E10, so the `webgpu.device` error is
+    real until 961. Sandbox: on in every launch, no `--no-sandbox`; the engine's page shows the
+    namespace layer (user, PID and network namespaces) under the container's profile, and
+    seccomp-BPF "No" on this Mac only because x64 emulation refuses every seccomp filter (Docker's
+    default profile too; a native arm64 container installs one under the same profile), so the
+    test requires the page for every Linux launch whose page answered (a missing or timed-out page
+    fails it), seccomp-BPF on it only on an x64 host (not yet run there, so seccomp-BPF under this
+    setup is unconfirmed), and E6's `sandbox.on` rule reads that page on Linux, not only the
+    launch's choice. The macOS build has no such page: the macOS half skips it (`"not on macOS"`).
+    The `--use-angle=vulkan` rejection is pinned: both `linux-mesa-vulkan-*` launches report
+    `angle=vulkan` with WebGL and WebGL2 unanswered. `auxAttributes.sandboxed` (the GPU process) is
+    true on macOS and false on every Linux path measured here, to recheck on an x64 host before E6
+    counts it.
 39b. The Docker half of C12: `test/optin/proxy-docker.test.mjs` on the A13 container (its only route
     out the proxy; a stub DNS server logs no page names, a STUN responder on the direct network sees
     nothing, a planted direct route fails the check). -> 29, 39
@@ -2349,8 +2404,13 @@ Implementation conditions (from the user):
 
 ### 13.1 Milestone 1 findings (2026-10-20)
 
-**Linux persona (condition 3): partly confirmed.** Read from code, not yet run live (no Linux native
-build is installed locally; the measurement lands with spike E-S1, step 39).
+**Linux persona (condition 3): confirmed live** by spike E-S1 (step 39, the pinned Linux build in
+the A13 container): SystemInfo names llvmpipe while the page's WebGL says `ANGLE (Intel, Mesa
+Intel(R) UHD Graphics 770 (RPL-S), ...)`, WebGPU's adapter says intel/gen-12-lp over SwiftShader,
+and the screen is the seed's (2560x1440, 1920x1080) over a 1366x900 Xvfb. With
+`disableGpuFingerprint` and `fingerprintNoise: false` the page's WebGL strings become llvmpipe's or
+SwiftShader's and WebGPU's google/swiftshader; the screen stays the seed's until E7. First read from
+code:
 - Pages on Linux see a made-up hardware persona: every seed persona is Intel UHD 770 (pn
   `002-persona-profile.patch:120-135, 567-570`), rewritten on Linux to `ANGLE (Intel, Mesa Intel(R)
   UHD Graphics 770 ...)` with WebGPU vendor intel, architecture gen-12-lp (`002:483-491, 671-673,

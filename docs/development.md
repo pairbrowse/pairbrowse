@@ -88,7 +88,7 @@ mockup is read in place and never committed.
 |--------|-----------|--------|
 | `test/*.test.mjs` | Unit tests. Some still start a browser for a few cases, gated by `PAIRBROWSE_TEST_RUNTIME` (`hud`, `enter`, `ui-*` and others) | `npm run test:unit` |
 | `test/integration/` | A real helper (`scripts/daemon.mjs`) and browser per file, two or three for joining; every test skips without `PAIRBROWSE_TEST_RUNTIME` | `npm run test:live` |
-| `test/optin/` | Tests behind a switch of their own, never run by `npm test`: `failover` (`PAIRBROWSE_TEST_REAL_TUNNEL=1`), `ntfy` (`PAIRBROWSE_TEST_NTFY=1`: hand-off messages published to a random ntfy.sh topic and read back), `native-join` (a native build), `profiles-native` (a native build: a browser profile's time zone, languages, screen and pixel ratio as pages read them, a pinned seed's values in two fresh sessions and its refusal in a second instance), `two-machines` (`PAIRBROWSE_TEST_DOCKER=1`; its two sides in `test/optin/two-machines/`) | `npm run test:optin` |
+| `test/optin/` | Tests behind a switch of their own, never run by `npm test`: `failover` (`PAIRBROWSE_TEST_REAL_TUNNEL=1`), `ntfy` (`PAIRBROWSE_TEST_NTFY=1`: hand-off messages published to a random ntfy.sh topic and read back), `native-join` (a native build), `profiles-native` (a native build: a browser profile's time zone, languages, screen and pixel ratio as pages read them, a pinned seed's values in two fresh sessions and its refusal in a second instance), `two-machines` (`PAIRBROWSE_TEST_DOCKER=1`; its two sides in `test/optin/two-machines/`), `graphics-spike` (spike E-S1: SystemInfo and a page probe for each graphics switch candidate, in the Linux container with `PAIRBROWSE_TEST_DOCKER=1`, and on the native build here with `PAIRBROWSE_TEST_EXECUTABLE` and `PAIRBROWSE_TEST_ENGINE`). `test/optin/server/` holds what the server-mode opt-in tests share: `container.mjs`, the one Linux container (`node:22-bookworm`, Xvfb, xauth, fonts, Mesa, a normal user, its own seccomp profile so the browser's sandbox runs, every capability dropped), and the spike's measuring side | `npm run test:optin` |
 | `test/fuzz/*.test.js` | Property-based fuzzing of the security checks | `npm run test:fuzz` |
 | `test/helpers/` | Not tests: `home.mjs` (every test file imports it first: a home of its own under the temp folder), `util.mjs` (`sleep`, `until`, `text`, `rpc`), `daemon.mjs` (`helperHome`, `spawnDaemon`, `startHelper`, `stopDaemon`), `live.mjs` (`testBase`, `attachDaemon`, `session`, `patchright`), `live-helper.mjs`, and the pages' harness | |
 
@@ -123,15 +123,16 @@ is under the temp folder with a linked runtime), so none reaches an installed he
 | Switch | Kind | Who sets it | What it does |
 |--------|------|-------------|--------------|
 | `RUNTIME` | gate | you: `~/.pairbrowse/runtime` | The pinned runtime; every live test (integration, the live cases in unit files, the pages' harness) skips without it |
-| `ENGINE` | gate | you: `~/.pairbrowse/engine` | The engine pack, for the native launch tests in `native-engine` and for `optin/native-join` and `optin/profiles-native` |
-| `EXECUTABLE` | gate | you: a browser binary | Runs the browsers of `connections`, `shared-mode`, `shared-restart`, `record` and `optin/failover` on another build (the PairBrowse browser); `optin/native-join` and `optin/profiles-native` need a native build here |
+| `ENGINE` | gate | you: `~/.pairbrowse/engine` | The engine pack, for the native launch tests in `native-engine` and for `optin/native-join`, `optin/profiles-native` and `optin/graphics-spike` |
+| `EXECUTABLE` | gate | you: a browser binary | Runs the browsers of `connections`, `shared-mode`, `shared-restart`, `record` and `optin/failover` on another build (the PairBrowse browser); `optin/native-join`, `optin/profiles-native` and the macOS half of `optin/graphics-spike` need a native build here |
 | `JOINER_EXECUTABLE` | gate | you: a browser binary | The joiner's browser in `shared-mode` and `record` |
 | `NATIVE` | gate | you: the PairBrowse browser | Also runs `draw` and a `picker` case on the native build |
 | `REAL_TUNNEL` | gate | you: `1` | Real Cloudflare Quick Tunnels: `optin/failover` and one `shared-mode` case |
 | `NTFY` | gate | you: `1` | Real hand-off messages to a random topic on ntfy.sh, read back: `optin/ntfy` |
 | `YOUTUBE` | gate | you: `1` | The `shared-mode` case on youtube.com |
 | `EXCALIDRAW` | gate | you: `1` | The `shared-mode` case on excalidraw.com |
-| `DOCKER` | gate | you: `1` | `optin/two-machines`: this machine and a Linux container (needs Docker and the network) |
+| `DOCKER` | gate | you: `1` | `optin/two-machines`: this machine and a Linux container; `optin/graphics-spike`'s Linux half in the server container (`test/optin/server/container.mjs`; needs Docker and the network; on Apple Silicon the x64 container runs emulated) |
+| `FIXTURES` | gate | you: a folder (`test/fixtures`) | `optin/graphics-spike` writes the graphics fixtures there (`systeminfo-*.json`, `probe-*.json`, scrubbed) |
 | `SHOTS` | gate | you: a folder | `ui-screen` and `ui-right` save screenshots there |
 | `ACTIVE_MS` | knob | `integration/tour-fixes` | How long an agent's connection counts as active |
 | `APPROVAL` | knob | `integration/approval`, `integration/test-gate` | Adds `pairbrowse_test_approval`: the approval card, clicked as a person would |

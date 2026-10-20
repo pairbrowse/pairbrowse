@@ -1,0 +1,131 @@
+{
+  "source": "spike E-S1 (test/optin/graphics-spike.test.mjs)",
+  "platform": "linux",
+  "arch": "x64",
+  "candidate": "webgpu-unsafe",
+  "mode": "real",
+  "args": [
+    "--enable-unsafe-webgpu"
+  ],
+  "version": "150.0.7871.114",
+  "sandbox": {
+    "on": true,
+    "required": "in server mode",
+    "noSandboxSwitch": false,
+    "page": [
+      "Sandbox Status",
+      "Layer 1 Sandbox\tNamespace",
+      "PID namespaces\tYes",
+      "Network namespaces\tYes",
+      "Seccomp-BPF sandbox\tNo",
+      "Seccomp-BPF sandbox supports TSYNC\tNo",
+      "Ptrace Protection with Yama LSM (Broker)\tNo",
+      "Ptrace Protection with Yama LSM (Non-broker)\tNo",
+      "You are NOT adequately sandboxed."
+    ]
+  },
+  "probe": {
+    "webgl": {
+      "available": true,
+      "vendor": "WebKit",
+      "renderer": "WebKit WebGL",
+      "version": "WebGL 1.0 (OpenGL ES 2.0 Chromium)",
+      "unmaskedVendor": "Google Inc. (Mesa/X.org)",
+      "unmaskedRenderer": "ANGLE (Mesa/X.org, llvmpipe (LLVM 15.0.6 128 bits), OpenGL 4.5)",
+      "maxTextureSize": 16384,
+      "maxRenderbufferSize": 16384,
+      "extensions": 35
+    },
+    "webgl2": {
+      "available": true,
+      "vendor": "WebKit",
+      "renderer": "WebKit WebGL",
+      "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)",
+      "unmaskedVendor": "Google Inc. (Mesa/X.org)",
+      "unmaskedRenderer": "ANGLE (Mesa/X.org, llvmpipe (LLVM 15.0.6 128 bits), OpenGL 4.5)",
+      "maxTextureSize": 16384,
+      "maxRenderbufferSize": 16384,
+      "extensions": 32
+    },
+    "webgpu": {
+      "available": true,
+      "vendor": "google",
+      "architecture": "swiftshader",
+      "device": "",
+      "description": "",
+      "isFallbackAdapter": true,
+      "features": [
+        "bgra8unorm-storage",
+        "chromium-experimental-timestamp-query-inside-passes",
+        "clip-distances",
+        "core-features-and-limits",
+        "depth-clip-control",
+        "depth32float-stencil8",
+        "float32-blendable",
+        "float32-filterable",
+        "indirect-first-instance",
+        "rg11b10ufloat-renderable",
+        "subgroup-size-control",
+        "subgroups",
+        "texture-component-swizzle",
+        "texture-compression-astc",
+        "texture-compression-astc-sliced-3d",
+        "texture-compression-bc",
+        "texture-compression-bc-sliced-3d",
+        "texture-compression-etc2",
+        "timestamp-query"
+      ],
+      "limits": {
+        "maxTextureDimension1D": 16384,
+        "maxTextureDimension2D": 16384,
+        "maxTextureDimension3D": 2048,
+        "maxTextureArrayLayers": 2048,
+        "maxBindGroups": 4,
+        "maxBindGroupsPlusVertexBuffers": 24,
+        "maxBindingsPerBindGroup": 1000,
+        "maxDynamicUniformBuffersPerPipelineLayout": 10,
+        "maxDynamicStorageBuffersPerPipelineLayout": 8,
+        "maxSampledTexturesPerShaderStage": 48,
+        "maxSamplersPerShaderStage": 16,
+        "maxStorageBuffersPerShaderStage": 16,
+        "maxStorageTexturesPerShaderStage": 8,
+        "maxUniformBuffersPerShaderStage": 12,
+        "maxUniformBufferBindingSize": 65536,
+        "maxStorageBufferBindingSize": 2147483644,
+        "minUniformBufferOffsetAlignment": 256,
+        "minStorageBufferOffsetAlignment": 256,
+        "maxVertexBuffers": 8,
+        "maxBufferSize": 2147483648,
+        "maxVertexAttributes": 30,
+        "maxVertexBufferArrayStride": 2048,
+        "maxInterStageShaderVariables": 28,
+        "maxColorAttachments": 8,
+        "maxColorAttachmentBytesPerSample": 128,
+        "maxComputeWorkgroupStorageSize": 32768,
+        "maxComputeInvocationsPerWorkgroup": 1024,
+        "maxComputeWorkgroupSizeX": 1024,
+        "maxComputeWorkgroupSizeY": 1024,
+        "maxComputeWorkgroupSizeZ": 64,
+        "maxComputeWorkgroupsPerDimension": 65535,
+        "maxImmediateSize": 64,
+        "maxStorageBuffersInFragmentStage": 16,
+        "maxStorageTexturesInFragmentStage": 8,
+        "maxStorageBuffersInVertexStage": 16,
+        "maxStorageTexturesInVertexStage": 8
+      },
+      "deviceWithReportedLimits": "Failed to execute 'requestDevice' on 'GPUAdapter': Required limit (1024) is greater than the supported limit (256).\n - While validating maxComputeInvocationsPerWorkgroup\n - While validating required limits\n",
+      "compute": "2,4,6,8"
+    },
+    "navigator": {
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
+      "platform": "Linux x86_64",
+      "hardwareConcurrency": 8,
+      "screen": [
+        1440,
+        900,
+        24
+      ],
+      "dpr": 1
+    }
+  }
+}

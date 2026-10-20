@@ -1,0 +1,50 @@
+{
+  "source": "spike E-S1 (test/optin/graphics-spike.test.mjs)",
+  "platform": "linux",
+  "arch": "x64",
+  "candidate": "disable-gpu",
+  "mode": "real",
+  "args": [
+    "--disable-gpu"
+  ],
+  "version": "150.0.7871.114",
+  "sandbox": {
+    "on": true,
+    "required": "in server mode",
+    "noSandboxSwitch": false,
+    "page": [
+      "Sandbox Status",
+      "Layer 1 Sandbox\tNamespace",
+      "PID namespaces\tYes",
+      "Network namespaces\tYes",
+      "Seccomp-BPF sandbox\tNo",
+      "Seccomp-BPF sandbox supports TSYNC\tNo",
+      "Ptrace Protection with Yama LSM (Broker)\tNo",
+      "Ptrace Protection with Yama LSM (Non-broker)\tNo",
+      "You are NOT adequately sandboxed."
+    ]
+  },
+  "probe": {
+    "webgl": {
+      "available": false
+    },
+    "webgl2": {
+      "available": false
+    },
+    "webgpu": {
+      "available": false,
+      "reason": "requestAdapter returned null"
+    },
+    "navigator": {
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
+      "platform": "Linux x86_64",
+      "hardwareConcurrency": 8,
+      "screen": [
+        1920,
+        1080,
+        24
+      ],
+      "dpr": 1
+    }
+  }
+}

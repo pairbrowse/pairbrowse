@@ -265,7 +265,7 @@ test("launch wiring: the check after the screen check and before the browser is 
   const screen = src.indexOf("if (screen && st.screen !== screen) {");
   const check = src.indexOf("await network.checkAtLaunch(ctx, st.session, net)");
   assert.ok(engine > 0 && screen > engine && check > screen, "launchEngine, the screen check, then the egress check");
-  for (const later of ["net?.started();", "await addPageScript(ctx, driver", "api.adopt(p, ctx)", "ctx.on(\"page\"", "ctx.on(\"close\"", "api.restore(ctx"]) {
+  for (const later of ["net.started();", "await addPageScript(ctx, driver", "api.adopt(p, ctx)", "ctx.on(\"page\"", "ctx.on(\"close\"", "api.restore(ctx"]) {
     assert.ok(src.indexOf(later) > check, `${later} after the check`);
   }
   assert.match(src, /const held = !st\.contextPromise && network\?\.refusal\(st\.session\);/);

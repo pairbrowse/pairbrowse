@@ -646,7 +646,8 @@ fail closed, also after recovery.
   `DIRECT` fallback.
 - **C8. Egress change**: recheck every `recheckMinutes` (10); a change or a failed recheck does
   `onEgressChange`: `"pause"` (default, pauses agents through `scripts/daemon/pause.mjs`, a person
-  resumes), `"notify"`, or `"ignore"` (rotating proxies with a country expectation). Once per change.
+  resumes; a host's pause state mirrored into a session joined from here never lifts it), `"notify"`, or `"ignore"` (rotating proxies with a country expectation: an address change
+  passes, a failed recheck still pauses, step 31). Once per change.
 - **C9. Observations apart.** Each check appends to `sessionFile(name, "network.json")` (0600, last 50;
   memory only for clean sessions). The direct IP is never stored (only `sameAsDirect`). With geoip,
   `savePersona` strips `GEOIP_FIELDS` (`native-engine.mjs:22`), so derived values are recomputed each
@@ -1770,6 +1771,44 @@ it depends on.
    `test/integration/proxy.test.mjs`; the test-switch row (C-6) names the NetLog. Tests:
    `test/netlog.test.mjs`, `test/security.test.mjs` (`NETLOG`), `test/integration/proxy.test.mjs`.
 31. Recheck, egress change, pause and notify through the B notifier (C8). -> 29, 16
+   Landed as: `daemon/network.mjs` `createNetwork` gains `pause(who)`, `channels(message)` and, for
+   tests, `recheckMs` and `timers`. A passing `checkAtLaunch` keeps what the rechecks need with the
+   launch's handle (its network, targets, the auth the auth file held, the exit it read as baseline);
+   the handle's `started()` arms them (no separate `start` in the part's answer), `stop(handle)` ends
+   them: `launch.mjs` ties `ctx.once("close", () => network.stop(net))` on in the same statement as
+   `started()` (a browser that crashes before the launch's own close handler is on still ends
+   them) and stops them when the rest of the launch throws, always with its own handle, so an older
+   browser closing late never ends the next one's; `recheck()` runs one now (tests). Every `recheckMinutes` (or the
+   new test switch `RECHECK_MS`; timer unref'd) the helper's probe reads the exit through the same
+   proxy with the launch's credentials, and this computer's own exit without `expectEgress`, bounded
+   by the check's bound plus a second; decided here: no browser-side read on a recheck (it would open
+   a tab in the person's window every time, and the browser's proxy can't change while it runs), so
+   `egressVerdict` takes the helper's read for both and the stored baseline. A result that comes back
+   after its browser closed is dropped. Each recheck is kept as `kind: "recheck"` with `browser` and
+   `webrtc` `null`. `"changed"` moves the baseline (once per change); `"failed"` acts once per run of
+   failures, again after a passing recheck. `onEgressChange`: `"pause"` calls `pause(RECHECK_PAUSER)`
+   ("Proxy check"; `daemon.mjs` passes `pause.hold`: decided here, a hold of its own in
+   `pause.mjs` that holds every agent as the shared Pause does but that `mirror` never clears, so in
+   a session joined from here the host's next push can't undo it; a person's Resume here lifts it,
+   `resume` or, joined, `resumeAgents` before the press goes to the host);
+   `"notify"` tells only; `"ignore"` lets a change pass (logged and kept) but a failed recheck pauses
+   as `"pause"` does (decided here: its `expectEgress` countries are what keeps a rotating exit in
+   bounds). The person is told through `notify` (the side panel or the system's) and through
+   `channels`, which `daemon.mjs` builds with `notify/index.mjs` `sendWhereHandoffsGo(config, {
+   server, notifier })`: through the hand-off notifier only when `handoffSends` (decision 8: server
+   mode, or Away), read at each send. New message kind `"network"` in `notify/message.mjs`:
+   `{ kind, network, change, paused, at }` (`NETWORK_CHANGES` `changed`, `failed`), checked whole
+   like the others, with its own title and text (`NETWORK_TITLES`); the webhook posts `{ event:
+   "pairbrowse.network", network, change, paused, at }`. It names no session, address, country or
+   reason. `statusParts` after a recheck: `last rechecked at HH:MM UTC`, or a warning for a failure
+   or an acted-on change until a recheck passes. No audit line (the audit trail stays the hand-off's,
+   B17). Row C-1 now has "egress change pauses agents" and names `test/net-recheck.test.mjs`; row B-3
+   says what the network message carries; both name `test/integration/proxy.test.mjs`. Tests:
+   `test/net-recheck.test.mjs` (with the launch's close and failure paths and the decision 8 gate
+   run), `test/pause.test.mjs` (the hold), `test/notify-channels.test.mjs` (the message, each
+   channel's request), `test/security.test.mjs` (`RECHECK_MS`), `test/integration/proxy.test.mjs`
+   (an exit change pauses agents and notifies once, a person resumes; a proxy killed mid-session
+   pauses them, said once, nothing around it).
 32. Session rename and delete with network; strict sessions share frames (C4, C11).
 32b. Settings "Network" section and owner routes: add, edit, test, remove a proxy, default and
     per-session choice, write-only password, test result with exit country and coherence warning;

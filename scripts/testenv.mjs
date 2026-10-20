@@ -54,6 +54,7 @@ export const SWITCHES = {
   NO_DIRECT: "a network where no direct screen connection can be made",
   PANEL: "pairbrowse_test_panel: the side panel's worker",
   PICK_WAIT_MS: "how long the session picker waits (daemon/sessions/picker.mjs)",
+  RECHECK_MS: "how often a running proxied session's exit is checked again (daemon/network.mjs), in place of network.recheckMinutes",
   RESTART_MS: "the tunnel pool's restart pause (daemon/tunnel-pool.mjs)",
   RESUME_GRACE_MS: "how long a closed agent connection's label, color and tab wait for the same app session (daemon/serve/departures.mjs)",
   SCREEN: "pairbrowse_test_screen: the shared browser picture page",

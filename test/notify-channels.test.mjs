@@ -38,6 +38,7 @@ const fast = (opts = {}) => (url, body, o) => httpsPost(url, body, { ...o, timeo
 const TOKEN = `123456789:${"A".repeat(35)}`;
 const turn = (over = {}) => ({ kind: "turn", id: "3fa1c2d9", action: "login", host: "accounts.example.com", link: "https://pb.example.ts.net/0123abcd/", expiresAt: Date.UTC(2026, 9, 20, 14, 35), ...over });
 const secretsOf = (values) => (name) => values[name];
+const network = (over = {}) => ({ kind: "network", network: "us-east", change: "changed", paused: true, at: Date.UTC(2026, 9, 20, 14, 35), ...over });
 
 test("each of webhook, ntfy, telegram, discord, slack sends its own request shape", async () => {
   const s = await stub((req) => (req.url.endsWith("/sendMessage") ? [200, '{"ok":true}'] : req.url.startsWith("/discord") ? [204, ""] : [200, "ok"]));
@@ -94,6 +95,16 @@ test("each of webhook, ntfy, telegram, discord, slack sends its own request shap
     assert.equal(by("/pb_topic-1").headers["x-priority"], "3");
     assert.equal(by("/pb_topic-1").headers["x-click"], undefined);
     assert.equal(by("/pb_topic-1").body, "The hand-off on accounts.example.com ended: nobody finished the step in time. Progress is saved, and the agent stops there.");
+
+    // A proxy's exit (C8): the proxy's id and what happened, no link, ntfy at a step's priority.
+    s.seen.length = 0;
+    assert.deepEqual(await n.send(network()), { sent: ["webhook", "ntfy", "telegram", "discord", "slack"], failed: [], withheld: [] });
+    assert.deepEqual(JSON.parse(by("/hook").body), { event: "pairbrowse.network", network: "us-east", change: "changed", paused: true, at: "2026-10-20T14:35:00.000Z" });
+    assert.equal(by("/pb_topic-1").headers["x-title"], "PairBrowse: proxy exit changed");
+    assert.equal(by("/pb_topic-1").headers["x-priority"], "4");
+    assert.equal(by("/pb_topic-1").headers["x-click"], undefined);
+    assert.equal(by("/pb_topic-1").body, 'The exit address of proxy "us-east" changed at 14:35 UTC.\nAgents are paused until you resume them in PairBrowse.');
+    assert.equal(JSON.parse(by(`/bot${TOKEN}/sendMessage`).body).text, `PairBrowse: proxy exit changed\n${by("/pb_topic-1").body}`);
   } finally {
     await s.close();
   }
@@ -198,7 +209,7 @@ test("a message holds the step's sentence, the host, the expiry and the link, no
   // The audit's vocabulary agrees.
   assert.deepEqual(DETAILS.minted.filter((w) => w !== "replacement").sort(), [...ACTIONS].sort());
   assert.deepEqual(DETAILS.ended, END_REASONS);
-  assert.deepEqual(MESSAGE_KINDS, ["turn", "reminder", "ended"]);
+  assert.deepEqual(MESSAGE_KINDS, ["turn", "reminder", "ended", "network"]);
 
   // Any other field, or a value outside its rule, refuses the whole message and nothing is sent.
   const sent = [];
@@ -248,6 +259,21 @@ test("a message holds the step's sentence, the host, the expiry and the link, no
     assert.equal(messageProblem(m), "", reason);
     assert.match(messageText(m).text, /^The hand-off on accounts\.example\.com ended: [A-Z]?[a-z]/);
   }
+});
+
+test("a network message (C8) names the proxy and what happened, nothing else: no session, address, country or reason", async () => {
+  assert.equal(messageProblem(network()), "");
+  assert.equal(messageProblem(network({ change: "failed", paused: false })), "");
+  const bad = [
+    network({ session: "shop" }), network({ ip: "203.0.113.77" }), network({ loc: "US" }), network({ reason: "The proxy's exit address changed." }),
+    network({ link: "https://pb.example.ts.net/x/" }), network({ id: "3fa1c2d9" }), network({ network: "US-EAST" }), network({ network: "a b" }),
+    network({ network: "x".repeat(35) }), network({ change: "moved" }), network({ paused: "yes" }), network({ at: "now" }), network({ at: 8.64e15 + 1 }),
+    turn({ kind: "network" }),
+  ];
+  for (const m of bad) assert.notEqual(messageProblem(m), "", JSON.stringify(m));
+  assert.ok(!/203\.0\.113\.77|shop|US"/.test(bad.map(messageProblem).join(" ")), "refusals name fields, never values");
+  assert.deepEqual(messageText(network({ change: "failed", paused: false })), { title: "PairBrowse: proxy check failed",
+    text: 'Proxy "us-east" failed its recheck at 14:35 UTC; nothing went around it.\nAgents go on.' });
 });
 
 test("ntfy: on public ntfy.sh without a token the link stays out (link auto); always and never as written", async () => {

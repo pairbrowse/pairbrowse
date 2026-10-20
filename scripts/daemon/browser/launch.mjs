@@ -238,20 +238,25 @@ export function createLaunch(st, deps, api) {
       throw new Error(checked.refusal);
     }
     if (net?.proxy) step("network check");
-    net?.started(); // the running browser's network from now (network.strict(), C11)
-    hud.setSandboxOff?.(SANDBOX.on === false); // the bar warns while the sandbox is off
-    step("browser (fingerprint and launchPersistentContext inside)");
-    pruneStaleContexts(ctx, { driver, log }); // the driver forgets a tab's old execution contexts as it navigates
-    await addPageScript(ctx, driver, hud.source);
-    deps.phishing?.watch(ctx); // listed phishing sites stopped before they show (daemon/phishing.mjs)
-    // Never into the browser's own pages (its new tab page among them: plans/555 D1.3).
-    for (const p of ctx.pages()) { api.adopt(p, ctx); if (!isBrowserPage(p.url())) hud.ensure(p); }
-    // A tab can arrive already loaded (one the side panel opened at its address): its page
-    // script comes now, since under Patchright it isn't there until ensure adds it.
-    ctx.on("page", (p) => { api.adopt(p, ctx, { opened: true }); p.waitForLoadState("domcontentloaded").then(() => { if (!isBrowserPage(p.url())) hud.onPageLoad(p); }, () => {}); setTimeout(() => api.capTabs(ctx, p).catch(() => {}), 300); });
-    step(`first page (${ctx.pages().length} open)`);
-    if (st.pick.state === "pending") api.showPicker(ctx, { own });
-    else api.restore(ctx, null, { own });
+    // The running browser's network from now (network.strict(), C11), and its exit's rechecks
+    // (daemon/network.mjs, C8): they end with this browser's close, tied on at the moment they
+    // start, so a crash before the close handler below is on never leaves them running.
+    if (net) { net.started(); ctx.once("close", () => network.stop(net)); }
+    try {
+      hud.setSandboxOff?.(SANDBOX.on === false); // the bar warns while the sandbox is off
+      step("browser (fingerprint and launchPersistentContext inside)");
+      pruneStaleContexts(ctx, { driver, log }); // the driver forgets a tab's old execution contexts as it navigates
+      await addPageScript(ctx, driver, hud.source);
+      deps.phishing?.watch(ctx); // listed phishing sites stopped before they show (daemon/phishing.mjs)
+      // Never into the browser's own pages (its new tab page among them: plans/555 D1.3).
+      for (const p of ctx.pages()) { api.adopt(p, ctx); if (!isBrowserPage(p.url())) hud.ensure(p); }
+      // A tab can arrive already loaded (one the side panel opened at its address): its page
+      // script comes now, since under Patchright it isn't there until ensure adds it.
+      ctx.on("page", (p) => { api.adopt(p, ctx, { opened: true }); p.waitForLoadState("domcontentloaded").then(() => { if (!isBrowserPage(p.url())) hud.onPageLoad(p); }, () => {}); setTimeout(() => api.capTabs(ctx, p).catch(() => {}), 300); });
+      step(`first page (${ctx.pages().length} open)`);
+      if (st.pick.state === "pending") api.showPicker(ctx, { own });
+      else api.restore(ctx, null, { own });
+    } catch (e) { if (net) network.stop(net); throw e; } // a launch that fails here: its rechecks end with it
     const mine = st.contextPromise;
     const launchedAt = Date.now();
     ctx.on("close", () => {

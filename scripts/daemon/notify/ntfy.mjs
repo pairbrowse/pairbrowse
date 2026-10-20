@@ -1,5 +1,5 @@
 // ntfy: the text POSTed to <server>/<topic> (the topic's name is a secret: on a public server
-// anyone who knows it reads the topic), with X-Title, X-Priority (4 for a step, 3 for an end),
+// anyone who knows it reads the topic), with X-Title, X-Priority (4 for a step or a proxy exit, 3 for an end),
 // X-Tags, X-Click (the link, when sent) and a bearer token when tokenSecret names one. link:
 // "auto" (default) leaves the link out on https://ntfy.sh without a token (a public topic, and the
 // first tap wins: B7), "always" sends it, "never" never does; without it the message says to take

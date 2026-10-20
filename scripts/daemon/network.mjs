@@ -12,9 +12,23 @@
 // or secrets.env changes), pairbrowse_status says why, and the person is told once. Every launch
 // goes through here, so a recovery after a crash is checked the same way. Each check is kept apart
 // from the profile in the session's network.json (C9).
+// While the browser runs, its exit is checked again every recheckMinutes (C8): the helper's probe
+// through the same proxy (the browser's proxy can't change while it runs, and a check in the
+// browser would open a tab in the person's window each time), compared with the exit before. An
+// exit that moved, or a recheck that fails (proxy down, exit outside expectEgress or this
+// computer's own), does what the proxy's onEgressChange says, once per change and once per run of
+// failures: "pause" (the default) holds every agent as a person's Pause does (pause.mjs hold: a
+// host's state mirrored into a session joined from here never lifts it; a person's Resume does),
+// "notify" only tells, "ignore" lets an address change pass (rotating proxies) but still pauses on a
+// failure, since its expectEgress is what keeps a rotating exit in bounds. The person is told in the
+// window and, where hand-offs go to their channels (server mode, or Away: decision 8), with a
+// "network" message through the hand-off notifier that names only the proxy and what happened.
 //
-// deps: log, notify(text) (the person's notification); configFile, secretsFile, runDir,
-// observationsFile(session) (paths.mjs's, tests pass their own); probe, inBrowser, now (tests).
+// deps: log, notify(text) (the person's notification), pause(who) (holds every agent: pause.mjs
+// hold; true when it wasn't already), channels(message) (a "network" message to the person's channels, notify/;
+// resolves, or null when hand-offs don't go there now); configFile, secretsFile, runDir,
+// observationsFile(session) (paths.mjs's, tests pass their own); probe, inBrowser, now, recheckMs
+// (the interval, else RECHECK_MS or recheckMinutes), timers (tests).
 import { chmodSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
@@ -22,7 +36,8 @@ import { paths, sessionFile } from "../paths.mjs";
 import { isTemporary } from "../sessions.mjs";
 import { readJson, writeJsonAtomic, within } from "../util.mjs";
 import { loadSecrets } from "../rules/secrets.mjs";
-import { readNetwork, networkFor, launchPart, applyLaunchPart, sessionRefusal, PROXY_AUTH_SWITCH } from "../net/config.mjs";
+import { testMs } from "../testenv.mjs";
+import { readNetwork, networkFor, launchPart, applyLaunchPart, sessionRefusal, sessionShown, PROXY_AUTH_SWITCH } from "../net/config.mjs";
 import { probeEgress, checkTargets } from "../net/probe.mjs";
 import { checkInBrowser, GATHER_MS } from "../net/browsercheck.mjs";
 import { egressVerdict, webrtcVerdict } from "../net/verdict.mjs";
@@ -32,6 +47,11 @@ import { egressVerdict, webrtcVerdict } from "../net/verdict.mjs";
 export const HOLD_MS = 60_000;
 // The checks kept per session in its network.json (C9).
 export const OBSERVATIONS_MAX = 50;
+
+// Who pauses the agents when a proxy's exit changes: the name their results and the bars show.
+export const RECHECK_PAUSER = "Proxy check";
+// "14:35 UTC" in status lines: a server's own zone means nothing to the person.
+const utc = (ms) => `${new Date(ms).toISOString().slice(11, 16)} UTC`;
 
 // The auth file's name under ~/.pairbrowse/run: a fresh one each launch, like the pages' key file.
 export const PROXY_AUTH_PREFIX = "proxy-auth-";
@@ -55,13 +75,20 @@ export function dropProxyAuthFile(path) {
   try { rmSync(path, { force: true }); } catch { /* gone or unreachable: nothing to do */ }
 }
 
-export function createNetwork({ log = () => {}, notify = () => {}, configFile = paths.config, secretsFile = paths.secrets, runDir = paths.run,
-  observationsFile = (session) => sessionFile(session, "network.json"), probe = probeEgress, inBrowser = checkInBrowser, now = Date.now } = {}) {
+export function createNetwork({ log = () => {}, notify = () => {}, pause = () => false, channels = () => null, configFile = paths.config, secretsFile = paths.secrets, runDir = paths.run,
+  observationsFile = (session) => sessionFile(session, "network.json"), probe = probeEgress, inBrowser = checkInBrowser, now = Date.now,
+  recheckMs = null, timers = { setTimeout, clearTimeout } } = {}) {
   let last = null; // the network of the browser started last: { session, id, source, strict } (no address)
   // Each launch's state, kept with the handle forLaunch returns ({ session, net, targets, early };
   // early: the helper's probes): the check reads only its own launch's, so a later forLaunch (a
   // Settings test, a recheck, a probe launch) can't take it away, and a handle without one fails.
   const launches = new WeakMap();
+  // A launch whose check passed, until its browser is up (started): what its rechecks need
+  // ({ session, net, targets, auth, baseline }; baseline: the exit the check read).
+  const passed = new WeakMap();
+  // The running browser's rechecks: { handle, session, net, targets, auth, baseline, failing, timer }
+  // (failing: the last recheck failed and was acted on, so the next failures stay quiet), or null.
+  let watch = null;
   let failure = null; // the last failed check: { session, id, text, at, stamp }
   let told = ""; // the failure the person was last notified of (session and reason): once each
   const checks = new Map(); // session -> its last check here ({ id, strict, verdict, loc, reason, at }), for status
@@ -96,14 +123,14 @@ export function createNetwork({ log = () => {}, notify = () => {}, configFile = 
     const record = { session, id: net.id, source: net.source, strict: !!net.proxy && net.strict };
     const args = authPath ? [...part.args, `${PROXY_AUTH_SWITCH}=${authPath}`] : part.args;
     if (net.proxy) log(`launch: network "${net.id}" (${net.source}${net.strict ? ", strict" : ""}${authPath ? ", auth file" : ""})`);
-    const own = { session, net, targets: null, early: null };
+    const auth = part.authFile ? { username: part.authFile.username, password: part.authFile.password } : null;
+    const own = { session, net, targets: null, early: null, auth };
     if (net.proxy) {
       // The helper's probes start now and run while the browser starts (C6 (1)): through the proxy
       // (its credentials as the auth file holds them, for an http: or https: proxy), and this
       // computer's own exit only when no expectEgress says where the proxy's should be. Both never
       // throw, and are bounded.
       const targets = own.targets = checkTargets(net);
-      const auth = part.authFile ? { username: part.authFile.username, password: part.authFile.password } : null;
       own.early = Promise.all([
         probe({ proxy: net.proxy, checkUrl: targets.checkUrl, auth, timeoutMs: targets.timeoutMs }),
         net.proxy.expectEgress ? Promise.resolve(null) : probe({ proxy: null, checkUrl: targets.directUrl, timeoutMs: targets.timeoutMs }),
@@ -117,7 +144,8 @@ export function createNetwork({ log = () => {}, notify = () => {}, configFile = 
         return out;
       },
       drop: () => { dropProxyAuthFile(authPath); authPath = null; },
-      started: () => { last = record; },
+      // The browser is up: its network is the running one, and its rechecks start (C8).
+      started: () => { last = record; start(handle); },
     };
     launches.set(handle, own);
     return handle;
@@ -183,6 +211,7 @@ export function createNetwork({ log = () => {}, notify = () => {}, configFile = 
     if (ok) {
       if (failure?.session === session) failure = null;
       told = "";
+      passed.set(launch, { session, net, targets, auth: p.auth, baseline: egress.ip });
       log(`network: "${net.id}" passed its check at launch${egress.loc ? ` (exit country ${egress.loc})` : ""}`);
       return { ok: true };
     }
@@ -205,11 +234,103 @@ export function createNetwork({ log = () => {}, notify = () => {}, configFile = 
     if (held) return [`warning: ${held}`];
     const c = last?.session === session ? checks.get(session) : null;
     if (!last || last.session !== session || !last.id || !c) return [];
-    return [`network "${c.id}"${c.strict ? " (strict)" : ""}: exit checked at launch${c.loc ? `, country ${c.loc}` : ""}`];
+    const name = `network "${c.id}"${c.strict ? " (strict)" : ""}`;
+    const country = c.loc ? `, country ${c.loc}` : "";
+    const after = c.paused ? " Agents were paused for it until a person resumes them." : c.told ? " You were told; agents went on." : "";
+    if (c.kind === "recheck" && c.verdict === "failed") return [`warning: ${name} failed its recheck at ${utc(c.at)}: ${c.reason}${after}`];
+    if (c.kind === "recheck" && c.verdict === "changed" && c.told) return [`warning: ${name}: its exit address changed at ${utc(c.at)}${country}.${after}`];
+    if (c.kind === "recheck") return [`${name}: exit checked at launch, last rechecked at ${utc(c.at)}${country}`];
+    return [`${name}: exit checked at launch${country}`];
+  }
+
+  // The rechecks of the browser started with handle (its check passed): every recheckMinutes (or
+  // recheckMs, RECHECK_MS) until stop. Any rechecks before stop; a direct session has none.
+  function start(handle) {
+    stop();
+    const s = passed.get(handle);
+    passed.delete(handle);
+    if (!s?.net.proxy) return;
+    const ms = recheckMs ?? testMs("RECHECK_MS", s.net.recheckMinutes * 60_000);
+    const w = watch = { handle, ...s, failing: false, timer: null };
+    const next = () => {
+      w.timer = timers.setTimeout(() => { recheck(w).catch(() => {}).finally(() => { if (watch === w) next(); }); }, ms);
+      w.timer?.unref?.();
+    };
+    next();
+  }
+  // The browser of handle closed (or, without one, whichever runs): its rechecks end. A late close
+  // of an older browser never ends the next one's.
+  function stop(handle = null) {
+    if (!watch || (handle && watch.handle !== handle)) return;
+    timers.clearTimeout(watch.timer);
+    watch = null;
+  }
+
+  // One recheck of the running browser's exit (C8), w its watch. A result that comes back after
+  // its browser closed (or another started) is dropped. Never throws.
+  async function recheck(w = watch) {
+    if (!w || watch !== w) return null;
+    const { session, net, targets } = w;
+    const [helper, direct] = (await within(targets.timeoutMs + 1000, Promise.all([
+      probe({ proxy: net.proxy, checkUrl: targets.checkUrl, auth: w.auth, timeoutMs: targets.timeoutMs }),
+      net.proxy.expectEgress ? Promise.resolve(null) : probe({ proxy: null, checkUrl: targets.directUrl, timeoutMs: targets.timeoutMs }),
+    ]).catch(() => null))) || [null, null];
+    if (watch !== w) return null;
+    // The helper's read stands for the browser's: the same proxy, which the browser can't leave
+    // while it runs (its launch check showed both agree).
+    const read = helper || { ok: false, problem: "the check through the proxy didn't finish", timedOut: true };
+    const egress = egressVerdict({ helper: read, browser: read, direct, expectEgress: net.proxy.expectEgress, baseline: w.baseline });
+    const at = now();
+    observe(session, { at: new Date(at).toISOString(), kind: "recheck", proxy: net.id, server: net.proxy.server, browser: null,
+      helper: { ip: helper?.ok ? helper.ip : null, loc: helper?.ok ? helper.loc : null }, sameAsDirect: egress.sameAsDirect, webrtc: null,
+      dns: net.strict || net.proxy.scheme === "socks5" ? "strict" : "local", verdict: egress.verdict, reason: egress.reason });
+    const check = { id: net.id, strict: net.strict, kind: "recheck", verdict: egress.verdict, loc: egress.loc, reason: egress.reason, at, paused: false, told: false };
+    const before = checks.get(session);
+    if (egress.verdict === "ok") {
+      if (w.failing) log(`network: "${net.id}" passed its recheck again`);
+      w.failing = false;
+      checks.set(session, check);
+      return egress.verdict;
+    }
+    if (egress.verdict === "changed") { w.baseline = egress.ip; w.failing = false; }
+    if (egress.verdict === "failed" && w.failing) {
+      // Acted on already: the same run of failures is said once.
+      checks.set(session, { ...check, paused: !!before?.paused, told: !!before?.told });
+      return egress.verdict;
+    }
+    if (egress.verdict === "failed") w.failing = true;
+    Object.assign(check, act(session, net, egress.verdict, at));
+    checks.set(session, check);
+    return egress.verdict;
+  }
+
+  // What the proxy's onEgressChange does for a change or a failed recheck: { paused, told }.
+  function act(session, net, change, at) {
+    const mode = net.proxy.onEgressChange || "pause";
+    if (change === "changed" && mode === "ignore") {
+      log(`network: "${net.id}" exit address changed at its recheck (onEgressChange "ignore")`);
+      return { paused: false, told: false };
+    }
+    const pausing = mode !== "notify";
+    if (pausing) try { pause(RECHECK_PAUSER); } catch {}
+    log(`network: "${net.id}" ${change === "changed" ? "exit address changed at its recheck" : "failed its recheck"}${pausing ? "; agents paused" : "; agents go on (onEgressChange \"notify\")"}`);
+    const what = change === "changed" ? `the exit address of its proxy "${net.id}" changed` : `its proxy "${net.id}" failed its recheck`;
+    const then = pausing ? "Agents are paused until you resume them." : "Agents go on (onEgressChange \"notify\").";
+    try { notify(`Session ${sessionShown(session)}: ${what}. ${then} Nothing went around the proxy. See pairbrowse_status or daemon.log.`); } catch {}
+    const message = { kind: "network", network: net.id, change, paused: pausing, at };
+    try {
+      Promise.resolve(channels(message)).then((r) => {
+        if (r?.failed?.length && !r.sent?.length) log(`network: no channel took the "${net.id}" message`);
+      }, () => {});
+    } catch {}
+    return { paused: pausing, told: true };
   }
 
   return {
     forLaunch, checkAtLaunch, refusal, statusParts, observations,
+    // stop(handle): the browser forLaunch gave handle for closed; its rechecks end. recheck(): one
+    // now, for the running browser (tests): its verdict, or null with none running.
+    stop, recheck: () => recheck(),
     // The network of the browser started last ({ session, id, source, strict }), or null before
     // any, and from the start of a launch until that browser is up.
     current: () => last,

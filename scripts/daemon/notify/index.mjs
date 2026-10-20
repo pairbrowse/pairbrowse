@@ -30,6 +30,13 @@ export function handoffSends(config, { server = false } = {}) {
   return h.enabled === true && (server === true || h.away === true);
 }
 
+// A message the helper sends of its own (a proxy's recheck: daemon/network.mjs C8) goes where
+// hand-offs go (handoffSends), never elsewhere: notifier.send's result, or null with nothing sent.
+// config and server() are read at each send, so Away and Settings changes count at once.
+export function sendWhereHandoffsGo(config, { server = () => false, notifier }) {
+  return (message) => (handoffSends(config, { server: server() }) ? notifier.send(message) : null);
+}
+
 // The usable senders for channels: { senders, warnings }. secret(name): a saved secret's value.
 // post: httpsPost (tests pass their own bounds). table: SENDERS (tests add one).
 export function buildSenders(channels, { secret, post = httpsPost, table = SENDERS } = {}) {

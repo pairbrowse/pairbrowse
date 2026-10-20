@@ -206,6 +206,21 @@ test("NETLOG: listed, documented, and stripped outside the harness", async () =>
   for (const harness of [false, true]) assert.deepEqual(screenBrowserArgs(["--log-net-log=/tmp/x.json"], "darwin", { harness }).kept, [], "nor can config.json's browserArgs ask for it");
 });
 
+// The exit rechecks' interval (spec server-mode C8, C-6): a project's environment can't make a
+// proxied session's rechecks run every few milliseconds, or never.
+test("RECHECK_MS: listed, documented, and stripped outside the harness", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { SWITCHES, applyTestGate, testMs } = await import("../scripts/testenv.mjs");
+  assert.ok(Object.hasOwn(SWITCHES, "RECHECK_MS"));
+  assert.match(readFileSync(new URL("../docs/development.md", import.meta.url), "utf8"), /^\| `RECHECK_MS` \| knob \|/m);
+  assert.match(readFileSync(new URL("../scripts/daemon/network.mjs", import.meta.url), "utf8"), /testMs\("RECHECK_MS", s\.net\.recheckMinutes \* 60_000\)/);
+  const env = { PAIRBROWSE_HOME: "/nowhere", PAIRBROWSE_TEST_RECHECK_MS: "5" };
+  assert.equal(testMs("RECHECK_MS", 600_000, env), 5, "the switch works where it is kept");
+  applyTestGate(env);
+  assert.equal(env.PAIRBROWSE_TEST_RECHECK_MS, undefined);
+  assert.equal(testMs("RECHECK_MS", 600_000, env), 600_000);
+});
+
 // Every path under ~/.pairbrowse is built in paths.mjs (one place to see what the helper keeps):
 // no other module joins onto the home or reads PAIRBROWSE_HOME itself.
 test("paths under the home come from paths.mjs", async () => {

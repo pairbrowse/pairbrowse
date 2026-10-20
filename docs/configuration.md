@@ -158,6 +158,9 @@
   (a bot's token and a chat id or `@channel`; optional `server` for a Bot API server of your own);
   `{ "type": "discord", "urlSecret": "PAIRBROWSE_DISCORD_WEBHOOK" }` and
   `{ "type": "slack", "urlSecret": "PAIRBROWSE_SLACK_WEBHOOK" }` (a channel webhook's address).
+  The same channels also hear when a running proxied session's exit changes or its recheck fails
+  (`network`, below; the webhook gets `{ "event": "pairbrowse.network", "network", "change",
+  "paused", "at" }`).
   Addresses are https (plain http only to this computer's loopback); a channel with an unknown type,
   a missing secret, a name without the `PAIRBROWSE_` prefix or a value that doesn't fit is skipped
   with a warning in `daemon.log` naming it, never its value. A message says only the step ("Sign in
@@ -251,8 +254,22 @@
   reason for a minute (at once again after you change `config.json` or `secrets.env`),
   `pairbrowse_status` says why and you get one notification. Each check is kept in the session's
   `network.json` (owner-only, the last 50; clean sessions: memory only) with the proxy's exit and
-  country, never this computer's own address. The repeats every `recheckMinutes` and
-  `onEgressChange` come in a later version.
+  country, never this computer's own address. While the browser runs, the exit is checked again
+  every `recheckMinutes`: the helper reads `checkUrl` through the same proxy (the browser's proxy
+  can't change while it runs, and nothing opens in your window) and, without `expectEgress`, this
+  computer's own exit again to compare. An exit that moved, or a recheck that fails (the proxy
+  down or timing out, an exit outside `expectEgress` or the same as this computer's), does what
+  the proxy's `onEgressChange` says, once per change and once per run of failures: `"pause"`
+  pauses every agent as Pause agents does (shown as paused by "Proxy check"; you resume them, and
+  in a session you joined, the host's own Pause state doesn't resume them for you),
+  `"notify"` only tells you, and `"ignore"` lets an address change pass (a rotating proxy, kept in
+  bounds by its `expectEgress` countries) but pauses on a failure all the same. You get a
+  notification, `pairbrowse_status` warns until a recheck passes, and where hand-off messages go
+  to your channels (`handoff`, above: on a server, or while you are Away) they get a message too,
+  naming only the proxy's id, whether its exit changed or its check failed, whether agents were
+  paused, and the time. Each recheck is kept in `network.json` as kind `recheck` (the helper's
+  read only). Traffic never goes around the proxy meanwhile: a proxy that stops answering stops
+  the pages, never sends them direct.
 - `reportUrl`: where a problem report you send yourself goes (default
   `https://pairbrowse.com/api/report`): an https address with no user, query or fragment.
   `null`: no report is ever sent, and Settings doesn't offer it.

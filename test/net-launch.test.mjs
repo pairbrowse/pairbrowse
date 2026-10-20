@@ -251,7 +251,7 @@ test("launch wiring follows section 3.2: screen, network, then the browser; the 
   assert.match(src, /finally \{ net\?\.drop\(\);/);
   // forLaunch inside the try that drops its auth file; the network recorded only once the browser is up.
   assert.ok(src.lastIndexOf("try {", network) > src.indexOf("let ctx, net = null;"), "forLaunch inside the try");
-  assert.ok(src.indexOf("net?.started();") > engine, "started() after launchEngine");
+  assert.ok(src.indexOf("net.started();") > engine, "started() after launchEngine");
   const daemon = readFileSync(new URL("../scripts/daemon.mjs", import.meta.url), "utf8");
-  assert.match(daemon, /network: createNetwork\(\{ log, notify: \(text\) => panel\.notify\(text\) \}\)/, "the helper always passes its network part (null is for tests only)");
+  assert.match(daemon, /network: createNetwork\(\{ log, notify: \(text\) => panel\.notify\(text\), /, "the helper always passes its network part (null is for tests only)");
 });

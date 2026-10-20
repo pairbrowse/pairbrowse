@@ -148,6 +148,7 @@ is under the temp folder with a linked runtime), so none reaches an installed he
 | `NO_DIRECT` | knob | `integration/shared-mode` | A network where no direct screen connection can be made |
 | `PANEL` | knob | `integration/panel-reload` | Adds `pairbrowse_test_panel`: the side panel's worker |
 | `PICK_WAIT_MS` | knob | `integration/picker` | How long the session picker waits |
+| `RECHECK_MS` | knob | `net-recheck` | How often a running proxied session's exit is checked again (in place of `network.recheckMinutes`) |
 | `RESTART_MS` | knob | `tunnels` | The tunnel pool's restart pause |
 | `RESUME_GRACE_MS` | knob | `integration/departures` | How long a closed agent connection's label, color and tab wait for the same app session (10 seconds otherwise) |
 | `SCREEN` | knob | the sharing tests, `bench` | Adds `pairbrowse_test_screen`: the shared browser picture page |

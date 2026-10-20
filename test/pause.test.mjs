@@ -137,6 +137,42 @@ test("resumeAgents lets every agent paused on its own go and leaves the shared p
   assert.equal(changes, 1);
 });
 
+test("the hold (a proxy's recheck) holds every agent; a host's state mirrored here never ends it, a person's Resume here does", () => {
+  const press = (pause, opts) => pressPause(pause, { say: () => {}, ...opts });
+  let pause = createPause();
+  const seen = pause.seq();
+  assert.equal(pause.hold("Proxy check"), true);
+  assert.equal(pause.hold("Proxy check"), false, "held already");
+  assert.deepEqual([pause.view().paused, pause.view().by], [true, "Proxy check"]);
+  assert.deepEqual(pause.heldFor("a1"), { paused: true, by: "Proxy check" });
+  assert.match(pause.noteAfter(seen, "a1").text, /Agents are paused \(paused by Proxy check\)/);
+  // The host's next push in a session joined from here: not paused there. The hold stays.
+  assert.equal(pause.mirror({ paused: false, resumedBy: "Host" }), false);
+  pause.mirror({ paused: true, by: "Host" });
+  pause.mirror({ paused: false, resumedBy: "Host" });
+  assert.deepEqual([pause.view().paused, pause.view().by], [true, "Proxy check"], "the mirror cleared only the host's pause");
+  assert.deepEqual(pause.heldFor("a1"), { paused: true, by: "Proxy check" });
+  // A Resume pressed here in a joined session (forwarded to the host) lets it go at once.
+  assert.deepEqual(press(pause, { paused: false, who: "Me", joined: true, canPause: () => true }), { ok: true });
+  assert.equal(pause.view().paused, false);
+  assert.deepEqual(pause.heldFor("a1"), { paused: false, by: "" });
+  // Not joined: the global Resume ends it.
+  pause = createPause();
+  const from = pause.seq();
+  pause.hold("Proxy check");
+  assert.equal(pause.resume("Ann"), true);
+  assert.deepEqual([pause.view().paused, pause.view().resumedBy], [false, "Ann"]);
+  assert.match(pause.noteAfter(from).text, /Agents were paused by Proxy check, then resumed by Ann/);
+  // Under a shared pause: agents hear nothing new until the last of the two ends.
+  pause = createPause();
+  pause.pause("Bob");
+  const quiet = pause.seq();
+  pause.hold("Proxy check");
+  assert.equal(pause.noteAfter(quiet).text, "", "already held by Bob: nothing new for agents");
+  assert.equal(pause.resume("Bob"), true);
+  assert.equal(pause.view().paused, false, "one Resume ends both");
+});
+
 test("in a session joined from here, the global Resume also clears this helper's own per-agent pauses (a pause always has a visible way back)", () => {
   const press = (pause, opts) => { const said = []; const r = pressPause(pause, { say: (op) => said.push(op), ...opts }); return { r, said }; };
   const ids = (names) => (name) => names[name] || [];

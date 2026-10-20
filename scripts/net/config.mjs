@@ -44,7 +44,8 @@ const SESSION_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/;
 // The key a message names: a proxy id or session name only when it is one, else a placeholder.
 const proxyKey = (id) => (NETWORK_ID.test(id) ? `network.proxies.${id}` : "an entry in network.proxies");
 const sessionKey = (name) => (SESSION_NAME.test(name) ? `network.sessions.${name}` : "an entry in network.sessions");
-const sessionShown = (name) => (typeof name === "string" && SESSION_NAME.test(name) ? `"${name}"` : "with that name");
+// A session as a sentence names it: quoted, or "with that name" when it isn't one (daemon/network.mjs too).
+export const sessionShown = (name) => (typeof name === "string" && SESSION_NAME.test(name) ? `"${name}"` : "with that name");
 // Unknown keys named only when they look like a field name; the rest counted.
 const FIELD_NAME = /^[A-Za-z][A-Za-z0-9_]{0,39}$/;
 const unknownKeys = (keys) => {

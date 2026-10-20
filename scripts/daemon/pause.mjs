@@ -7,6 +7,9 @@
 // resumes it, or presses the global Resume, which resumes every agent paused this way too, pressed
 // here or in a session joined from here (where the host decides the shared pause); an agent never
 // resumes itself.
+// A hold: this helper's own pause of every agent, set by the helper itself (a proxy's recheck,
+// daemon/network.mjs C8), never by an agent. It holds like the shared pause, but a host's state
+// mirrored into a session joined from here never clears it: only a person's Resume here does.
 import { cleanName } from "../sharing/join.mjs";
 import { sleep } from "../util.mjs";
 
@@ -18,6 +21,7 @@ const OWN_EVENTS_MAX = 8; // one agent's own pauses and resumes, kept apart from
 // onChange(view): the state changed (bars, side panels and joiners show it).
 export function createPause({ onChange = () => {}, now = () => Date.now(), replyMs = PAUSE_REPLY_MS } = {}) {
   let state = null; // { by, at } while paused
+  let hold = null; // { by, at } while this helper holds every agent itself (hold below)
   let resumedBy = "";
   const own = new Map(); // agent connection id -> { by, at }: paused on its own
   // { n, kind: "paused" | "resumed", who, id?, pausedBy? }, for agents' next results. The shared
@@ -27,25 +31,35 @@ export function createPause({ onChange = () => {}, now = () => Date.now(), reply
   const ownEvents = new Map(); // agent connection id -> its own events
   let seq = 0;
 
-  const view = () => ({ paused: !!state, by: state?.by || "", at: state?.at || 0, resumedBy });
+  const holding = () => state || hold; // what holds every agent now: the shared pause first
+  const view = () => ({ paused: !!holding(), by: holding()?.by || "", at: holding()?.at || 0, resumedBy });
   const changed = () => { try { onChange(view()); } catch {} };
   const note = (e) => {
     const list = e.id ? (ownEvents.get(e.id) || ownEvents.set(e.id, []).get(e.id)) : events;
     list.push({ n: ++seq, ...e });
     if (list.length > (e.id ? OWN_EVENTS_MAX : EVENTS_MAX)) list.shift();
   };
+  // The shared pause on or off. A change that leaves agents held as they were (the hold) is quiet
+  // for them, so they hear only what changes for them.
   function set(paused, who) {
     const name = cleanName(who) || "Someone";
     if (paused === !!state) return false;
+    const was = !!holding();
     state = paused ? { by: name, at: now() } : null;
     if (!paused) resumedBy = name;
-    note({ kind: paused ? "paused" : "resumed", who: name });
+    if (was !== !!holding()) note({ kind: paused ? "paused" : "resumed", who: name });
     changed();
     return true;
   }
-  // Every agent paused on its own goes on (the global Resume): true when there was one.
+  // Every agent paused on its own, and this helper's hold, go on (the global Resume): true when
+  // there was one.
   function resumeOwn(name) {
-    if (!own.size) return false;
+    const hadHold = !!hold;
+    if (hold) {
+      hold = null;
+      if (!state) { resumedBy = name; note({ kind: "resumed", who: name }); }
+    }
+    if (!own.size) return hadHold;
     for (const [id, held] of own) note({ kind: "resumed", who: name, id, pausedBy: held.by });
     own.clear();
     return true;
@@ -54,6 +68,17 @@ export function createPause({ onChange = () => {}, now = () => Date.now(), reply
   return {
     view,
     pause: (who) => set(true, who),
+    // This helper holds every agent itself (a proxy's recheck): like Pause, but a host's state
+    // mirrored here never ends it; a person's Resume here does (resume, resumeAgents). True when it
+    // wasn't held already.
+    hold(who) {
+      if (hold) return false;
+      const was = !!holding();
+      hold = { by: cleanName(who) || "PairBrowse", at: now() };
+      if (!was) note({ kind: "paused", who: hold.by });
+      changed();
+      return true;
+    },
     // The global Resume also resumes every agent paused on its own, so a pause always has a
     // visible way back. True when anything was held.
     resume(who) {
@@ -63,14 +88,14 @@ export function createPause({ onChange = () => {}, now = () => Date.now(), reply
       if (hadOwn && !was) changed();
       return was || hadOwn;
     },
-    // Every agent paused on its own goes on; the shared (or mirrored) pause stays as it is. True
-    // when there was one.
+    // Every agent paused on its own, and the hold, go on; the shared (or mirrored) pause stays as
+    // it is. True when there was one.
     resumeAgents(who) {
       const had = resumeOwn(cleanName(who) || "Someone");
       if (had) changed();
       return had;
     },
-    // A joined helper: the host's state, as it came (who paused, who resumed).
+    // A joined helper: the host's state, as it came (who paused, who resumed). The hold stays.
     mirror(remote) {
       if (remote?.paused) return set(true, remote.by);
       return set(false, remote?.resumedBy || "someone");
@@ -94,9 +119,10 @@ export function createPause({ onChange = () => {}, now = () => Date.now(), reply
     },
     // Its connection ended: its own pause goes with it.
     forget(id) { ownEvents.delete(id); if (own.delete(id)) changed(); },
-    // Whether this agent is held now, and by whom: the global pause first, then its own.
+    // Whether this agent is held now, and by whom: the global pause (or the hold) first, then its own.
     heldFor(id) {
-      if (state) return { paused: true, by: state.by };
+      const all = holding();
+      if (all) return { paused: true, by: all.by };
       const held = id ? own.get(id) : null;
       return held ? { paused: true, by: held.by } : { paused: false, by: "" };
     },
@@ -105,7 +131,7 @@ export function createPause({ onChange = () => {}, now = () => Date.now(), reply
     // Waits while paused (globally, or this agent on its own), at most replyMs. Resolves null
     // when not paused (or no longer), or { by } when still paused then (nothing was done).
     async wait(signal = null, id = null) {
-      const held = () => state || (id ? own.get(id) : null);
+      const held = () => holding() || (id ? own.get(id) : null);
       const until = now() + replyMs;
       while (held() && now() < until && !signal?.aborted) await sleep(POLL_MS);
       const h = held();
@@ -122,7 +148,7 @@ export function createPause({ onChange = () => {}, now = () => Date.now(), reply
       const shared = fresh.filter((e) => !e.id);
       if (shared.length) {
         const said = shared.map((e) => `${e.kind} by ${e.who}`).join(", then ");
-        lines.push(state
+        lines.push(holding()
           ? `- Agents are paused (${said}). Browser actions wait until a person resumes; nothing is done meanwhile.`
           : `- Agents were ${said}. Nothing was done meanwhile; look at the page again (browser_snapshot) before you go on.`);
       }

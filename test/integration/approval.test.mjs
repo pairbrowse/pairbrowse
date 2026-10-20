@@ -236,7 +236,7 @@ test("a named click asked in the browser and the terminal at once: the first ans
     hooks.push(h);
     return h;
   };
-  let stage = "start", claude, codex;
+  let stage = "start", claude, codex, grok;
   try {
     claude = await connect("claude-code");
     const t = (name, args) => tool(claude.call, name, args);
@@ -376,6 +376,29 @@ test("a named click asked in the browser and the terminal at once: the first ans
     assert.ok(res.result.isError);
     assert.match(text(res), /^pairbrowse: "Pay: Place order" pays: a final action \(pay\)\. This needs the user's OK, which this app can't ask for\./, "no answer: today's hand-off");
     await until("the card goes", async () => (await cards()).length === 0, 3000);
+
+    stage = "(g) Grok: a page on this computer asks on the card too, in its own words";
+    grok = await connect("grok-shell-browser");
+    const g = (name, args) => tool(grok.call, name, args);
+    assert.ok(!(await g("browser_tabs", { action: "new", url: "http://shop.pbtest.example/" })).result.isError);
+    const local = `http://127.0.0.1:${fixture.address().port}/`;
+    const grokOpen = async () => { await t("pairbrowse_test_approval", { move: true }); return g("browser_navigate", { url: local }); };
+    call = grokOpen();
+    await until("the Grok card", async () => (await cards()).length === 1);
+    const [grokItem] = await pending();
+    assert.equal(grokItem.verb, "wants to open");
+    assert.equal(grokItem.target, local);
+    await sleep(1500);
+    assert.equal(await press("allow"), "clicked");
+    res = await call;
+    assert.ok(!res.result.isError, text(res));
+    call = grokOpen();
+    await until("the Grok card", async () => (await cards()).length === 1);
+    await sleep(1500);
+    await press("deny");
+    res = await call;
+    assert.ok(res.result.isError);
+    assert.match(text(res), /^Denied in the PairBrowse browser\. pairbrowse: http:\/\/127\.0\.0\.1:\d+\/ is on your local network or this computer\. This needs the user's OK/);
   } catch (e) {
     let log = ""; try { log = readFileSync(join(home, "daemon.log"), "utf8").slice(-3000); } catch {}
     // The evidence kept past the home's removal below: the helper's whole log and its stderr.
@@ -386,6 +409,7 @@ test("a named click asked in the browser and the terminal at once: the first ans
     for (const h of hooks) if (!h.exited) h.child.kill("SIGKILL");
     claude?.sock.destroy();
     codex?.sock.destroy();
+    grok?.sock.destroy();
     fixture.close();
     await stopDaemon(daemon);
     rmSync(home, { recursive: true, force: true });

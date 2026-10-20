@@ -157,6 +157,75 @@ test("a person from the other browser shows as a dot on the tab's icon, in the c
   assert.equal(hud.tabIcon(page), "");
 });
 
+test("each agent's tab icon carries its app's mark: Codex, Grok, Gemini, any other app; Claude's spark without one", async () => {
+  const { createHud, markOf } = await import("../scripts/daemon/hud.mjs");
+  for (const [name, mark] of [["claude-code", "claude"], ["codex-mcp-client", "codex"], ["grok-shell-browser", "grok"], ["gemini-cli", "gemini"], ["remote:codex-mcp-client", "codex"], ["Alice · Grok", "grok"], ["cursor-vscode", "agent"], ["", "claude"]]) assert.equal(markOf(name), mark, name);
+  const icons = [];
+  const page = { isClosed: () => false, url: () => "https://example.com/", evaluate: async (fn, args) => { if (args?.[3] === "spark") { icons.push(args[2]); return true; } } };
+  const hud = createHud({ pages: async () => [page], participants: () => [], labelOf: () => "", waiting: () => null, liveView: () => null, notify: () => {} });
+  hud.setApp("c", "claude-code");
+  hud.setApp("x", "codex-mcp-client");
+  hud.setApp("g", "grok-shell-browser");
+  hud.setApp("o", "cursor-vscode");
+  await hud.moveSpark("c", page);
+  assert.equal(hud.tabIcon(page), "#e9763f", "Claude's spark: as before");
+  await hud.moveSpark("c", null);
+  await hud.moveSpark("x", page);
+  assert.equal(hud.tabIcon(page), "#9b7bfa m:codex");
+  await hud.moveSpark("x", null);
+  await hud.moveSpark("g", page);
+  assert.equal(hud.tabIcon(page), "#c9d1dc m:grok");
+  await hud.moveSpark("g", null);
+  await hud.moveSpark("o", page);
+  assert.equal(hud.tabIcon(page), "#4fd1e8 m:agent");
+  await hud.moveSpark("o", null);
+  // An agent from the other browser of a shared tab: its app read from its label there.
+  hud.setSharedSpark(page, "#4b8ffb", "Sam · Gemini");
+  assert.equal(hud.tabIcon(page), "#4b8ffb m:gemini");
+  hud.setSharedSpark(page, "");
+  assert.equal(hud.tabIcon(page), "");
+});
+
+test("the page draws each app's own mark, a light one with a dark edge; an unknown mark is Claude's spark", { skip: !runtime, timeout: 60_000 }, async () => {
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
+  const hud = (await import("../scripts/browser.mjs")).hudScript();
+  const source = hud.source.replaceAll(hud.name, "__pbtest").replaceAll(hud.token, "tok");
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    await page.addInitScript({ content: source });
+    await page.route("http://pairbrowse.test/", (route) => route.fulfill({ contentType: "text/html", body: "<title>t</title><p>x</p>" }));
+    await page.goto("http://pairbrowse.test/");
+    await ensureHud(page, source, "__pbtest");
+    const icon = (v) => page.evaluate((value) => { window.__pbtest("tok", value, "spark"); return document.querySelector('link[rel~="icon"]')?.href || ""; }, v);
+    const seen = new Map();
+    for (const v of ["#e9763f", "#9b7bfa m:codex", "#c9d1dc m:grok", "#4b8ffb m:gemini", "#4fd1e8 m:agent"]) {
+      const href = await icon(v);
+      assert.match(href, /^data:image\/png;base64,/, v);
+      seen.set(href, v);
+    }
+    assert.equal(seen.size, 5, "five different icons");
+    assert.equal(await icon("#e9763f m:nonsense"), [...seen.keys()][0], "an unknown mark: Claude's spark");
+    // Grok's silver has a dark edge: some of its pixels are dark.
+    const dark = await page.evaluate(async () => {
+      const img = new Image();
+      img.src = document.querySelector('link[rel~="icon"]').href;
+      window.__pbtest("tok", "#c9d1dc m:grok", "spark");
+      img.src = document.querySelector('link[rel~="icon"]').href;
+      await img.decode();
+      const c = document.createElement("canvas"); c.width = c.height = 64;
+      const ctx = c.getContext("2d"); ctx.drawImage(img, 0, 0);
+      const d = ctx.getImageData(0, 0, 64, 64).data;
+      let n = 0;
+      for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 100 && d[i] < 120) n++;
+      return n;
+    });
+    assert.ok(dark > 20, `dark edge pixels: ${dark}`);
+  } finally {
+    await browser.close();
+  }
+});
+
 test("a person's dot that didn't land on the tab's icon is written again at their next input, one that did isn't", async () => {
   const { createHud } = await import("../scripts/daemon/hud.mjs");
   const icons = [];

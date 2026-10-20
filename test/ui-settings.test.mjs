@@ -496,7 +496,7 @@ const restingLook = () => {
     red: [...document.querySelectorAll("body *")].filter((e) => e.checkVisibility() && e.textContent.trim() && reds.includes(getComputedStyle(e).color)).map((e) => e.id || e.className),
   };
 };
-const RESTING = { s: "closed", banner: "No agent connected. Ask Claude Code or Codex to use PairBrowse. Your settings show here.", bannerInk2: true, about: "No agent connected", dotMuted: true, red: [] };
+const RESTING = { s: "closed", banner: "No agent connected. Ask Claude Code, Codex or Grok to use PairBrowse. Your settings show here.", bannerInk2: true, about: "No agent connected", dotMuted: true, red: [] };
 
 pageTest("settings", { fixtures, viewport: VIEW, shim: { helper: null }, bridge: false }, async ({ until, inPage, helper, errors }) => {
   await until("no helper", () => document.body.dataset.s === "closed");

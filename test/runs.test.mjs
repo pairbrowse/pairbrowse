@@ -81,7 +81,7 @@ test("runs are saved and read back through the server; a review says what fails"
     call(7, "no_such_tool", {}),
   ]);
   assert.equal(text(none), "No saved runs.");
-  assert.match(text(saved), /^Run "App listing" \(open, updated [^)]+\)\nSession: default \(pairbrowse_session use default\)\nGoal: List it\nDrafted by Claude: Description\nLeft: Pricing\nNotes: Ask about logo\nTabs when saved: Partners <https:\/\/partners\.test\/>$/);
+  assert.match(text(saved), /^Run "App listing" \(open, updated [^)]+\)\nSession: default \(pairbrowse_session use default\)\nGoal: List it\nDrafted by the agent, for the user to check: Description\nLeft: Pricing\nNotes: Ask about logo\nTabs when saved: Partners <https:\/\/partners\.test\/>$/);
   // No helper is running in this home: the run is older than the browser the agent will get.
   assert.equal(text(got), `${text(saved)}\nThe browser restarted since this was saved: take a browser_snapshot of each tab before trusting Done (a sign-up step may have expired, a chosen file is never kept).`, "names match by their slug");
   assert.equal(text(unknown), 'No run named "nope".');

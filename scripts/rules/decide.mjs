@@ -139,6 +139,29 @@ export function approvalAsk(tool, input, review = latestReview(), now = Date.now
   return { reason: String(verdict.permissionDecisionReason || "").replace(/^pairbrowse: /, ""), target, what: raw.trim().slice(0, 140) };
 }
 
+// The other asks (a local-network page, a session delete, an invite, a joiner let in, a file
+// upload), for the browser's card in apps other than Claude Code (serve.mjs): { reason, target,
+// what, verb, hostOnly }, or null when the call needs no OK or is a named click (approvalAsk).
+// hostOnly: answered by the person at this computer only, never by a joiner with the approve role
+// (those answer final clicks, never who gets in or what the session loses).
+const short = (v, n = 120) => String(v ?? "").replace(/[\u0000-\u001f\u007f-\u009f]/g, "").slice(0, n);
+export function handoffAsk(tool, input, review = latestReview(), now = Date.now()) {
+  const name = String(tool || "").replace(BROWSER_PREFIX, "");
+  if (!input || typeof input !== "object" || Array.isArray(input) || approvalAsk(name, input, review, now)) return null;
+  const verdict = decide({ tool_name: `mcp__plugin_pairbrowse_browser__${name}`, tool_input: input }, undefined, review, now).hookSpecificOutput;
+  if (verdict.permissionDecision !== "ask") return null;
+  const [verb, target] =
+    name === "browser_navigate" || name === "browser_tabs" ? ["wants to open", short(input.url)]
+      : name === "pairbrowse_session" ? ["wants to delete the session", short(input.name)]
+        : name === "pairbrowse_invite" && input.action === "create" ? ["wants to invite", `${short(input.label || "someone", 40)} (${input.role === "approve" ? "can drive and approve" : "can drive"})`]
+          : name === "pairbrowse_invite" && input.action === "set_role" ? ["wants to let joiners approve", `Invite ${short(input.id, 20)}`]
+            : name === "pairbrowse_invite" && input.action === "approve" ? ["wants to let in", `Join request ${short(input.id, 20)}`]
+              : name === "browser_file_upload" || name === "browser_drop" ? ["wants to upload", (Array.isArray(input.paths) ? input.paths : []).map((p) => short(p, 200)).join(", ").slice(0, 120)]
+                : ["wants to use", name];
+  const reason = String(verdict.permissionDecisionReason || "").replace(/^pairbrowse: /, "");
+  return { reason, target: target || name, what: `${verb} ${target || name}`.slice(0, 140), verb, hostOnly: true };
+}
+
 // The same call, however its keys are ordered: what the browser's card and the call that arrives
 // are matched by.
 export function approvalKey(tool, input) {

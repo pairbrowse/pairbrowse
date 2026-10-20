@@ -199,7 +199,7 @@ scenario("sessions: many sessions get a search", { viewport: VIEW, fixtures: { s
 scenario("sessions: no helper, the resting state", { viewport: VIEW, native: false, bridge: false }, async (ctx) => {
   const { until, inPage, helper } = ctx;
   await until("none", () => document.body.dataset.s === "none");
-  assert.equal(await inPage(() => document.getElementById("sub").textContent), "No agent connected. Ask Claude Code or Codex to use PairBrowse. Your sessions show here.");
+  assert.equal(await inPage(() => document.getElementById("sub").textContent), "No agent connected. Ask Claude Code, Codex or Grok to use PairBrowse. Your sessions show here.");
   assert.deepEqual(await inPage(() => [document.getElementById("saved").checkVisibility(), document.getElementById("fresh").checkVisibility()]), [false, false]);
   assert.deepEqual(helper.gets, []);
   assert.deepEqual(ctx.errors, []);

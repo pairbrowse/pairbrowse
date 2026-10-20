@@ -524,7 +524,7 @@ const sharing = createSharing({
       },
       onJoinerAgent: (page, who, color, left = 0, from = "", where = "") => {
         if (who) { joinedAgents.set(page, { label: who, color, until: Date.now() + JOINED_AGENT_MS, turnUntil: left > 0 ? Date.now() + left : 0, from, where }); context.touch(page); } else joinedAgents.delete(page);
-        hud.setSharedSpark(page, who ? color || AGENT_COLOR : "");
+        hud.setSharedSpark(page, who ? color || AGENT_COLOR : "", who || "");
         refreshTabs();
       },
     },

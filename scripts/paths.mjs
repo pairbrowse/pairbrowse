@@ -71,6 +71,8 @@ export const paths = {
   helperAlive: join(HOME, "run", "helper-alive"),
   // A clean session's marker: the next start opens a clean session again.
   cleanSession: join(HOME, "run", "clean-session"),
+  // One marker per Grok session that has had the PairBrowse core (session-start.mjs).
+  grokCore: join(HOME, "run", "grok-core"),
   // Pinned downloads (browser builds, the engine pack) before they're installed.
   downloads: join(SHARED, "downloads"),
   // Installed browsers: the native build (PairBrowse.app on macOS), the open build's macOS app.

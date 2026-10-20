@@ -12,16 +12,22 @@ export function detectSurface(env = process.env) {
 
 // Which app runs the session hook: Codex keeps its transcripts as rollout-<time>-<id>.jsonl,
 // Claude Code as <session id>.jsonl in its projects folder. Codex hooks may inherit Claude Code's
-// environment (Codex started from Claude Code), so the transcript decides.
-export function detectHost(input = {}) {
-  return /(^|[/\\])rollout-[^/\\]*\.jsonl$/.test(String(input.transcript_path || "")) ? "codex" : "claude";
+// environment (Codex started from Claude Code), so the transcript decides. Grok sets
+// GROK_HOOK_EVENT on every hook process it runs (Claude Code and Codex never do); Grok runs the
+// Claude Code plugin's hooks as they are.
+export function detectHost(input = {}, env = process.env) {
+  if (/(^|[/\\])rollout-[^/\\]*\.jsonl$/.test(String(input.transcript_path || ""))) return "codex";
+  return env.GROK_HOOK_EVENT ? "grok" : "claude";
 }
+
+const APPS = { claude: "Claude", codex: "Codex", grok: "Grok" };
 
 // One or two lines for the agent at session start: how the user sees the browser here.
 export function surfaceGuidance(surface, host = "claude") {
-  const who = host === "codex" ? "Codex" : "Claude";
-  const own = `The browser is the PairBrowse browser: a browser window of its own (named PairBrowse on macOS) where the user watches, clicks and types directly. The PairBrowse side panel (pinned toolbar button, or Cmd+Shift+Y) and the bar at the bottom of each page show what ${who} is doing; ${who}'s tab carries an orange spark. No live view is needed.`;
+  const who = APPS[host] || APPS.claude;
+  const own = `The browser is the PairBrowse browser: a browser window of its own (named PairBrowse on macOS) where the user watches, clicks and types directly. The PairBrowse side panel (pinned toolbar button, or Cmd+Shift+Y) and the bar at the bottom of each page show what ${who} is doing; ${who}'s tab carries ${who === "Claude" ? "an orange" : "a"} spark. No live view is needed.`;
   if (host === "codex") return `pairbrowse: Codex. ${own} Pay, publish, delete, send and submit-for-review steps are the user's: PairBrowse refuses them here, so set pairbrowse_status to "you" and ask the user to click those themselves.`;
+  if (host === "grok") return `pairbrowse: Grok. ${own} Tools are named browser__<tool> and runs__<tool> here (browser__pairbrowse_run, runs__run_save). There is no dock: the user watches the PairBrowse window. Hand-offs: set pairbrowse_status kind "you" and tell the user exactly what to click or open there.`;
   switch (surface) {
     case "desktop":
       return "pairbrowse: Claude desktop app. The user works in the Claude workspace: before the first browser action, call pairbrowse_dock so the browser shows as a pane attached to the right of the Claude window (macOS). If docking isn't available, open pairbrowse_liveview's link in the Browser pane. The PairBrowse browser window also exists, but the user watches and steps in from the pane.";
@@ -37,12 +43,14 @@ export function surfaceGuidance(surface, host = "claude") {
 const FINAL = {
   claude: "PairBrowse's guard asks the user before those clicks: say what will happen, then click with browser_click. Never route around it with page scripts or by pressing Enter.",
   codex: "In Codex those clicks are refused: set pairbrowse_status kind \"you\", tell the user which button to click in the PairBrowse window and what it does, and wait.",
+  grok: "PairBrowse asks the user on an approval card in the PairBrowse window before those clicks (and before local-network pages, session deletes, invites and approving joiners): say what will happen, call the tool once and wait for the answer. If the result says it was handed to the user, set pairbrowse_status kind \"you\", tell them what to click or open there, and wait. Never route around it with page scripts or by pressing Enter.",
 };
 
 // Claude Code's own tools for the user's other sessions on this browser (Codex has none).
 const SAME = {
   claude: " Your user's other Claude Code sessions on this browser: agree who takes which tab or task with ListAgents and SendMessage.",
   codex: "",
+  grok: "",
 };
 
 // Choosing the browser session. picker: the browser asks the person itself (config

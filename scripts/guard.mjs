@@ -20,7 +20,7 @@ import { HOOK_MARK, requestLine } from "./hookline.mjs";
 export { CLICK_CLASSES, clickClass, CLICK_PREFIX } from "./rules/clicks.mjs";
 export { uploadAllowed } from "./rules/upload.mjs";
 export { isLocalNetwork } from "./rules/network.mjs";
-export { isCodexTool, decide, forHost, forMode, APPROVAL_TOOLS, approvalAsk, approvalKey } from "./rules/decide.mjs";
+export { isCodexTool, decide, forHost, forMode, APPROVAL_TOOLS, approvalAsk, approvalKey, handoffAsk } from "./rules/decide.mjs";
 
 // Approvals in two places at once (Claude Code). Claude Code shows its own prompt only after the
 // PreToolUse hook has exited, so that hook can't also wait for the browser. The same script runs as

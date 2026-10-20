@@ -269,7 +269,7 @@ pageTest("picker", { fixtures: { sessions: STATE }, reducedMotion: "reduce" }, a
 // (only the helper's `picking` says an agent waits), nothing in red, no refresh while there is
 // no helper to ask.
 const NO_AGENT = "No agent connected";
-const SESSIONS_LINE = "Ask Claude Code or Codex to use PairBrowse. Your sessions show here.";
+const SESSIONS_LINE = "Ask Claude Code, Codex or Grok to use PairBrowse. Your sessions show here.";
 const resting = () => {
   const probe = (v) => { const i = document.createElement("i"); i.style.color = `var(--${v})`; document.body.append(i); const c = getComputedStyle(i).color; i.remove(); return c; };
   const reds = [probe("bad"), probe("bad-ink")];

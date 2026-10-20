@@ -124,6 +124,7 @@ test("joiners see addresses without query strings or fragments", () => {
   assert.equal(stripUrl("about:blank"), "about:blank");
   assert.equal(stripText("Opened https://a.example/p?q=secret#f and http://b.example/?x=1"), "Opened https://a.example/p and http://b.example/");
   assert.equal(personLabel("Alice", appName("codex-mcp-client")), "Alice · Codex");
+  for (const [client, app] of [["claude-code", "Claude Code"], ["grok-shell-browser", "Grok"], ["grok-shell", "Grok"], ["gemini-cli-mcp-client", "Gemini"], ["cursor-vscode", "cursor-vscode"], ["", "Agent"]]) assert.equal(appName(client), app, client);
   assert.equal(personLabel("Alice"), "Alice (by hand)");
 });
 

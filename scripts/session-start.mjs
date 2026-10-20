@@ -1,30 +1,23 @@
 #!/usr/bin/env node
-// SessionStart hook: gives the agent the PairBrowse core (scripts/core.md), how the user sees the
-// browser here, and any unfinished runs it can offer to resume.
-import { unfinishedRuns, unfinishedNote } from "./runs.mjs";
+// SessionStart hook: gives the agent the PairBrowse core, how the user sees the browser here, and
+// any unfinished runs it can offer to resume (session-core.mjs). In Grok it prints nothing at
+// session start (observe-only there) and runs again as a PostToolUse hook on Grok's PairBrowse
+// tools (hooks/hooks.json), giving the core with the first PairBrowse result of the session.
 import { readFileSync } from "node:fs";
-import { detectSurface, detectHost, surfaceGuidance, coreText } from "./surface.mjs";
-import { loadConfig, paths } from "./paths.mjs";
-import { chooseBrowserDriver, patchrightNodeMinimum } from "./driver.mjs";
+import { detectHost } from "./surface.mjs";
+import { sessionCore, grokCoreReply } from "./session-core.mjs";
 
 try {
   let input = {};
   try { input = JSON.parse(readFileSync(0, "utf8") || "{}"); } catch {}
   const host = detectHost(input);
-  const surface = host === "codex" ? "terminal" : detectSurface();
-  // The browser asks the person which session (its session picker) unless that's turned off.
-  const config = loadConfig();
-  const picker = config.sessionPicker !== false && surface !== "cloud";
-  const parts = [coreText(host, { picker }), surfaceGuidance(surface, host)];
-  // Node.js too old for Patchright: the helper falls back to Playwright; tell the user once.
-  let driver = null;
-  try { driver = chooseBrowserDriver(config, process.versions.node, patchrightNodeMinimum(paths.runtime)); } catch {}
-  if (driver?.notice) parts.push(`Tell the user once, in these words: "${driver.notice}"`);
-  // Unfinished runs, the agent's own and the ones the helper kept by itself (docs/using.md, "Runs"):
-  // one line each, so a task picks up where it was after a context reset.
-  const open = unfinishedRuns();
-  if (open.length) parts.push(unfinishedNote(open));
-  process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: parts.join("\n\n") } }));
+  if (host === "grok") {
+    const reply = grokCoreReply(input);
+    if (reply) process.stdout.write(reply);
+  } else if (!input.hook_event_name || input.hook_event_name === "SessionStart") {
+    // Claude Code and Codex: their session start only.
+    process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: sessionCore(host) } }));
+  }
 } catch {
   // Never block session start.
 }

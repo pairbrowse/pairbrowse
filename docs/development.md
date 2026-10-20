@@ -23,8 +23,10 @@ shadow roots), `ui/capture/record.js` (a canvas) and the "Opening tabs" page in 
 `test/tokens.test.mjs` keeps every literal color in those files and the page sheets equal to a
 sheet value or a `SPARK_COLORS` entry and checks WCAG AA contrast in both schemes. Agent
 colors are `SPARK_COLORS` in `scripts/daemon/hud.mjs`, by app (Claude Code orange, Codex purple,
-Gemini blue; a second agent of one app, or an app without a color, takes the first free of
-`AGENT_FALLBACKS`, cyan first). People's colors are `PEOPLE_COLORS` in `scripts/sharing/tabsync.mjs`,
+Gemini blue, Grok silver; a second agent of one app, or an app without a color, takes the first free of
+`AGENT_FALLBACKS`, cyan first). Each agent's tab icon is its app's own mark in that color (`AGENT_MARKS` in
+`ui/vocab.js`, the same in `scripts/hud/spark.js`): Claude's spark, Codex's brackets, Grok's slash, Gemini's
+four-point star, a rounded square for any other app. People's colors are `PEOPLE_COLORS` in `scripts/sharing/tabsync.mjs`,
 never near an agent's (`test/colors.test.mjs` checks hue, distance and the tags' AA contrast). The window frame follows `THEME_COLOR` in
 `scripts/browser.mjs` (the sheet's frame navy) unless the user picked a theme.
 

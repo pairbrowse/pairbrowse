@@ -214,6 +214,28 @@ test("approvalAsk: what the browser's card says for a named click or dialog OK, 
   assert.equal(approvalAsk("browser_handle_dialog", { accept: false, element: "Delete: OK" }, null, NOW), null);
 });
 
+test("handoffAsk: the card for the other asks (apps other than Claude Code), host only; null for clicks, allows and refusals", async () => {
+  const { handoffAsk } = await import("../scripts/guard.mjs");
+  const nav = handoffAsk("browser_navigate", { url: "http://127.0.0.1:3000/" }, null, NOW);
+  assert.deepEqual(nav, { reason: "http://127.0.0.1:3000/ is on your local network or this computer.", target: "http://127.0.0.1:3000/", what: "wants to open http://127.0.0.1:3000/", verb: "wants to open", hostOnly: true });
+  assert.equal(handoffAsk("browser_tabs", { action: "new", url: "http://localhost:5173/" }, null, NOW).verb, "wants to open");
+  assert.deepEqual([handoffAsk("pairbrowse_session", { action: "delete", name: "work" }, null, NOW)].map((a) => [a.verb, a.target, a.hostOnly]), [["wants to delete the session", "work", true]]);
+  assert.equal(handoffAsk("pairbrowse_invite", { action: "create", role: "drive", label: "Sam" }, null, NOW).target, "Sam (can drive)");
+  assert.equal(handoffAsk("pairbrowse_invite", { action: "create", role: "approve", label: "Sam" }, null, NOW).target, "Sam (can drive and approve)");
+  assert.equal(handoffAsk("pairbrowse_invite", { action: "approve", id: "r1a2b3c" }, null, NOW).verb, "wants to let in");
+  assert.equal(handoffAsk("pairbrowse_invite", { action: "set_role", id: "inv1", role: "approve" }, null, NOW).verb, "wants to let joiners approve");
+  assert.equal(handoffAsk("browser_file_upload", { paths: ["/tmp/a.zip"] }, null, NOW).verb, "wants to upload");
+  assert.equal(handoffAsk("mcp__plugin_pairbrowse_browser__browser_navigate", { url: "http://10.0.0.2/" }, null, NOW).verb, "wants to open", "the full name works too");
+  // Not these: a named click (approvalAsk's), what runs without asking, what is refused.
+  assert.equal(handoffAsk("browser_click", { element: "Pay: Place order", target: "e5" }, null, NOW), null);
+  assert.equal(handoffAsk("browser_navigate", { url: "https://example.com/" }, null, NOW), null);
+  assert.equal(handoffAsk("browser_navigate", { url: "file:///etc/passwd" }, null, NOW), null);
+  assert.equal(handoffAsk("pairbrowse_invite", { action: "create", role: "watch", label: "Sam" }, null, NOW), null);
+  assert.equal(handoffAsk("pairbrowse_session", { action: "list" }, null, NOW), null);
+  assert.equal(handoffAsk("browser_navigate", null, null, NOW), null);
+  assert.equal(handoffAsk("pairbrowse_session", { action: "delete", name: "a\u0007b" }, null, NOW).target, "ab", "control characters dropped");
+});
+
 test("approvalKey: the same call whatever its keys' order, another call another key", async () => {
   const { approvalKey } = await import("../scripts/guard.mjs");
   assert.equal(approvalKey("browser_click", { element: "Pay: x", target: "e1", modifiers: [{ b: 1, a: 2 }] }), approvalKey("mcp__plugin_pairbrowse_browser__browser_click", { modifiers: [{ a: 2, b: 1 }], target: "e1", element: "Pay: x" }));

@@ -417,8 +417,8 @@ export async function askBrowserChoice({ config = loadConfig(), native = !!pinne
     } finally { ac.abort(); rl.close(); }
   }
   const browser = /^\s*(2|open|pairbrowse-open|chromium)\s*$/i.test(String(answer ?? "")) ? OPEN_BROWSER : "pairbrowse";
-  saveConfig({ browser });
-  log(`browser: ${browser} (recorded in ~/.pairbrowse/config.json)`);
+  // A config.json that can't be read is left as it is (saveConfig refuses it): the choice holds for this install only.
+  try { saveConfig({ browser }); log(`browser: ${browser} (recorded in ~/.pairbrowse/config.json)`); } catch (e) { log(`browser: ${browser} (not recorded: ${e?.message || e})`); }
   return browser;
 }
 

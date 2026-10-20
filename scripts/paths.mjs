@@ -1,10 +1,11 @@
 import { userInfo } from "node:os";
 import { join, sep } from "node:path";
-import { mkdirSync, chmodSync, appendFileSync, writeSync } from "node:fs";
-import { writeJsonAtomic, sha256, readJson, onCorruptJson, corruptLine } from "./util.mjs";
+import { mkdirSync, chmodSync, appendFileSync, writeSync, readFileSync } from "node:fs";
+import { writeJsonAtomic, sha256, readJson, keepCorrupt, onCorruptJson, corruptLine } from "./util.mjs";
 import { resolveHome, gateProjectEnv, BAD_INSTANCE } from "./home.mjs";
 import { checkDownloads } from "./rules/downloads.mjs";
 import { checkConfig, configProblem, configWarnings, handoffTimes } from "./config-schema.mjs";
+import { checkNetwork } from "./net/config.mjs";
 import { screenBrowserArgs, droppedWarning, sandboxOffAllowed, sandboxOffAsked, sandboxRefusal, argsKey, browserArgsOf, browserSandboxOf } from "./browser-args.mjs";
 
 // Everything PairBrowse writes is private to your user account.
@@ -165,6 +166,10 @@ export const DEFAULT_CONFIG = {
   // life, remindMinutes the one reminder; channels where messages go (scripts/daemon/notify/), their
   // credentials only in secrets.env under PAIRBROWSE_ names.
   handoff: { enabled: false, away: false, publicLink: false, grantMinutes: 15, remindMinutes: 10, channels: [] },
+  // Per-session proxies (spec server-mode C4, net/config.mjs): { proxies: { <id>: { server, auth,
+  // bypass, expectEgress, onEgressChange } }, default, sessions: { <session>: <id> | null }, strict,
+  // checkUrl, recheckMinutes }, credentials only in secrets.env. null: every session direct.
+  network: null,
   // Fixed live view port, so an SSH tunnel command stays the same. 0 picks a random port.
   liveViewPort: 0,
   // Extra host names the live view answers to, for invite and hand-off links only (say, this computer's
@@ -249,6 +254,9 @@ export function loadConfig(file = paths.config, log = () => {}) {
   const times = handoffTimes(handoff);
   config.handoff = { ...handoff, remindMinutes: times.remindMinutes };
   if (times.warning) CONFIG_WARNINGS.push(times.warning);
+  // The network block as written (net/config.mjs reads it again from the file at each launch), its
+  // problems named here once: a session they touch refuses to start, never going direct.
+  CONFIG_WARNINGS.push(...checkNetwork(config.network).warnings);
   for (const w of CONFIG_WARNINGS) try { log(w); } catch {}
   if (config.downloadsDir != null && (typeof config.downloadsDir !== "string" || (config.downloadsDir && checkDownloads(config.downloadsDir, { home: paths.home }).problem))) config.downloadsDir = null;
   return config;
@@ -265,13 +273,23 @@ export function saveParticipantName(config, name) {
 // Merges fields into config.json (the file's own keys, not the defaults), keeping everything else
 // it holds; undefined values are skipped. Written through a temp file and a rename, so a write cut
 // short leaves the old file. A value of the wrong type (config-schema.mjs) is refused, nothing
-// written: it throws that message. Returns what the file holds now.
+// written: it throws that message. A file that is there but isn't valid JSON or an object { ... }
+// is refused the same way, never replaced: rewriting it with only the new fields would drop what it
+// held (a `network` block among them, turning proxied sessions direct). Returns what the file holds now.
 export function saveConfig(fields, file = paths.config) {
   const problem = configProblem(fields);
   if (problem) throw new Error(problem);
-  let saved = {};
-  const read = readJson(file);
-  if (read && typeof read === "object" && !Array.isArray(read)) saved = read;
+  let saved = {}, text = "";
+  try { text = readFileSync(file, "utf8"); } catch (e) { if (e?.code !== "ENOENT") throw e; }
+  if (text.trim()) {
+    let read;
+    try { read = JSON.parse(text); } catch {
+      keepCorrupt(file, text);
+      throw new Error("config.json isn't valid JSON, so it wasn't changed (a copy of what it held is kept beside it): fix it or remove it, then try again; nothing was written.");
+    }
+    if (read !== null && (typeof read !== "object" || Array.isArray(read))) throw new Error("config.json isn't an object { ... }, so it wasn't changed: fix it or remove it, then try again; nothing was written.");
+    if (read) saved = read;
+  }
   for (const [k, v] of Object.entries(fields || {})) if (v !== undefined) saved[k] = v;
   writeJsonAtomic(file, saved);
   return saved;

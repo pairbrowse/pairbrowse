@@ -515,10 +515,11 @@ test("Always allow writes the exact host into joinHosts in config.json and keeps
     assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), { participantName: "Alice", joinHosts: ["old.example.org", "share.example.org"] });
     assert.deepEqual(saveJoinHosts(config, ["share.example.org"], file), ["share.example.org"]);
     assert.deepEqual(JSON.parse(readFileSync(file, "utf8")).joinHosts, ["share.example.org"]);
-    // No config file yet, or a broken one: written anew, nothing thrown.
+    // A broken one is refused and left as it was (what it held, a network block among it, stays).
     writeFileSync(file, "{ not json");
-    assert.deepEqual(saveJoinHosts({}, ["a.example.org"], file), ["a.example.org"]);
-    assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), { joinHosts: ["a.example.org"] });
+    assert.throws(() => saveJoinHosts({}, ["a.example.org"], file), /isn't valid JSON.*nothing was written/);
+    assert.equal(readFileSync(file, "utf8"), "{ not json");
+    // No config file yet: written anew, nothing thrown.
     const fresh = join(dir, "new", "config.json");
     saveJoinHosts({}, ["b.example.org"], fresh);
     assert.deepEqual(JSON.parse(readFileSync(fresh, "utf8")), { joinHosts: ["b.example.org"] });

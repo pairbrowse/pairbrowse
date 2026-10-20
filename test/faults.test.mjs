@@ -51,14 +51,15 @@ test("readJson: a corrupt file is copied aside once, reported, and the fallback 
   assert.ok(!existsSync(join(paths.home, "missing.json.corrupt")));
 });
 
-test("corrupt config.json: defaults and a warning, never a throw; a save afterwards keeps the old file aside", () => {
+test("corrupt config.json: defaults and a warning, never a throw on load; a save refuses rather than replace it", () => {
   corrupt(paths.config);
+  const before = readFileSync(paths.config, "utf8");
   const config = loadConfig();
   assert.equal(config.maxTabs, 20);
   assert.ok(keptAside(paths.config));
-  saveConfig({ maxTabs: 9 });
-  assert.deepEqual(JSON.parse(readFileSync(paths.config, "utf8")), { maxTabs: 9 });
-  assert.ok(keptAside(paths.config), "what it held survives the save");
+  assert.throws(() => saveConfig({ maxTabs: 9 }), /isn't valid JSON.*nothing was written/);
+  assert.equal(readFileSync(paths.config, "utf8"), before, "what it held stays in place");
+  assert.ok(keptAside(paths.config));
   rmSync(paths.config);
   rmSync(`${paths.config}.corrupt`);
 });

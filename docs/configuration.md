@@ -199,6 +199,37 @@
   line in `~/.pairbrowse/audit.jsonl` (owner-only, appended, moved to `audit.jsonl.1` at 1 MB):
   its time, the event, the hand-off's short id, the session, the page's origin and path, and words
   from a fixed list; never a key, link, secret, typed text or page content.
+- `network`: per-session proxies, for you (the operator) to set here; no agent tool can set a
+  proxy or a credential, and Settings doesn't show this block. `null` (default) or absent: every
+  session connects directly. Its shape:
+  `{ "proxies": { "us-east": { "server": "http://203.0.113.10:3128", "auth": true, "bypass": [],
+  "expectEgress": ["203.0.113.0/24", "country:US"], "onEgressChange": "pause" } }, "default": null,
+  "sessions": { "shop-a": "us-east", "shop-b": null }, "strict": true,
+  "checkUrl": "https://cloudflare.com/cdn-cgi/trace", "recheckMinutes": 10 }`.
+  A proxy's id is 1 to 34 lower-case letters, digits and `-`. `server` is `http://`, `https://`
+  or `socks5://` with a host (a name, an IPv4 address or an IPv6 address in brackets) and an
+  optional port (80, 443 and 1080 when left out); never a user name or password (an address with
+  one is refused: credentials go only in `secrets.env`, below, as
+  `PAIRBROWSE_PROXY_<ID>_USERNAME` and `_PASSWORD` with the id upper-cased and `-` as `_`, and
+  `auth` `true` says the proxy needs them). SOCKS4, PAC files, `direct://` and an address with a
+  path are refused, and so is a SOCKS5 proxy with `auth` (not supported yet). `bypass` lists
+  hosts (`*.example.com`), addresses or ranges that go around the proxy; with `strict` `true`
+  (the default) only `localhost`, `127.0.0.1`, `[::1]` and `::1` may. `expectEgress` lists the
+  addresses, ranges or countries (`country:US`) the proxy's exit should be in (`null`: none), and
+  `onEgressChange` is `"pause"` (default), `"notify"` or `"ignore"`. `checkUrl` is the https
+  address the exit is checked against and `recheckMinutes` (1 to 1440) how often. Which proxy a
+  session uses: its entry in `sessions` (an id, or `null` for direct), else its browser profile's
+  network id, else `default`, else direct. This block fails closed: a proxy entry with a wrong
+  value keeps the sessions using it from starting, a session naming an id `proxies` doesn't
+  define doesn't start, and a block that can't be read (a wrong type or an unknown key at its top,
+  or a `config.json` that can't be parsed when a browser starts) keeps every session from
+  starting; none of them goes direct instead. Only a wrong `strict` or `recheckMinutes` falls
+  back to its default (`true`, 10). Each problem is a warning in `daemon.log` and
+  `pairbrowse_status` that names the key and the kind of value, never the value itself, and a save
+  of a bad block is refused. PairBrowse never rewrites a `config.json` it can't parse: until it is
+  fixed, every save to it (Settings, a name, an allowed join address) is refused. The block is
+  read from the file each time a browser starts. In this version it is read and checked, and the
+  browser doesn't use it yet: every session still connects directly until the launch applies it.
 - `reportUrl`: where a problem report you send yourself goes (default
   `https://pairbrowse.com/api/report`): an https address with no user, query or fragment.
   `null`: no report is ever sent, and Settings doesn't offer it.

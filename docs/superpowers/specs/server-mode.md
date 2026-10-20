@@ -679,7 +679,7 @@ Absent `network` means every session is direct. Proxy entry defaults: `auth: fal
 id upper-cased with `-` as `_`. A `server` with user info is refused. Not in Settings.
 
 Modules: `scripts/net/config.mjs` (`checkNetwork`, `networkFor(config, session, { profileNetwork })`,
-`launchPart(net, { shell, secrets })` returning `{ proxy: { server, bypass }, args, authFile }`);
+`launchPart(net, { shell, secrets })` returning `{ proxy: { server, bypass }, args, authFile }`, with step 27; also `parseServer`, `readNetwork`);
 `scripts/net/credentials.mjs` (`proxySecretNames`, `credentialsFor`, CLI `set`, `remove`, `list`);
 `scripts/net/probe.mjs` (`probeEgress`, bounded steps, errors name host:port and step, never the
 credential); `scripts/net/verdict.mjs` (`inExpected`, `egressVerdict`, `webrtcVerdict`, reusing
@@ -1572,6 +1572,34 @@ it depends on.
    card. CHANGELOG: an Unreleased note (step 50 moves it under the release). Tests:
    `test/core.test.mjs` (core and skills wording).
 24. `net/config.mjs` and `network` schema (C4). -> 15
+   Landed as: `scripts/net/config.mjs` `checkNetwork(raw)` answers `{ network, problem,
+   proxyProblems, sessionProblems, warnings, messages }` and never throws; `networkFor(config, session,
+   { profileNetwork })` answers `{ session, id, source, proxy, strict, checkUrl, recheckMinutes,
+   problem }` (`source` `session`, `profile`, `default` or `direct`); `parseServer` writes a
+   server back as `scheme://host:port` (ports 80, 443, 1080 filled in; host a name, a dotted-quad
+   IPv4 or a bracketed IPv6); no message repeats a value written in the block, only its kind (a
+   list, a string), and names a proxy id, session name or unknown key only when it has that shape
+   (any of them may hold a password written there by mistake); `readNetwork(file)` reads
+   `config.json`'s `network` for the launch (absent file or key: direct; unreadable, unparsable or
+   not an object: a problem). Fail closed: a wrong type or unknown key at the block's top (or too many
+   proxies, over 64) refuses every session; a proxy entry with a wrong value or an unknown key (a
+   misspelt `expectEgress` would drop the expectation), user info, `socks4:`, PAC, `direct:`, a
+   path, SOCKS5 with `auth` (U4) or, in strict mode, a non-loopback `bypass` refuses the sessions
+   using it; a map entry that isn't an id or `null` refuses that session; an undefined id named by
+   the map, a profile or the default refuses at `networkFor`. Only `strict` (to `true`) and
+   `recheckMinutes` (1 to 1440, to 10) fall back. `bypass` entries are host names (optionally
+   `*.`), addresses with an optional port, bare IPv6 addresses (no port), or ranges; the loopback ones strict allows are
+   `localhost`, `127.0.0.1`, `[::1]`, `::1`. `expectEgress` items are addresses, ranges or
+   `country:XX`; `[]` reads as `null`. `checkUrl` must be https with no user info. Schema:
+   `DEFAULT_CONFIG.network` is `null`; `config-schema.mjs` keeps the value as written (no type, so
+   a wrong one is never swapped for the default) and `configProblem` refuses a write that brings
+   any of `checkNetwork`'s messages; `loadConfig` adds its warnings. `saveConfig` refuses (throws,
+   nothing written) when `config.json` is there but isn't valid JSON or an object, rather than
+   writing a file of only the new fields: an automatic save (a participant name, `joinHosts`, the
+   install step's `browser`) would otherwise drop the `network` block and turn proxied sessions direct. Not here: `launchPart` (with
+   `forLaunch`, step 27, where its strict switches and auth file are used) and
+   `net/credentials.mjs` (the secret names, the CLI). Until step 27 the block is read and checked
+   but no launch uses it (`docs/configuration.md` says so). Tests: `test/net-config.test.mjs`.
 25. Native-engine proxy rules: saved persona refusal, `proxyAuthFile` in `shellFrom` and
     `EXTENSION_SHELL` (C1, C10). -> 13, 24
 26. Geoip fields out of the persona, quiet geoip (C9).

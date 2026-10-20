@@ -3,7 +3,10 @@
 // doesn't know is kept and named in a warning; a value of the wrong type is refused (the default is
 // used for that key) with a message naming the key, what it takes and what to do. saveConfig and the
 // Settings route refuse such a value before anything is written (configProblem). Deeper checks stay
-// where each setting is used (a tunnel's fields: tunnels/config.mjs; a browser path: browser/choice.mjs).
+// where each setting is used (a tunnel's fields: tunnels/config.mjs; a browser path: browser/choice.mjs),
+// except `network`'s, which the schema takes as written so net/config.mjs can fail closed (a
+// broken block refuses sessions rather than turning them direct); configProblem asks it too.
+import { checkNetwork } from "./net/config.mjs";
 
 // A spec: { type: "boolean" | "string" | "integer" | "number" | "array" | "object", nullable,
 // values (one of these exact values), min, max (numbers), items (an array's items' type),
@@ -55,6 +58,10 @@ export const CONFIG_SCHEMA = {
       channels: { type: "array", items: "object" },
     },
   },
+  // Per-session proxies (spec server-mode C4): any value is kept as written and checked by
+  // net/config.mjs checkNetwork, whose warnings loadConfig adds; never dropped for the default
+  // (that would make a proxied session direct).
+  network: { nullable: true, hint: 'an object { "proxies": { ... }, "default", "sessions", "strict", "checkUrl", "recheckMinutes" } (net/config.mjs)' },
   liveViewPort: PORT,
   liveViewHosts: NAMES,
   inviteBaseUrl: { type: "string", nullable: true },
@@ -160,7 +167,9 @@ export function checkConfig(raw) {
 export function configProblem(fields) {
   if (!plainObject(fields)) return "config.json's settings are an object { ... }; nothing was written.";
   const { wrong } = checkConfig(Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined)));
-  return wrong.length ? `${wrong[0]}; nothing was written.` : "";
+  if (wrong.length) return `${wrong[0]}; nothing was written.`;
+  const net = fields.network === undefined ? null : checkNetwork(fields.network);
+  return net?.messages.length ? `${net.messages[0]}; nothing was written.` : "";
 }
 
 // The hand-off's grant life and reminder time in minutes: { grantMinutes, remindMinutes, warning }.

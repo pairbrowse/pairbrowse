@@ -1663,7 +1663,14 @@ it depends on.
    secrets are missing, under 4 characters or `secrets.env` fails its checks). `applyLaunchPart`
    applies it to launch options (user switches taken out, the helper's last). `scripts/net/
    credentials.mjs` landed with `NETWORK_ID` (moved from config.mjs, re-exported there),
-   `proxySecretNames` and `credentialsFor` only; its CLI (`set`, `remove`, `list`) is not here.
+   `proxySecretNames` and `credentialsFor` only; its CLI (`set`, `remove`, `list`) is not here
+   (it landed at the Phase C gate: `node scripts/net/credentials.mjs` runs
+   `net/credentials-cli.mjs`, loaded only then so the module stays pure; `set <id>` takes the
+   username and password with echo off at a terminal or as stdin's first two lines, never as
+   arguments, checks `secrets.env` with `loadSecrets` first and writes it with `writeSecrets`;
+   `remove <id>`, `list` (names only). Also at the gate: `createNetwork` reads `secrets.env`
+   through `readSecrets`, which `daemon.mjs` gives as the helper store's `reload()`, so a credential
+   added while the helper runs is masked in its logs from the launch that uses it on).
    `scripts/daemon/network.mjs` `createNetwork({ log, configFile, secretsFile, runDir })`:
    `forLaunch(session, { profileNetwork, shell })` reads `config.json` (`readNetwork`) and, only
    for a proxy with `auth` on such a shell, `secrets.env` fresh at each launch; throws the refusal

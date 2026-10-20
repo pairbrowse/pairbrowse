@@ -214,7 +214,10 @@
   optional port (80, 443 and 1080 when left out); never a user name or password (an address with
   one is refused: credentials go only in `secrets.env`, below, as
   `PAIRBROWSE_PROXY_<ID>_USERNAME` and `_PASSWORD` with the id upper-cased and `-` as `_`, and
-  `auth` `true` says the proxy needs them). SOCKS4, PAC files, `direct://` and an address with a
+  `auth` `true` says the proxy needs them; set them in Settings' Network section or with
+  `node scripts/net/credentials.mjs set <id>`, which asks for both with echo off, or reads them
+  from stdin's first two lines, never from its arguments; `remove <id>` deletes them and `list`
+  names the proxies that have them). SOCKS4, PAC files, `direct://` and an address with a
   path are refused, and so is a SOCKS5 proxy with `auth` (not supported yet). `bypass` lists
   hosts (`*.example.com`), addresses or ranges that go around the proxy; with `strict` `true`
   (the default) only `localhost`, `127.0.0.1`, `[::1]` and `::1` may. `expectEgress` lists the

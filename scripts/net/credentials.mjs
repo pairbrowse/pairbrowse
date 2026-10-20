@@ -5,7 +5,9 @@
 // its owner-only proxy auth file (net/config.mjs launchPart, daemon/network.mjs), never argv or the
 // driver. No message here ever holds a value, only the names.
 //
-// Pure; Node's standard library only.
+// Pure (but for running it as a command, below); Node's standard library only.
+import { realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { RESERVED_MIN, RESERVED_PREFIX } from "../rules/secrets.mjs";
 
 // Ids name a proxy in the map, in a profile and, upper-cased with - as _, in its secrets' names
@@ -37,4 +39,14 @@ export function credentialsFor(id, values = {}, { fileProblem = null } = {}) {
   // One line of JSON (the auth file): a line break can't come from secrets.env, but never pass one on.
   if (/[\r\n]/.test(username + password)) return { problem: `${names.username} or _PASSWORD in secrets.env has a line break in it` };
   return { username, password };
+}
+
+// Run as a command (node scripts/net/credentials.mjs set|remove|list, C3): the command line's file
+// work is in credentials-cli.mjs, loaded only then, so what the helper imports from here stays pure.
+const isMain = () => { try { return realpathSync(process.argv[1]) === fileURLToPath(import.meta.url); } catch { return false; } };
+// Not a top-level await: the command line imports this module back, which has to finish first.
+if (process.argv[1] && isMain()) {
+  Promise.all([import("./credentials-cli.mjs"), import("../paths.mjs")])
+    .then(([{ runCredentialsCli }, { paths }]) => runCredentialsCli(process.argv.slice(2), { file: paths.secrets }))
+    .then((code) => { process.exitCode = code; });
 }

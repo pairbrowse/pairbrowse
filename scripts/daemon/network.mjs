@@ -27,6 +27,8 @@
 // deps: log, notify(text) (the person's notification), pause(who) (holds every agent: pause.mjs
 // hold; true when it wasn't already), channels(message) (a "network" message to the person's channels, notify/;
 // resolves, or null when hand-offs don't go there now); configFile, secretsFile, runDir,
+// readSecrets() (secrets.env as it is now, { values, problem }: the helper's store's reload(), so a
+// credential added since its last read is masked from the launch that uses it on),
 // observationsFile(session) (paths.mjs's, tests pass their own); probe, inBrowser, now, recheckMs
 // (the interval, else RECHECK_MS or recheckMinutes), timers (tests).
 import { chmodSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -75,7 +77,8 @@ export function dropProxyAuthFile(path) {
   try { rmSync(path, { force: true }); } catch { /* gone or unreachable: nothing to do */ }
 }
 
-export function createNetwork({ log = () => {}, notify = () => {}, pause = () => false, channels = () => null, configFile = paths.config, secretsFile = paths.secrets, runDir = paths.run,
+export function createNetwork({ log = () => {}, notify = () => {}, pause = () => false, channels = () => null, configFile = paths.config, secretsFile = paths.secrets,
+  readSecrets = () => loadSecrets(secretsFile), runDir = paths.run,
   observationsFile = (session) => sessionFile(session, "network.json"), probe = probeEgress, inBrowser = checkInBrowser, now = Date.now,
   recheckMs = null, timers = { setTimeout, clearTimeout } } = {}) {
   let last = null; // the network of the browser started last: { session, id, source, strict } (no address)
@@ -110,8 +113,9 @@ export function createNetwork({ log = () => {}, notify = () => {}, pause = () =>
     if (read.problem) throw new Error(sessionRefusal(session, read.problem));
     const net = networkFor({ network: read.network }, session, { profileNetwork });
     // Secrets are read from the file only for a proxy that needs them (and fresh: one set while
-    // the helper runs counts at the next launch).
-    const secrets = net.proxy?.auth && shell?.proxyAuthFile ? loadSecrets(secretsFile) : null;
+    // the helper runs, by hand or with net/credentials.mjs, counts at the next launch; through the
+    // helper's store, so its logs mask them from then on).
+    const secrets = net.proxy?.auth && shell?.proxyAuthFile ? readSecrets() : null;
     const part = launchPart(net, { shell, secrets, native });
     if (part.problem) throw new Error(part.problem);
     let authPath = null;

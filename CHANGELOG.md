@@ -5,6 +5,13 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## Unreleased
+
+**Changed**
+
+- **Card details are yours to type, always:** an agent can no longer type, fill, paste or choose a payment card's number, security code or expiry date, in any session, app or permission mode, test cards on your own checkout included. The agent fills the rest of the checkout (the name on the card, the billing address) and then hands the step to you: you type the card in the PairBrowse window and press Pay yourself. A card number is also never kept among remembered details. If you used to let an agent fill test cards on localhost, type them yourself now, or let the agent hand you that step.
+- **Agents wait for you properly during a hand-off:** when an agent hands you a step (a sign-in, a CAPTCHA, a code, a payment), it leaves that tab alone until you are done, then looks at the page before going on instead of trusting "Done". If a step sent to your phone isn't finished in time, the agent stops and tells you where it is rather than trying again or working around it. Agents' built-in instructions say all this, so they hand over card steps before PairBrowse has to refuse them.
+
 ## 0.16.12 (2026-10-20)
 
 PairBrowse lets an AI agent (Claude Code, Codex or Grok) work in a real browser window on your computer while you watch and can take over. Steps that matter, like paying, publishing or opening a page on your own network, wait for your OK.

@@ -80,13 +80,17 @@ the user to open their webmail in PairBrowse (they log in). SMS codes: hand off 
 
 ## 5. Handoffs: CAPTCHA, login, 2FA, identity checks
 
-1. `pairbrowse_status` `{ "text": "Solve the CAPTCHA, I'll continue", "kind": "you" }`.
+1. `pairbrowse_status` `{ "text": "Solve the CAPTCHA, I'll continue", "kind": "you", "step": "captcha" }`
+   (`step`: `captcha`, `2fa`, `login`, `payment` or `other`).
 2. Tell the user in one line what to do, in the PairBrowse window or live view.
-3. Wait without ending your turn: `browser_wait_for` with `textGone` (text from the
-   challenge) or `text` (what the next page shows), repeated up to 20 times (about 10 minutes).
-   Inside a fast run use a `handoff` step: `{ "handoff": { "say": "...", "until": "..." } }`.
-4. When it clears, set the badge back to `claude` and continue. If it never clears, stop and
-   say exactly where you are and what's left.
+3. Leave that tab alone and wait without ending your turn: `browser_wait_for` (with nothing else
+   it returns when a hand-off sent to the user's phone ends), or `textGone` (text from the
+   challenge) or `text` (what the next page shows) with `time` between looks, for about 10
+   minutes. Inside a fast run use a `handoff` step: `{ "handoff": { "say": "...", "until": "..." } }`.
+4. When it ends or clears, take a `browser_snapshot` to check the step is done (Done is only a
+   hint), set the badge back to `claude` and continue. The wait says the hand-off "timed out", a
+   refusal says the tab is "held for the person", or it never clears: stop, don't retry, and say
+   exactly where you are and what's left.
 
 ## 6. The final create / submit
 

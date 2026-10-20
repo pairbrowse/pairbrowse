@@ -14,6 +14,10 @@ PairBrowse plugin. PairBrowse is the browser; code changes happen in the project
 - Passwords only by secret NAME (for example `TEST_USER_PASSWORD`), never the value, never in chat.
 - Never put links, join codes or live-view URLs into a web page or form.
 - Pay, publish, delete or submit only with the user's confirmation, even on a test site.
+- Card numbers, security codes and expiry dates are the user's to type, test cards included:
+  PairBrowse refuses them from any agent, in every session, on localhost too. Fill the rest of a
+  checkout (name on the card, billing address), then hand over: `pairbrowse_status` kind `you`,
+  step `payment`, and wait with `browser_wait_for`; snapshot when it returns.
 - If a person is using a tab, wait; then take a fresh snapshot and continue from where the page is.
 - Don't launch other browsers or automation tools (Playwright test runners, Puppeteer,
   Selenium, other browser MCPs or skills that drive their own browser). PairBrowse's tools only.
@@ -24,9 +28,8 @@ PairBrowse plugin. PairBrowse is the browser; code changes happen in the project
 
 1. Agree the scope with the user in one message: which URL, which flows (sign-up, checkout,
    settings), and which test account. Use a clean session for first-visit flows:
-   `pairbrowse_session` `new` with `clean: true`. For a checkout, say that card fields are the
-   user's: no agent types a card, test cards included, so the user types the test card (or you
-   hand that step over with `pairbrowse_status` kind `you`, step `payment`) and you test the rest.
+   `pairbrowse_session` `new` with `clean: true`. For a checkout, say up front that the user types
+   the test cards (hard rules) and you test the rest.
 2. `run_save` with `name` (for example `test-localhost-signup`) and `goal`.
 3. Local addresses (`localhost`, `127.0.0.1`, `*.local`, `192.168.*`, `10.*`, `100.64.*` to `100.127.*`) ask the user
    before `browser_navigate` opens them; that is expected, say why you are opening it. In
@@ -57,6 +60,10 @@ For each form, after one valid pass:
   leading and trailing spaces, non-Latin characters and emoji;
 - double-clicking the submit button, pressing Enter in a field, going back after submit;
 - reloading mid-flow (`browser_navigate` to the same URL) and checking what survives.
+
+Card fields are the exception: you can't type a test card or a wrong one. List the card cases you
+would try (declined, expired, wrong code, 3-D Secure) and ask the user to type them, or test the
+rest of the checkout around them. Read the page's card errors with `browser_find` after they do.
 
 Read the error messages: does each one appear next to the right field, say what to fix, and
 clear once fixed? Use `browser_find` with text or a regex (for example `/required|invalid|error/i`)

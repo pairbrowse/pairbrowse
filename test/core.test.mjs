@@ -88,6 +88,39 @@ test("the browser asks which session unless the picker is off (or nobody sees it
   }
 });
 
+test("the core keeps card details the person's and says how to wait out a hand-off (spec server-mode B13, B15)", () => {
+  const text = sessionStart("");
+  assert.match(text, /Card numbers, security codes, expiry dates are the person's to type \(test cards too\)/);
+  assert.match(text, /hand off with step "payment"/);
+  assert.match(text, /pairbrowse_status kind "you" \(step, what to do\)/);
+  // In the window only (no phone, decision 8) nothing is waited on unless named: the core names it.
+  assert.match(text, /leave that tab, wait with browser_wait_for \(textGone or text, with time\), then snapshot/);
+  assert.match(text, /Timed out or held: stop, report, don't retry/);
+});
+
+test("the skills wait on a hand-off with browser_wait_for and stop at its timeout, never a fixed retry loop", () => {
+  const skill = (name) => readFileSync(join(root, "skills", name, "SKILL.md"), "utf8");
+  const main = skill("pairbrowse");
+  const handoffs = main.slice(main.indexOf("## Hand-offs and waiting"), main.indexOf("## What PairBrowse handles by itself"));
+  assert.match(handoffs, /"step": "captcha"/);
+  assert.match(handoffs, /returns as soon as the hand-off ends and says why/);
+  assert.match(handoffs, /Done is only a hint/);
+  assert.match(handoffs, /"The hand-off <id> timed out"/);
+  assert.match(handoffs, /"held for the person": nobody finished in time\. Stop: don't retry/);
+  assert.match(handoffs, /"hand-off <id> for tab N, until <time>"/);
+  assert.match(handoffs, /In the\s+window only, nothing is refused or masked/);
+  assert.match(main, /except a tab handed over to the\s+user's phone/);
+  // Each task skill names the window-only wait and the agent-facing timeout words.
+  for (const name of ["pairbrowse-signup", "pairbrowse-listing"]) {
+    assert.match(skill(name), /`textGone`[^]*`text`[^]*`time`/, name);
+    assert.match(skill(name), /"timed out"[^]*"held for the\s+person"/, name);
+  }
+  assert.match(handoffs, /your next\s+`pairbrowse_status` ends the hand-off/);
+  assert.match(handoffs, /hand over with `step` `payment`/);
+  for (const name of ["pairbrowse", "pairbrowse-signup", "pairbrowse-listing"]) assert.doesNotMatch(skill(name), /up to 20 times/, name);
+  assert.match(skill("pairbrowse-test-site"), /test cards included/);
+});
+
 test("the core stays compact", () => {
   // About 4 characters per token: keep it near 1,200 tokens.
   assert.ok(core.length <= 5000, `core.md is ${core.length} characters (budget 5000)`);

@@ -90,8 +90,14 @@ those clicks too.
 
 ## 6. Handoffs and progress
 
-- Login, 2FA, CAPTCHA, identity or payment check: `pairbrowse_status` with `kind: "you"`,
-  one line to the user, then `browser_wait_for` (`textGone` or `text`) up to 20 times.
+- Login, 2FA, CAPTCHA, identity or payment check: `pairbrowse_status` with `kind: "you"` and
+  its `step`, one line to the user, leave that tab, then wait with `browser_wait_for` and snapshot.
+  With a hand-off sent to the user's phone (the result names "hand-off <id> ... until <time>"),
+  call it with nothing else: it returns when the hand-off ends. In the window only, use `textGone`
+  (challenge text) or `text` (what the next page shows) with `time` between looks, for about 10
+  minutes. The wait says the hand-off "timed out", a refusal says the tab is "held for the
+  person", or it never clears: stop, don't retry, and report where you are.
+  Card details are the user's to type: fill the rest, then hand over with `step` `payment`.
 - After each section: `run_save` (`done`, `left`, `yourTurn`, `drafted`, `tabs`) and a short
   update:
 

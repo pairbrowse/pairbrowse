@@ -1549,6 +1549,21 @@ it depends on.
    "after a payment hand-off ends, an agent's click on the site's Pay button still needs the Pay:
    name" (the Pay rule itself is unchanged), the integration test of the full path (step 46's harness).
 23. `skills/pairbrowse/SKILL.md` and `core.md` text (B15). -> 22
+   Landed as: SKILL.md "Hand-offs and waiting" replaces the 20-loop with: `step` on the status,
+   leave the tab (the B9 refusals; the next status ends the hand-off), `browser_wait_for` with
+   nothing named when the step went to the phone (it returns at the end and says why), `textGone`/
+   `text` with `time` between looks in the window only (decision 8: no grant, nothing wakes it),
+   snapshot after (Done is a hint, the host note names what the person did), stop at "timed out"
+   or a held tab; a Payments paragraph (fill the rest, hand over with step payment, the Pay name
+   still applies). The joiner masking line names handed-off tabs. `core.md` (4,995 of 5,000
+   characters): a hard rule that card numbers, codes and expiry dates are the person's (test
+   cards too), the hand-off line with step, leave the tab, wait, snapshot and the timeout stop;
+   the CAPTCHA rule points at it and the testing list is one line. Beyond the step, for the same
+   rule: the signup and listing skills lose their 20-loop too, and the test-site skill gets the
+   card rule as a hard rule plus what to do with card test cases. `docs/security.md`: the card
+   and hand-off rows say the agents are told, the badge row no longer says agents never ask for a
+   card. CHANGELOG: an Unreleased note (step 50 moves it under the release). Tests:
+   `test/core.test.mjs` (core and skills wording).
 24. `net/config.mjs` and `network` schema (C4). -> 15
 25. Native-engine proxy rules: saved persona refusal, `proxyAuthFile` in `shellFrom` and
     `EXTENSION_SHELL` (C1, C10). -> 13, 24

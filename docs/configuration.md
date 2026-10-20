@@ -217,8 +217,8 @@
   (the default) only `localhost`, `127.0.0.1`, `[::1]` and `::1` may. `expectEgress` lists the
   addresses, ranges or countries (`country:US`) the proxy's exit should be in (`null`: none), and
   `onEgressChange` is `"pause"` (default), `"notify"` or `"ignore"`. `checkUrl` is the https
-  address the exit is checked against and `recheckMinutes` (1 to 1440) how often. Which proxy a
-  session uses: its entry in `sessions` (an id, or `null` for direct), else its browser profile's
+  address the exit is checked against (it must answer `ip=` and `loc=` lines, as the default
+  does) and `recheckMinutes` (1 to 1440) how often. Which proxy a session uses: its entry in `sessions` (an id, or `null` for direct), else its browser profile's
   network id, else `default`, else direct. This block fails closed: a proxy entry with a wrong
   value keeps the sessions using it from starting, a session naming an id `proxies` doesn't
   define doesn't start, and a block that can't be read (a wrong type or an unknown key at its top,

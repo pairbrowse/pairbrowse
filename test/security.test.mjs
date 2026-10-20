@@ -174,6 +174,21 @@ test("test switches: read only through testenv.mjs, each one listed", async () =
   assert.equal(testMs("GONE_MS", 5, {}), 5);
 });
 
+// The proxy exit checks' stand-ins (spec server-mode C-6): a project's environment can't point a
+// session's egress check at an address of its choosing, or loosen it to http.
+test("NET_CHECK: listed, documented, and stripped outside the harness", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { SWITCHES, applyTestGate } = await import("../scripts/testenv.mjs");
+  const { checkTargets } = await import("../scripts/net/probe.mjs");
+  assert.ok(Object.hasOwn(SWITCHES, "NET_CHECK"));
+  assert.match(readFileSync(new URL("../docs/development.md", import.meta.url), "utf8"), /^\| `NET_CHECK` \| knob \|/m);
+  const env = { PAIRBROWSE_HOME: "/nowhere", PAIRBROWSE_TEST_NET_CHECK: JSON.stringify({ checkUrl: "http://elsewhere.test/", ms: 100 }) };
+  assert.equal(checkTargets({ checkUrl: "https://cloudflare.com/cdn-cgi/trace" }, env).checkUrl, "http://elsewhere.test/", "the switch works where it is kept");
+  applyTestGate(env);
+  assert.equal(env.PAIRBROWSE_TEST_NET_CHECK, undefined);
+  assert.deepEqual(checkTargets({ checkUrl: "https://cloudflare.com/cdn-cgi/trace" }, env), { checkUrl: "https://cloudflare.com/cdn-cgi/trace", directUrl: "https://cloudflare.com/cdn-cgi/trace", stun: "stun:stun.cloudflare.com:3478", timeoutMs: 10_000 });
+});
+
 // Every path under ~/.pairbrowse is built in paths.mjs (one place to see what the helper keeps):
 // no other module joins onto the home or reads PAIRBROWSE_HOME itself.
 test("paths under the home come from paths.mjs", async () => {
@@ -219,6 +234,7 @@ test("only known modules reach beyond this computer", async () => {
     "daemon/phishing.mjs": "the phishing list (Phishing.Database) every 6 hours, checked on this computer",
     "daemon/notify/post.mjs": "hand-off messages to the channels you list in handoff.channels",
     "liveview/report.mjs": "a problem report you send yourself, to reportUrl",
+    "net/probe.mjs": "a proxied session's exit check (network.checkUrl) through the proxy you set, and once without it, only compared",
     "sharing/join-client.mjs": "the host of a join code you entered",
     "tunnels/quick.mjs": "checks that this helper's own tunnel answers",
     "util.mjs": "pinned downloads (runtime, browser build, engine pack), checked by SHA-256",

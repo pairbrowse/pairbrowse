@@ -193,7 +193,7 @@ export function createLaunch(st, deps, api) {
       // The session's network (daemon/network.mjs, spec server-mode section 3.2 step 3): its proxy,
       // strict switches and auth file, or the refusal this launch stops with (never direct instead).
       // Inside the try, so the finally drops its auth file whatever stops the launch.
-      net = network ? network.forLaunch(st.session, { shell: st.shell }) : null;
+      net = network ? network.forLaunch(st.session, { shell: st.shell, native: next.browserEngine === "pairbrowse" }) : null;
       const options = {
         // The helper's own shutdown closes the browser (daemon.mjs shutdown -> close below).
         // Playwright's signal handlers would start a close of their own on the same SIGTERM, and

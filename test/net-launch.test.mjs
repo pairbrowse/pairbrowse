@@ -10,7 +10,7 @@ import { mkdtempSync, writeFileSync, readFileSync, readdirSync, statSync, exists
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EventEmitter } from "node:events";
-import { launchPart, applyLaunchPart, networkFor, STRICT_WEBRTC, DRIVER_LOOPBACK, resolverRule, PROXY_AUTH_SWITCH } from "../scripts/net/config.mjs";
+import { launchPart, applyLaunchPart, networkFor, STRICT_WEBRTC, STRICT_WEBRTC_OPEN, DRIVER_LOOPBACK, resolverRule, PROXY_AUTH_SWITCH } from "../scripts/net/config.mjs";
 import { createNetwork, writeProxyAuthFile, PROXY_AUTH_PREFIX } from "../scripts/daemon/network.mjs";
 import { EXTENSION_SHELL, shellFrom } from "../scripts/browser/choice.mjs";
 import { launchArgs } from "../scripts/browser.mjs";
@@ -28,13 +28,23 @@ const LOOPBACK = DRIVER_LOOPBACK.join(",");
 
 test("strict switches on both builds; a user's host-resolver-rules dropped; non-loopback bypass refused", () => {
   const n = forShop(net({ us: { server: "http://203.0.113.10:3128" } }));
+  const rule = "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 203.0.113.10, EXCLUDE localhost";
   for (const shell of [EXTENSION_SHELL, PAGES_SHELL, AUTH_SHELL]) {
-    const part = launchPart(n, { shell });
+    // A native build (any shell): the engine's spelling only. native-engine.mjs drops any other
+    // WebRTC policy switch (and logs it as the user's), so the open build's spelling never goes there.
+    const part = launchPart(n, { shell, native: true });
     assert.equal(part.problem, undefined);
     assert.deepEqual(part.proxy, { server: "http://203.0.113.10:3128", bypass: LOOPBACK });
-    assert.deepEqual(part.args, ["--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 203.0.113.10, EXCLUDE localhost", STRICT_WEBRTC]);
+    assert.deepEqual(part.args, [rule, STRICT_WEBRTC]);
     assert.equal(part.authFile, null);
   }
+  // The open build (or another browser on its engine): its browser ignores STRICT_WEBRTC and reads
+  // the policy only as --force-webrtc-ip-handling-policy, so both go (step 28's finding).
+  for (const opts of [{ shell: EXTENSION_SHELL }, { shell: EXTENSION_SHELL, native: false }, {}]) {
+    const part = launchPart(n, opts);
+    assert.deepEqual(part.args, [rule, STRICT_WEBRTC, STRICT_WEBRTC_OPEN]);
+  }
+  assert.equal(STRICT_WEBRTC_OPEN, "--force-webrtc-ip-handling-policy=disable_non_proxied_udp");
   // The user's resolver rule (it passes the browserArgs screen: names kept on this computer) goes,
   // in any spelling; the helper's comes last, so the engine takes it.
   const user = launchArgs({ browserArgs: ["--host-resolver-rules=MAP dev.test 127.0.0.1", "--lang=de"] });
@@ -42,8 +52,7 @@ test("strict switches on both builds; a user's host-resolver-rules dropped; non-
   const { options, dropped } = applyLaunchPart({ args: [...user, "-host-resolver-rules=EXCLUDE a.test"], headless: false }, launchPart(n, { shell: EXTENSION_SHELL }));
   assert.deepEqual(dropped, ["--host-resolver-rules", "-host-resolver-rules"]);
   assert.equal(options.args.filter((a) => /host-resolver-rules/.test(a)).length, 1);
-  assert.equal(options.args.at(-2), resolverRule("203.0.113.10"));
-  assert.equal(options.args.at(-1), STRICT_WEBRTC);
+  assert.deepEqual(options.args.slice(-3), [resolverRule("203.0.113.10"), STRICT_WEBRTC, STRICT_WEBRTC_OPEN]);
   assert.ok(options.args.includes("--lang=de"), "other switches stay");
   assert.equal(options.headless, false, "other options stay");
   assert.deepEqual(options.proxy, { server: "http://203.0.113.10:3128", bypass: LOOPBACK });
@@ -64,6 +73,7 @@ test("loopback bypass always passed; for SOCKS5 the helper's resolver rule is la
     const socks = launchPart(forShop(net({ s: { server: "socks5://[2001:db8::7]:1080" } }, { strict })), { shell: EXTENSION_SHELL });
     assert.equal(socks.args[0], "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE [2001:db8::7], EXCLUDE localhost");
     assert.equal(socks.args.includes(STRICT_WEBRTC), strict);
+    assert.equal(socks.args.includes(STRICT_WEBRTC_OPEN), strict);
     assert.deepEqual(socks.drop, ["host-resolver-rules"]);
     const { options } = applyLaunchPart({ args: ["--host-resolver-rules=MAP x.test 127.0.0.1"] }, socks);
     assert.equal(options.args.filter((a) => /host-resolver-rules/.test(a)).length, 1);
@@ -201,7 +211,8 @@ test("a launch carries the session's proxy and switches; switching a proxy leave
   const first = d.calls.at(-1).options;
   assert.deepEqual(first.proxy, { server: "http://203.0.113.10:3128", bypass: LOOPBACK });
   // After the user's switches (the driver's own come before every one of these).
-  assert.deepEqual(first.args.filter((a) => /host-resolver-rules|webrtc/.test(a)), [resolverRule("203.0.113.10"), STRICT_WEBRTC]);
+  // The open build's engine here, so strict mode's WebRTC policy in both spellings.
+  assert.deepEqual(first.args.filter((a) => /host-resolver-rules|webrtc/.test(a)), [resolverRule("203.0.113.10"), STRICT_WEBRTC, STRICT_WEBRTC_OPEN]);
   assert.equal(first.chromiumSandbox, true, "the sandbox untouched");
   const profileFiles = snapshot(d.calls.at(-1).profile);
   assert.ok(Object.keys(profileFiles).length > 0, "the launch wrote its profile files");
@@ -228,7 +239,7 @@ test("a launch carries the session's proxy and switches; switching a proxy leave
 test("launch wiring follows section 3.2: screen, network, then the browser; the auth file dropped either way", () => {
   const src = readFileSync(new URL("../scripts/daemon/browser/launch.mjs", import.meta.url), "utf8");
   const screen = src.indexOf("const screen = await api.ensureScreen();");
-  const network = src.indexOf("net = network ? network.forLaunch(st.session, { shell: st.shell }) : null;");
+  const network = src.indexOf("net = network ? network.forLaunch(st.session, { shell: st.shell, native: next.browserEngine === \"pairbrowse\" }) : null;");
   const engine = src.indexOf("ctx = await launchEngine(");
   assert.ok(screen > 0 && network > screen && engine > network, "ensureScreen, network.forLaunch, launchEngine");
   assert.match(src.slice(engine), /^ctx = await launchEngine\(browserType\(\), next, profile\(\), net \? net\.apply\(options\) : options,/);

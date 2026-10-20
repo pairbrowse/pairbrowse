@@ -39,14 +39,15 @@ export function createNetwork({ log = () => {}, configFile = paths.config, secre
   let last = null; // the network of the browser started last: { session, id, source, strict } (no address)
 
   // The launch's network for `session` (profileNetwork: its browser profile's network id, Phase D;
-  // shell: the browser's, browser/choice.mjs). Throws the refusal sentence; else { id, source,
+  // shell: the browser's, browser/choice.mjs; native: a native build, which reads strict mode's
+  // WebRTC switch in its own spelling). Throws the refusal sentence; else { id, source,
   // strict, proxy, apply(options), drop(), started() }: apply adds the proxy and switches to the
   // launch options (the user's --host-resolver-rules dropped and logged where the helper sets its
   // own), drop removes the auth file (once the browser is up, or its launch failed), started records
   // this network as the running browser's (called once the browser is up). A launch attempt clears
   // the record first: one refused or failed leaves none. Nothing it logs names an address or a
   // credential.
-  function forLaunch(session, { profileNetwork, shell = null } = {}) {
+  function forLaunch(session, { profileNetwork, shell = null, native = false } = {}) {
     last = null;
     const read = readNetwork(configFile);
     if (read.problem) throw new Error(sessionRefusal(session, read.problem));
@@ -54,7 +55,7 @@ export function createNetwork({ log = () => {}, configFile = paths.config, secre
     // Secrets are read from the file only for a proxy that needs them (and fresh: one set while
     // the helper runs counts at the next launch).
     const secrets = net.proxy?.auth && shell?.proxyAuthFile ? loadSecrets(secretsFile) : null;
-    const part = launchPart(net, { shell, secrets });
+    const part = launchPart(net, { shell, secrets, native });
     if (part.problem) throw new Error(part.problem);
     let authPath = null;
     if (part.authFile) {

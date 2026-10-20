@@ -625,7 +625,9 @@ fail closed, also after recovery.
   with the U4 sentence. No agent tool and no joiner can open or write this section (owner only).
 - **C5. Strict mode by default** for proxied sessions: `--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE
   <proxy host>, EXCLUDE localhost` and `--webrtc-ip-handling-policy=disable_non_proxied_udp` on both
-  builds; a user's `--host-resolver-rules` is dropped and logged. Loopback always passed as
+  builds, and on the open build also `--force-webrtc-ip-handling-policy=disable_non_proxied_udp` (its
+  browser ignores the first spelling; the native engine reads only the first and drops the second);
+  a user's `--host-resolver-rules` is dropped and logged. Loopback always passed as
   `proxy.bypass` (`localhost,127.0.0.1,[::1]`) so the driver does not route the helper's own
   `127.0.0.1` traffic to the proxy. A non-loopback bypass is refused in strict mode. No profile
   preference is written for networking.
@@ -733,8 +735,8 @@ without proxyAuthFile and on the open build"; "SOCKS5 with credentials refused; 
 `test/net-launch.test.mjs` ("strict switches on both builds; a user's host-resolver-rules dropped;
 non-loopback bypass refused"; "switching a proxy leaves PairBrowse-written profile files byte for
 byte the same"; "loopback bypass always passed; for SOCKS5 the helper's resolver rule is last");
-`test/net-probe.test.mjs` ("CONNECT with Basic and SOCKS5 with RFC 1929 read ip and loc"; "https:
-proxy works and an untrusted certificate is refused"; "SOCKS5 sends address type 3"; "hung or
+`test/net-probe.test.mjs` ("CONNECT with Basic and SOCKS5 read ip and loc; SOCKS5 sends address type 3"
+(no RFC 1929: U4); "https: proxy works and an untrusted certificate is refused"; "hung or
 malformed proxies end within bound without the credential"); `test/net-verdict.test.mjs` ("CIDR and
 country expectations, same as direct, browser vs helper, change from baseline"; "WebRTC host or srflx
 with a real address is a leak"; "a timeout is a failure, never a pass"); `test/net-refuse.test.mjs`
@@ -1638,7 +1640,7 @@ it depends on.
    (lower-case, a bare IPv6 address bracketed); `args` the resolver rule `MAP * ~NOTFOUND, EXCLUDE
    <proxy host>, EXCLUDE localhost` in strict mode and, beyond C5, always for SOCKS5 (the driver's own
    SOCKS rule comes first and a user's local rule would otherwise replace it), and in strict mode
-   `STRICT_WEBRTC`; `drop` `host-resolver-rules` whenever the helper sets its own;
+   `STRICT_WEBRTC` (and, since step 28, `STRICT_WEBRTC_OPEN` off a native build); `drop` `host-resolver-rules` whenever the helper sets its own;
    `authFile` the engine contract's `{ server, username, password }` for a proxy with `auth` on a
    shell with `proxyAuthFile` (refused on every other shell, the open build too, and when the
    secrets are missing, under 4 characters or `secrets.env` fails its checks). `applyLaunchPart`
@@ -1663,6 +1665,44 @@ it depends on.
    `test/net-credentials.test.mjs` (names and lookup), `test/native-engine.test.mjs` (strict switches
    on the native launch), `test/structure.test.mjs` (`daemon.mjs` passes `network:`).
 28. Probe, verdict, browser check, `NET_CHECK` (C2, C6).
+   Landed as: `scripts/net/probe.mjs` `probeEgress({ proxy, checkUrl, auth, timeoutMs })` answers
+   `{ ok: true, ip, loc }` or `{ ok: false, step, problem, timedOut }` and never throws: one deadline
+   (`CHECK_MS`, 10 s) over every step (connect, tunnel or socks5, tls, answer), each awaited through
+   `within`; http: and https: proxies through CONNECT (Basic `Proxy-Authorization` only there; an
+   https: proxy over TLS), socks5: without authentication (U4: credentials refused before
+   anything is sent; RFC 1929 is not implemented, so the Phase C test name lost it), the check host
+   sent as a name (type 3; an address as type 1 or 4); TLS to the proxy and the check host against
+   Node's list plus the system's (`tls.getCACertificates` where this Node has it), no insecure
+   option; a redirect is not followed; the answer capped (`BODY_MAX`, 64 KB), Content-Length,
+   chunked or to the close. `proxy: null` probes this computer's own exit (only compared, C9).
+   Problems name the proxy's host:port or the check host and the step, from the error's code only,
+   never a credential. `parseTrace` reads `ip=` (written-out addresses only) and `loc=` (two
+   capital letters). `checkTargets(net)` gives `{ checkUrl, directUrl, stun, timeoutMs }`:
+   `network.checkUrl`, `STUN_URL` and `CHECK_MS`, or with `NET_CHECK` (JSON `{ checkUrl, directUrl,
+   stun, ms }`, http: allowed, a malformed value ignored) local stand-ins. `scripts/net/verdict.mjs`:
+   `normalIp`, `inExpected(ip, loc, expectEgress)` (ranges and countries each required when named;
+   null without an expectation), `egressVerdict({ helper, browser, direct, expectEgress, baseline })`
+   (`ok`, `failed` or `changed`; `sameAsDirect` null when the direct exit isn't known, as behind a
+   proxy-only network; a failure outranks a change), `parseCandidate` and
+   `webrtcVerdict(gather, { egress })` (a candidate address or raddr other than an mDNS name, the
+   unspecified address or the exit is a leak, an unreadable line too; candidates kept as `{ type, kind
+   }` without addresses); no reason names an exit address. `scripts/net/browsercheck.mjs`
+   `checkInBrowser(context, { checkUrl, stun, timeoutMs, gatherMs })`: a new tab, a DevTools session,
+   `Page.getFrameTree`, `Network.loadNetworkResource` (no cache, no credentials), `IO.read` to the
+   end and `IO.close`, then an `RTCPeerConnection` gathering bounded in the page (`GATHER_MS`, 5 s)
+   and again outside; the tab and session closed whatever happened, each bounded. Not here: the
+   check tab kept out of tab memory and the strip, and calling all this at launch (step 29).
+   Found and fixed here: on the open build the browser ignores `STRICT_WEBRTC`
+   (`--webrtc-ip-handling-policy`, the native engine's spelling) and gathers srflx candidates (this
+   computer's public address); the spelling `--force-webrtc-ip-handling-policy=disable_non_proxied_udp`
+   stops them. `launchPart(net, { shell, secrets, native })` now adds `STRICT_WEBRTC_OPEN` (that
+   spelling) after `STRICT_WEBRTC` in strict mode unless `native` (`forLaunch` passes
+   `native: next.browserEngine === "pairbrowse"`); never on a native build, whose `native-engine.mjs`
+   `webrtcPolicy` drops every WebRTC policy switch but `STRICT_WEBRTC` and logs it as the user's
+   (step 29 keeps that in mind). The integration test launches with `launchPart`'s own args. Tests: `test/net-probe.test.mjs`,
+   `test/net-verdict.test.mjs`, `test/net-browsercheck.test.mjs`, `test/integration/net-browsercheck.test.mjs`,
+   `test/security.test.mjs` (`NET_CHECK`); stubs in `test/helpers/proxies.mjs` (trace echo, HTTP and
+   SOCKS5 proxies, hung and garbled ones, a STUN responder, an openssl-made test CA).
 29. `checkAtLaunch`, fail closed, refusal, status; row C-1 (C7). -> 27, 28
 30. NetLog leak tests (C12). -> 29
 31. Recheck, egress change, pause and notify through the B notifier (C8). -> 29, 16

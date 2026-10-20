@@ -275,6 +275,10 @@ export function readNetwork(file) {
 // Strict mode's WebRTC policy: no UDP outside the proxy (so no local or public address of this
 // computer reaches a page). The native build adds the same switch on every launch by itself.
 export const STRICT_WEBRTC = "--webrtc-ip-handling-policy=disable_non_proxied_udp";
+// The same policy in the spelling the open build's browser reads: it ignores STRICT_WEBRTC and
+// gathers this computer's public address through STUN (seen behind a stub proxy, step 28). Only the
+// open build gets it: native-engine.mjs drops every other WebRTC policy switch than STRICT_WEBRTC.
+export const STRICT_WEBRTC_OPEN = "--force-webrtc-ip-handling-policy=disable_non_proxied_udp";
 // What always goes around the proxy: this computer itself. The driver adds "<-loopback>" to the
 // bypass list (send loopback through the proxy too) unless loopback is named here, so the helper's
 // own 127.0.0.1 (the live view the browser's pages talk to) would otherwise go to the proxy.
@@ -287,18 +291,20 @@ export const resolverRule = (host) => `--host-resolver-rules=MAP * ~NOTFOUND, EX
 const bypassRule = (b) => { const v = String(b).toLowerCase(); return !v.includes("/") && !v.startsWith("[") && v.includes(":") && parseV6(v) ? `[${v}]` : v; };
 
 // What a launch adds for the network networkFor chose (net), on a browser whose shell
-// (browser/choice.mjs) is `shell`, with secrets.env as loadSecrets read it (`secrets`: { values,
+// (browser/choice.mjs) is `shell` (native: a native build, engine "pairbrowse"; else the open
+// build or another browser on its engine), with secrets.env as loadSecrets read it (`secrets`: { values,
 // problem }, read only for a proxy with auth). { proxy, args, authFile, drop } or { problem }:
 // - proxy: the driver's { server, bypass } (bypass comma-separated, loopback always first), never
 //   with a credential; null for a direct session.
 // - args: the resolver rule (strict, and always for SOCKS5 so it comes after the driver's own and a
-//   user's local rule can't replace it) and, strict, STRICT_WEBRTC.
+//   user's local rule can't replace it) and, strict, STRICT_WEBRTC (and STRICT_WEBRTC_OPEN when not
+//   native).
 // - authFile: the auth file's content ({ server, username, password }) for a proxy with auth, on a
 //   build that reads one (shell.proxyAuthFile); the caller writes it owner-only and adds its switch.
 //   A proxy with auth on any other browser (the open build too) is refused: never argv or the driver.
 // - drop: switch names taken out of the user's browserArgs first (their --host-resolver-rules).
 // - problem: the launch's refusal sentence (net's own, or the credentials'); never a direct launch.
-export function launchPart(net, { shell = null, secrets = null } = {}) {
+export function launchPart(net, { shell = null, secrets = null, native = false } = {}) {
   if (net?.problem) return { problem: net.problem };
   if (!net?.proxy) return { proxy: null, args: [], authFile: null, drop: [] };
   const p = net.proxy;
@@ -314,7 +320,7 @@ export function launchPart(net, { shell = null, secrets = null } = {}) {
   const resolver = net.strict || p.scheme === "socks5";
   return {
     proxy: { server: p.server, bypass: [...new Set([...DRIVER_LOOPBACK, ...p.bypass.map(bypassRule)])].join(",") },
-    args: [...(resolver ? [resolverRule(p.host)] : []), ...(net.strict ? [STRICT_WEBRTC] : [])],
+    args: [...(resolver ? [resolverRule(p.host)] : []), ...(net.strict ? [STRICT_WEBRTC, ...(native ? [] : [STRICT_WEBRTC_OPEN])] : [])],
     authFile,
     drop: resolver ? ["host-resolver-rules"] : [],
   };

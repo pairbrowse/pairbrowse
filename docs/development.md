@@ -142,6 +142,7 @@ is under the temp folder with a linked runtime), so none reaches an installed he
 | `JOIN_PROMPT` | knob | `integration/join-prompt` | Adds `pairbrowse_test_join_prompt`: the join request in the bottom bar |
 | `KEEP_GRACE_MS` | knob | `tunnel` | How long a tunnel keeper outlives a quiet helper |
 | `MEMORY` | knob | `integration/memory`, `integration/interruption`, `bench` | Adds `pairbrowse_test_memory`: listener counts |
+| `NET_CHECK` | knob | `net-probe` | The proxy exit checks' local stand-ins, JSON `{ "checkUrl", "directUrl", "stun", "ms" }`: the check address (`http:` allowed), the one read without the proxy, the STUN server and the bound (`network.checkUrl`, `stun:stun.cloudflare.com:3478` and 10 seconds otherwise) |
 | `NO_CAPTURE` | knob | `capture`, `integration/shared-mode` (host only) | Acts as a build without a capture page: no direct connection, no recording |
 | `NO_DIRECT` | knob | `integration/shared-mode` | A network where no direct screen connection can be made |
 | `PANEL` | knob | `integration/panel-reload` | Adds `pairbrowse_test_panel`: the side panel's worker |

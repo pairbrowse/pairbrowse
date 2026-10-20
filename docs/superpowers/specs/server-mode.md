@@ -1274,6 +1274,14 @@ it depends on.
    "auto never calls resolveAuto" (`test/native-engine.test.mjs`, whose recording pack now fails a
    launch that calls any of the three), `test/session-profiles.test.mjs`.
 13. Close F1: filtered layers; `proxy` refusal shared with C10 (D7). -> 11
+   Landed as (at the Phase D gate): `native-engine.mjs` `readSettings` copies the saved layer and,
+   after the C10 proxy refusals, the canvas bridge rule and the `UNSUPPORTED` refusal, keeps only
+   `PAIRBROWSE_ENGINE_KEYS` in the saved and persisted layers (`engineOnly`); the names of the rest
+   go in one log line per layer (`droppedLine`: plain option names only, any other counted, never a
+   value). The persona written back was already the fingerprint only. Every option the engine
+   pack's own `splitFingerprintOptions` keeps is an engine key or refused, so a persona PairBrowse
+   wrote logs nothing. The "F1 today" test became "launch controls are named and dropped", with
+   "saved and persisted layers pass only engine keys" beside it (`test/native-engine.test.mjs`).
 14. `daemon/audit.mjs`, `paths.audit` (B17).
    Landed as: `createAudit({ file, now, log, maxBytes, channels })` returns `{ append(entry), file }`;
    `append` writes synchronously and answers true or false (refused or not written, logged by field

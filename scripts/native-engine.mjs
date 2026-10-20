@@ -316,7 +316,8 @@ function readSettings(config, pack, personaPath) {
   // PairBrowse never has the engine pack pick another device's persona from a library or a service.
   const thisComputer = !store && PICKS_THIS_COMPUTER.includes(selection);
   const picked = store || thisComputer ? undefined : selection;
-  const saved = withFlatWebgpu(picked ? pack.resolveProfileOptions(picked) : {});
+  // A copy: the layer is filtered below (D7), never the engine pack's own object.
+  const saved = { ...withFlatWebgpu(picked ? pack.resolveProfileOptions(picked) : {}) };
   if (saved?.canvasBridge !== undefined) throw new Error(canvasBridgeRefusal("The saved profile (pairbrowse.profile)"));
   if (saved?.proxy !== undefined) throw new Error(personaProxyRefusal("The saved profile (pairbrowse.profile)"));
   const kept = existsSync(personaPath) ? pack.Profile.load(personaPath) : null;
@@ -330,8 +331,31 @@ function readSettings(config, pack, personaPath) {
   for (const key of UNSUPPORTED) {
     if ([persisted, saved, given].some((layer) => layer[key] !== undefined)) throw new Error(`PairBrowse native does not support pairbrowse.${key} on this engine.`);
   }
-  return { thisComputer, humanize, showCursor, geoip: store ? !!chosen.geoip : chosen?.kind === "config" ? !!(geoip || chosen.geoip) : geoip, typingPace: clampPace(typingPace), motion, overrides, saved, persisted, ignored, bridgeDropped, personaName: chosen?.id ?? LEGACY_PERSONA };
+  // D7 (F1): from the saved profile and the persona kept with the session, as from config.json, only
+  // the engine's fingerprint options pass; every other option (launch controls, switches, env,
+  // extensions, agent and storage options) is named in one log line and dropped, never applied.
+  const dropped = { saved: engineOnly(saved), persisted: engineOnly(persisted) };
+  return { thisComputer, humanize, showCursor, geoip: store ? !!chosen.geoip : chosen?.kind === "config" ? !!(geoip || chosen.geoip) : geoip, typingPace: clampPace(typingPace), motion, overrides, saved, persisted, ignored, dropped, bridgeDropped, personaName: chosen?.id ?? LEGACY_PERSONA };
 }
+
+// Keeps only the engine's fingerprint options in a persona layer, in place: the names of the
+// others, as a log may show them (a name that isn't a plain option name is only counted).
+function engineOnly(layer) {
+  const names = [];
+  for (const key of Object.keys(layer)) {
+    if (PAIRBROWSE_ENGINE_KEYS.includes(key)) continue;
+    names.push(key);
+    delete layer[key];
+  }
+  return names;
+}
+const LAYER_NAMES = { saved: "the saved profile (pairbrowse.profile)", persisted: `the persona kept with this session (${PERSONA_FILE})` };
+export const droppedLine = (layer, names) => {
+  const plain = names.filter((n) => /^[A-Za-z][A-Za-z0-9_]{0,39}$/.test(n));
+  const other = names.length - plain.length;
+  const listed = [...plain, ...(other ? [`${other} other${other > 1 ? "s" : ""}`] : [])].join(", ");
+  return `launch: ${listed} in ${LAYER_NAMES[layer]} not used: only the engine's fingerprint options pass from a persona (see docs/configuration.md)`;
+};
 
 // The fingerprint to launch with: the layered settings, then a persona (this Mac's own, captured
 // once per Mac, when no layer names one), the seed, and the region (geoip, else this computer's
@@ -407,6 +431,7 @@ export async function launchNative(chromium, config, directory, options, pack, l
   const settings = readSettings(config, pack, personaPath);
   if (settings.bridgeDropped) log(CANVAS_BRIDGE_DROPPED);
   if (settings.thisComputer) log(`launch: pairbrowse.profile "${config.pairbrowse.profile}": ${THIS_COMPUTER_NOTE}`);
+  for (const [layer, names] of Object.entries(settings.dropped)) if (names.length) log(droppedLine(layer, names));
   if (settings.ignored.length) log(`launch: ${settings.ignored.map((k) => `pairbrowse.${k}`).join(", ")} in config.json not used (PairBrowse passes on only its own settings and the engine's fingerprint options; see docs/configuration.md)`);
   const fingerprintAt = Date.now();
   const { fingerprint, rest, steps } = await resolveFingerprint(chromium, options, pack, directory, settings, metadata.version, log);

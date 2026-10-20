@@ -387,7 +387,10 @@ user's file, readable by others), the section says why and refuses a username or
   `platform`, the GPU, screen and hardware values; the full list is `PAIRBROWSE_ENGINE_KEYS` in
   `scripts/config-schema.mjs`). Any other key there, such as `extensions`, a proxy, launch options or
   switches, is named as an unknown key and never reaches the browser (the helper log says so at
-  launch): the browser loads no extension but PairBrowse's own side panel. `canvasBridge` (the
+  launch). A saved persona (`profile`) and the persona kept with a session pass only the engine's
+  fingerprint options too: anything else in them (launch arguments, environment, the sandbox, the
+  executable, extensions, agent or storage options) is named in the helper log and dropped, so the
+  browser loads no extension but PairBrowse's own side panel. `canvasBridge` (the
   engine's option to send what pages draw to another program) is refused: a launch with it here or
   in a saved profile stops with an error naming it. A proxy in a saved profile (`profile`) or in the
   persona kept with a session (`pairbrowse-persona.json`) stops the launch too, with an error saying

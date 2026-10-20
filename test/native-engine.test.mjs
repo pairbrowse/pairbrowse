@@ -4,7 +4,8 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync, statSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { launchNative, DRIVER_BLINK_SWITCH, DRIVER_BACKGROUND_SWITCH, nativeManifest, declaresOwnPages, macHostProfile, captureMacHost, MEASURING, hostCachePath, screenInfoArg, CANVAS_BRIDGE_DROPPED, isCanvasBridgeSwitch, personaProxyRefusal, PROXY_CREDENTIALS_REFUSAL, proxyCredentials, withoutAddresses, proxyAuthFile, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE, flatWebgpuProfile, personaBindingRefusal } from "../scripts/native-engine.mjs";
+import { launchNative, DRIVER_BLINK_SWITCH, DRIVER_BACKGROUND_SWITCH, nativeManifest, declaresOwnPages, macHostProfile, captureMacHost, MEASURING, hostCachePath, screenInfoArg, CANVAS_BRIDGE_DROPPED, isCanvasBridgeSwitch, personaProxyRefusal, PROXY_CREDENTIALS_REFUSAL, proxyCredentials, withoutAddresses, proxyAuthFile, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE, flatWebgpuProfile, personaBindingRefusal, droppedLine } from "../scripts/native-engine.mjs";
+import { PAIRBROWSE_ENGINE_KEYS } from "../scripts/config-schema.mjs";
 import { loadEngine } from "../scripts/native/pack.mjs";
 import { normalizeWebgpu } from "../scripts/native/graphics.mjs";
 import { THIS_COMPUTER_NOTE } from "../scripts/profiles/map.mjs";
@@ -573,7 +574,7 @@ packTest("no --canvas-bridge-* reaches the launch, sandbox still on", async () =
   assert.ok(!options.args.some((a) => /no-sandbox/i.test(a)));
 });
 
-packTest("saved profile launch controls survive the native adapter merge; its extensions don't load", async () => {
+packTest("a saved profile's launch controls and extensions are named and dropped through the real pack", async () => {
   const pack = await loadPack();
   const app = appFixture();
   const directory = mkdtempSync(join(tmpdir(), "pairbrowse-saved-controls-"));
@@ -588,8 +589,8 @@ packTest("saved profile launch controls survive the native adapter merge; its ex
     { executablePath: app.executablePath, headless: false }, pack, (l) => lines.push(l));
   const args = chromium.calls[0].options.args;
   assert.ok(!args.some((a) => a.includes("/tmp/saved-extension")), "only PairBrowse's own extension loads");
-  assert.ok(lines.some((l) => /1 extension besides PairBrowse's own dropped/.test(l)), lines.join("\n"));
-  assert.equal(args.some(a => a.startsWith("--disable-features=BrowsingTopics")), false);
+  assert.ok(lines.includes(droppedLine("saved", ["extensions", "disablePrivacySandbox"])), lines.join("\n"));
+  assert.ok(args.includes("--fingerprint=saved-seed"), "its fingerprint still applies");
 });
 
 packTest("unsupported options in saved profiles are rejected before launch", async () => {
@@ -914,19 +915,23 @@ test("auto never calls resolveAuto", async () => {
 });
 
 
-// F1 (D7 closes it): config.json passes only the engine's fingerprint options, but a saved profile's
-// and the persisted persona's other options reach the launch as they are. The sandbox and the
-// executable stay the helper's either way; the persona written back keeps only the fingerprint.
-// Their proxy no longer does (C10, step 25): "a saved or persisted persona's proxy refuses the launch".
-test("F1 today: launch controls in a saved profile or the persisted persona reach the launch unfiltered", async () => {
+// Spec D7 (F1): config.json passes only the engine's fingerprint options, and so do a saved
+// profile and the persona kept with a session: their launch controls (args, env, ignoreDefaultArgs,
+// the sandbox, the executable), extensions and agent or storage options are named in one log line
+// per layer (names only, never values) and dropped; the persona written back keeps only the
+// fingerprint. Their proxy refuses the launch instead (C10, below).
+test("launch controls are named and dropped", async () => {
   const app = appFixture();
   const controls = () => ({ args: ["--f1-pinned-switch"], env: { F1_PINNED: "1" },
-    ignoreDefaultArgs: ["--f1-ignored"], chromiumSandbox: false, executablePath: "/bin/f1-other" });
+    ignoreDefaultArgs: ["--f1-ignored"], chromiumSandbox: false, executablePath: "/bin/f1-other", extensions: ["/tmp/f1-extension"],
+    portableProfile: "/tmp/f1-portable", encryptionKey: "f1-secret-key", disablePrivacySandbox: false, "a key/../with odd letters": 1 });
   const layers = {
-    saved: { config: { pairbrowse: { profile: "mine" } }, pack: recordingPack({ saved: { fingerprint: "seed", fingerprintProfile: PINNED_PROFILE(), ...controls() } }), persona: null },
-    persisted: { config: { pairbrowse: {} }, pack: recordingPack(), persona: { fingerprint: "seed", fingerprintProfile: PINNED_PROFILE(), ...controls() } },
+    saved: { config: { pairbrowse: { profile: "mine" } }, pack: recordingPack({ saved: { fingerprint: "seed", fingerprintProfile: PINNED_PROFILE(), ...controls() } }), persona: null,
+      where: "the saved profile (pairbrowse.profile)" },
+    persisted: { config: { pairbrowse: {} }, pack: recordingPack(), persona: { fingerprint: "seed", fingerprintProfile: PINNED_PROFILE(), ...controls() },
+      where: "the persona kept with this session (pairbrowse-persona.json)" },
   };
-  for (const [layer, { config, pack, persona }] of Object.entries(layers)) {
+  for (const [layer, { config, pack, persona, where }] of Object.entries(layers)) {
     const directory = mkdtempSync(join(tmpdir(), `pairbrowse-f1-${layer}-`));
     const personaPath = join(directory, "pairbrowse-persona.json");
     if (persona) writeFileSync(personaPath, JSON.stringify({ name: "pairbrowse", options: persona }));
@@ -934,15 +939,44 @@ test("F1 today: launch controls in a saved profile or the persisted persona reac
     const lines = [];
     await launchNative(chromium, config, directory, { executablePath: app.executablePath, headless: false }, pack, (l) => lines.push(l));
     const { options } = chromium.calls[0];
-    assert.ok(options.args.includes("--f1-pinned-switch"), `${layer}: its args reach the browser`);
-    assert.deepEqual(options.env, { F1_PINNED: "1" }, `${layer}: its env reaches the launch`);
-    assert.ok(options.ignoreDefaultArgs.includes("--f1-ignored"), `${layer}: its ignoreDefaultArgs reach the launch`);
-    assert.equal(lines.some((l) => /not used/.test(l)), false, `${layer}: nothing is named as dropped`);
+    assert.ok(!options.args.includes("--f1-pinned-switch"), `${layer}: its args never reach the browser`);
+    assert.equal(options.env, undefined, `${layer}: nor its env`);
+    assert.ok(!options.ignoreDefaultArgs.includes("--f1-ignored"), `${layer}: nor its ignoreDefaultArgs`);
+    assert.ok(!options.args.some((a) => a.includes("f1-")), `${layer}: nor its extension or portable profile: ${options.args.join(" ")}`);
     assert.equal(options.chromiumSandbox, true, `${layer}: the sandbox stays the helper's`);
     assert.equal(options.executablePath, app.executablePath, `${layer}: the executable stays the helper's`);
+    const named = lines.filter((l) => l.includes(`in ${where} not used`));
+    assert.deepEqual(named, [`launch: args, env, ignoreDefaultArgs, chromiumSandbox, executablePath, extensions, portableProfile, encryptionKey, disablePrivacySandbox, 1 other in ${where} not used: only the engine's fingerprint options pass from a persona (see docs/configuration.md)`], `${layer}: ${lines.join("\n")}`);
+    assert.equal(droppedLine(layer, ["args"]), `launch: args in ${where} not used: only the engine's fingerprint options pass from a persona (see docs/configuration.md)`);
+    assert.ok(!lines.some((l) => /f1-|F1_PINNED|odd letters/.test(l)), `${layer}: never a value or an odd name`);
+    assert.deepEqual(pack.given[0].fingerprintProfile, PINNED_PROFILE(), `${layer}: the fingerprint still applies`);
     const written = JSON.parse(readFileSync(personaPath, "utf8")).options;
     assert.deepEqual(Object.keys(written).filter((k) => k in controls()), [], `${layer}: the persona written back keeps only the fingerprint`);
   }
+});
+
+// Spec D7: what passes from a saved profile and the persona kept with a session is
+// PAIRBROWSE_ENGINE_KEYS and nothing else; options the engine can't honour still refuse (UNSUPPORTED).
+test("saved and persisted layers pass only engine keys", async () => {
+  const app = appFixture();
+  const every = Object.fromEntries(PAIRBROWSE_ENGINE_KEYS.map((k) => [k, k === "fingerprintProfile" ? PINNED_PROFILE() : k === "fingerprint" ? "seed" : `v-${k}`]));
+  const extra = { headless: true, args: ["--x"], userDataDir: "/tmp/x", proxyBypass: "x", agent: { key: "k" }, viewport: { width: 1 } };
+  for (const layer of ["saved", "persisted"]) {
+    const pack = recordingPack(layer === "saved" ? { saved: { ...every, ...extra } } : {});
+    let rest = null;
+    const split = pack.splitFingerprintOptions;
+    pack.splitFingerprintOptions = (options) => { const out = split(options); rest = out.rest; return { fingerprint: { ...out.fingerprint, ...out.rest }, rest: {} }; };
+    const directory = mkdtempSync(join(tmpdir(), `pairbrowse-d7-${layer}-`));
+    if (layer === "persisted") writeFileSync(join(directory, "pairbrowse-persona.json"), JSON.stringify({ name: "pairbrowse", options: { ...every, ...extra } }));
+    await launchNative(fakeBrowserType(), { pairbrowse: layer === "saved" ? { profile: "mine" } : {} }, directory, { executablePath: app.executablePath, headless: false }, pack);
+    const reached = new Set([...Object.keys(pack.given[0]), ...Object.keys(rest)]);
+    for (const k of Object.keys(extra)) assert.ok(!reached.has(k), `${layer}: ${k} dropped`);
+    for (const k of reached) assert.ok(PAIRBROWSE_ENGINE_KEYS.includes(k), `${layer}: ${k} is an engine key`);
+    for (const k of ["gpuVendor", "storageQuota", "tlsProfile", "fingerprintNoise"]) assert.equal(pack.given[0][k], `v-${k}`, `${layer}: ${k} passes`);
+  }
+  const unsupported = recordingPack({ saved: { fingerprint: "seed", personaSchema: 2 } });
+  await assert.rejects(launchNative(fakeBrowserType(), { pairbrowse: { profile: "mine" } }, mkdtempSync(join(tmpdir(), "pairbrowse-d7-unsupported-")), { executablePath: app.executablePath, headless: false }, unsupported),
+    /does not support pairbrowse\.personaSchema/);
 });
 
 // C10: a proxy in a saved profile or the persona kept with a session stops the launch with the

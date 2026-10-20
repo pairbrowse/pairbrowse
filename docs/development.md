@@ -88,7 +88,7 @@ mockup is read in place and never committed.
 |--------|-----------|--------|
 | `test/*.test.mjs` | Unit tests. Some still start a browser for a few cases, gated by `PAIRBROWSE_TEST_RUNTIME` (`hud`, `enter`, `ui-*` and others) | `npm run test:unit` |
 | `test/integration/` | A real helper (`scripts/daemon.mjs`) and browser per file, two or three for joining; every test skips without `PAIRBROWSE_TEST_RUNTIME` | `npm run test:live` |
-| `test/optin/` | Tests behind a switch of their own, never run by `npm test`: `failover` (`PAIRBROWSE_TEST_REAL_TUNNEL=1`), `native-join` (a native build), `two-machines` (`PAIRBROWSE_TEST_DOCKER=1`; its two sides in `test/optin/two-machines/`) | `npm run test:optin` |
+| `test/optin/` | Tests behind a switch of their own, never run by `npm test`: `failover` (`PAIRBROWSE_TEST_REAL_TUNNEL=1`), `ntfy` (`PAIRBROWSE_TEST_NTFY=1`: hand-off messages published to a random ntfy.sh topic and read back), `native-join` (a native build), `two-machines` (`PAIRBROWSE_TEST_DOCKER=1`; its two sides in `test/optin/two-machines/`) | `npm run test:optin` |
 | `test/fuzz/*.test.js` | Property-based fuzzing of the security checks | `npm run test:fuzz` |
 | `test/helpers/` | Not tests: `home.mjs` (every test file imports it first: a home of its own under the temp folder), `util.mjs` (`sleep`, `until`, `text`, `rpc`), `daemon.mjs` (`helperHome`, `spawnDaemon`, `startHelper`, `stopDaemon`), `live.mjs` (`testBase`, `attachDaemon`, `session`, `patchright`), `live-helper.mjs`, and the pages' harness | |
 
@@ -128,6 +128,7 @@ is under the temp folder with a linked runtime), so none reaches an installed he
 | `JOINER_EXECUTABLE` | gate | you: a browser binary | The joiner's browser in `shared-mode` and `record` |
 | `NATIVE` | gate | you: the PairBrowse browser | Also runs `draw` and a `picker` case on the native build |
 | `REAL_TUNNEL` | gate | you: `1` | Real Cloudflare Quick Tunnels: `optin/failover` and one `shared-mode` case |
+| `NTFY` | gate | you: `1` | Real hand-off messages to a random topic on ntfy.sh, read back: `optin/ntfy` |
 | `YOUTUBE` | gate | you: `1` | The `shared-mode` case on youtube.com |
 | `EXCALIDRAW` | gate | you: `1` | The `shared-mode` case on excalidraw.com |
 | `DOCKER` | gate | you: `1` | `optin/two-machines`: this machine and a Linux container (needs Docker and the network) |

@@ -97,7 +97,8 @@ what each boundary protects against, see [security.md](security.md) and the
   under the home, always visible. `browser/choice.mjs` picks the binary and the driver.
   `native-pack.mjs` pins the native builds and the engine pack; `native/pack.mjs` fetches and
   checks them; `native/install.mjs` installs a build (its by-hand entry is
-  `scripts/native-install.mjs`) and `native/check.mjs` runs its launch self-check;
+  `scripts/native-install.mjs`) and `native/check.mjs` runs its launch self-check, ending with
+  `native/probe.mjs`'s graphics probe (a throwaway probe browser, spec server-mode E4);
   `native/macos-app.mjs` brands the macOS app; `native-engine.mjs` launches it, with
   `native/humanize.mjs` for typing. Builds are pinned by SHA-256 and checked before every install.
 - **Live view and sharing** (`scripts/liveview.mjs`, `scripts/liveview/`): a key-protected page on

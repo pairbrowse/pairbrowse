@@ -1031,7 +1031,8 @@ inconsistency; remove the canvas bridge; keep the sandbox on.
   Unanswered within its bound: `unverified`, never assumed.
 - **E4. Page probes never open a tab in the person's browser**: a throwaway launch with the profile's
   resolved options and a temporary user-data folder (as `captureMacHost` does): headless on macOS (the
-  capture's Metal path), headed on the same private Xvfb on Linux. Triggers: the install self-check,
+  capture's Metal path), headed on Linux on the screen the launch already uses (the private Xvfb on a
+  server, the person's desktop otherwise, as the install self-check's own browser). Triggers: the install self-check,
   `cli.mjs validate`, and the first launch per runtime key (logged "measuring graphics once for this
   browser version"). The live browser gets only the E3 read and a comparison with the stored
   measurement.
@@ -1105,7 +1106,11 @@ renderer, unmasked strings, extensions, limits, precision, a fixed scene's `read
 `navigator.gpu`, adapter info, features, limits, `requestDevice` with the reported limits, one compute
 round trip; canvas 2D and text scenes hashed twice in one page, on two origins and across two launches;
 `document.fonts.check` over the persona list and a control list; `screen`, DPR, window sizes; codec and
-`mediaCapabilities` answers; time zone and languages.
+`mediaCapabilities` answers; time zone and languages. (Step 42 measures what the record keeps: of the
+browser process the E3 read (`readBackend`); of WebGL the version, unmasked strings, extension count,
+texture and renderbuffer limits and the scene's hash, compared across the two origins, no precision
+formats; fonts by a text-width test against the three generic families, not `document.fonts.check`,
+with the control list proving the test; no window sizes.)
 
 Measured record in `validation[build].graphics`: `{ at, runtimeKey, pack, runtime: { platform, arch,
 display, emulated, sandbox: { on, page } }, backend, webgl, webgl2, webgpu, canvas: { stable, repeat, noise },
@@ -2370,9 +2375,52 @@ it depends on.
     `test/profile-map.test.mjs`, `test/session-profiles.test.mjs`, `test/fuzz/graphics-compat.test.js`,
     `test/fuzz/profile-schema.test.js`.
 42. `native/probe.mjs`, `probeLaunch`, self-check step (E4). -> 39, 40
+    Landed as: `scripts/native/probe.mjs`: the bounded steps it shares with `captureMacHost`
+    (`boundedStep`, `launchWithin`: a start that answers after its bound is closed; `localSite`, a
+    page on 127.0.0.1 also reached as localhost); `probeOptions` (headless on macOS, headed on
+    Linux); `runsEmulated` (an x64 process on a kernel whose `/proc/cpuinfo` is ARM's; anything
+    unread counts as not emulated, keeping `sandbox.on`'s seccomp-BPF rule); the probe page
+    (`PROBE_PARTS`: webgl, webgl2, webgpu, canvas, fonts, screen, media, locale, navigator, one
+    bounded `evaluate` each, every await inside bounded; a part that answers nothing leaves the
+    later ones unasked) and `runProbe(page)`; `readSandboxPage` (Linux: its lines, `"timeout"` or
+    `"not shown"`); `probeRecord` (canvas `stable`: one scene the same twice in a page on each
+    origin; `repeat`: the same on the second start; `noise`: the scene differs between the
+    origins; `webgl.sameOrigins`; a part not answered is null, so the rules say so); and
+    `probeLaunch({ launch, directory, build, pack, platform, arch, display, emulated, sandbox })`:
+    `launch(folder)` is the caller's start with the resolved options, called twice on one
+    temporary folder inside `directory` (the persona's seed stays, so `repeat` compares like with
+    like); it reads the E3 backend and the launch's backend switches (`GRAPHICS.switches`), runs the
+    page on both origins and the sandbox page, and answers `measuredRecord`'s shape under
+    `runtimeKey({ build, pack, platform: "macos" | "linux", arch, display, backend, switches })`,
+    then closes the browser, removes the folder and puts `SANDBOX` and `GRAPHICS` back. The font
+    lists (`PROBE_FONTS`) are the families every persona shows on the platform: on macOS the
+    native build's persona hides some this Mac has (Menlo, Monaco, Geneva, Avenir, Futura were
+    measured missing), so the list keeps the seven it shows; the Linux list is not yet measured on
+    the native build (`fonts.available` is a warning). `graphicsStep(measured)`: the self-check's
+    line, "graphics: <kind>, WebGL <1|2> (or no WebGL), WebGPU <adapter|fallback adapter|unavailable>",
+    never the GPU. `native/check.mjs` runs it after the other checks, on the check's own screen
+    (the private Xvfb on a server, the desktop otherwise), started as the check's browser
+    (launchOptions, the same sandbox rule), its own bound around it sized for the helper's launch
+    path, which waits for it after an update: `GRAPHICS_TIMEOUT_MS` (one probe start of 60 s and two
+    page steps, 120 s); a probe past it is stopped (`probeLaunch`'s `signal`: its browser closed,
+    no further start or step) and waited for, `GRAPHICS_STOP_MS` (105 s) at most, so its folder,
+    the SANDBOX and GRAPHICS state it puts back and its browser are settled before the person's
+    browser starts; the worst case past the check's own 180 s is under four minutes. Off macOS and
+    Linux the step is "graphics: not measured on <platform>" with no probe. A probe that fails gives
+    "graphics: unverified (not measured: <why>)" and never fails the install; `selfCheck`'s `onGraphics(measured)` hands the measurement out. Measured live on this
+    Mac's native build: hardware (Metal), WebGL 2, a WebGPU adapter whose reported limits fail
+    `requestDevice` (E10), canvas stable and repeatable. Left for step 44: filing a measurement into
+    a profile's `validation[build]` (the self-check's included) and the other two E4 triggers (the
+    first launch per runtime key, logged "measuring graphics once for this browser version", and
+    `cli.mjs validate`). Tests: `test/native-probe.test.mjs` (over spike E-S1's fixtures),
+    `test/native-check.test.mjs`, `test/native-engine.test.mjs` (the capture's bounded steps),
+    integration `test/integration/graphics-probe.test.mjs` (the page side in a real open-build
+    browser).
 43. `rules/coherence.mjs` and `tzcountry.mjs` (the locale rules and the table landed with 32b, `screen.believable` with 35); wired into D validation, C verdicts and the B report;
     `test/compat-vs-verification.test.mjs` (E13, C13, D16, B14). -> 29, 37, 21
-44. Launch steps 4 and 7, status part, diagnostics (E7, E9). -> 41, 42, 37
+44. Launch steps 4 and 7, status part, diagnostics (E7, E9); the other two graphics probe triggers
+    (E4): the first launch per runtime key ("measuring graphics once for this browser version") and
+    `cli.mjs validate`; filing a measurement into a profile's `validation[build]`. -> 41, 42, 37
 45. Saved card: profile field, key-store check, prefs, owner "Add a saved card", "Fill saved card",
     agent refusals and masking (B-AP4, B12). -> 37, 21
 46. Phase A integration file, CI `xauth`, Phase A opt-in tests on the harness (A13). -> 8, 39

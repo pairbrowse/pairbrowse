@@ -95,7 +95,16 @@ notification says so, and agents answer "installing" right away instead of waiti
 PairBrowse picks the build for your platform and chip, downloads it once from its
 [GitHub release](https://github.com/pairbrowse/pairbrowse/releases), checks it (the SHA-256 pinned in
 `scripts/native-pack.mjs`, the build manifest, on macOS the signature, then a launch test) and keeps
-the previous version for rollback. With it comes the small engine pack the native browser launches
+the previous version for rollback. After the launch test it measures the build's graphics once in a
+throwaway browser of its own (hidden on macOS; on Linux on the launch test's own screen, the private
+virtual screen on a server, your desktop otherwise, where its window shows briefly as the launch
+test's does): the backend the browser renders with, WebGL, WebGPU, canvas, fonts and screen; the
+install record keeps one line such as "graphics: software, WebGL 2, WebGPU unavailable" (on Windows
+"graphics: not measured on Windows"). A measurement that fails never stops the install. The check
+runs before the first start after an update: the launch test has three minutes, the graphics
+measurement two more, and one that runs over is stopped and waited for (at most 105 seconds more),
+so the worst case is under seven minutes in all, and a slow measurement leaves the line
+"unverified". With it comes the small engine pack the native browser launches
 with (fingerprint switches and humanized input), checked the same way. It installs at
 `~/.pairbrowse/browser/PairBrowse.app` on macOS and `~/.pairbrowse/browser/PairBrowse` on Linux and
 Windows. To install a file by hand (it installs nothing while `browser` is `"pairbrowse-open"` or a path,

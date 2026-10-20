@@ -1,5 +1,8 @@
 // The launch self-check every native build passes before it's kept (native-install.mjs): launched
-// once the way the helper launches it, on a throwaway profile, against a small local page.
+// once the way the helper launches it, on a throwaway profile, against a small local page. Then its
+// graphics are measured once (native/probe.mjs, server-mode spec E4): a throwaway probe browser,
+// hidden on macOS, on Linux on the check's own screen (its private virtual screen on a server, the
+// desktop otherwise).
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
@@ -8,14 +11,29 @@ import { join } from "node:path";
 import { paths, loadConfig } from "../paths.mjs";
 import { launchOptions, prepareProfile, panelExtensionId, THEME_COLOR, hudScript } from "../browser.mjs";
 import { engineConfig, shellOf } from "../browser/choice.mjs";
-import { launchEngine } from "../engine.mjs";
+import { launchEngine, SANDBOX } from "../engine.mjs";
 import { nativeManifest } from "../native-engine.mjs";
+import { NATIVE } from "../native-pack.mjs";
 import { ensureRuntime } from "../runtime.mjs";
 import { needsVirtualDisplay, screenGeometry, serverMode, startVirtualDisplay } from "../display.mjs";
 import { loadBrowserDriver, patchrightNodeMinimum } from "../driver.mjs";
-import { readJson, sleep, withTimeout } from "../util.mjs";
+import { readJson, sleep, within, withTimeout } from "../util.mjs";
+import { probeLaunch, probeOptions, graphicsStep, PROBE_STEP_MS } from "./probe.mjs";
 
 const CHECK_TIMEOUT_MS = 180_000;
+// The graphics step runs on the helper's launch path (an update's first start waits for it), so
+// its bound fits there: one probe start (the build just started once, so a minute is ample) and
+// two page steps. A probe still running then is stopped and waited for, its start in flight and
+// one page step at most, plus its closes: the worst case past the check's own three minutes is
+// GRAPHICS_TIMEOUT_MS + GRAPHICS_STOP_MS, under four minutes. A slower probe leaves the step
+// unverified, measured again later (E6).
+export const GRAPHICS_LAUNCH_MS = 60_000;
+export const GRAPHICS_TIMEOUT_MS = GRAPHICS_LAUNCH_MS + 2 * PROBE_STEP_MS;
+const CLOSE_MS = 15_000; // the probe's browser close and its local server's
+export const GRAPHICS_STOP_MS = GRAPHICS_LAUNCH_MS + PROBE_STEP_MS + CLOSE_MS;
+// Where a probe runs (native/probe.mjs RUNTIME_PLATFORMS); elsewhere the step says so.
+const PROBE_PLATFORMS = new Set(["darwin", "linux"]);
+const PLATFORM_NAMES = { win32: "Windows" };
 // The engine registers an extension's worker a moment after launch.
 const PANEL_WAIT_TRIES = 20, PANEL_WAIT_MS = 500;
 // Extensions the engine loaded from a folder ("unpacked"), in Secure Preferences.
@@ -86,9 +104,39 @@ function checkProfile(profile, { ownPages = false } = {}) {
   if (loaded.some((id) => !allowed.includes(id))) throw new Error(`unexpected extensions installed: ${loaded.join(", ")}`);
 }
 
+// The build's graphics, measured once in a probe browser (launch(directory): started as the
+// check's was, launchOptions with the same sandbox rule, hidden on macOS by probeOptions). Answers
+// the step's line: the backend's kind, WebGL's level and WebGPU's adapter (graphicsStep), or why it
+// went unmeasured. A graphics probe that fails never fails the install: the build runs (the checks
+// before said so), and an unmeasured runtime is "unverified" until a later measurement (E6).
+// onMeasured(measured): the measurement, for the caller to keep as evidence. A probe past
+// timeoutMs is stopped and waited for (stopMs at most) before the line is answered, so its browser
+// is closed, its folder gone and the SANDBOX and GRAPHICS state it puts back put back before the
+// person's browser starts. probe: native/probe.mjs probeLaunch (tests pass their own).
+export async function graphicsCheck({ launch, build, pack = null, display = "native", platform = process.platform, sandbox = SANDBOX, scratch, log = () => {}, onMeasured = () => {}, timeoutMs = GRAPHICS_TIMEOUT_MS, launchMs = GRAPHICS_LAUNCH_MS, stepMs = PROBE_STEP_MS, stopMs = GRAPHICS_STOP_MS, probe = probeLaunch }) {
+  if (!PROBE_PLATFORMS.has(platform)) return `graphics: not measured on ${PLATFORM_NAMES[platform] || platform}`;
+  const stop = new AbortController();
+  const probing = Promise.resolve()
+    .then(() => probe({ launch, directory: scratch, build, pack, platform, display, sandbox, launchMs, stepMs, log, signal: stop.signal }))
+    .then((measured) => ({ measured }), (error) => ({ error }));
+  const done = await within(timeoutMs, probing);
+  if (!done) {
+    stop.abort();
+    if (!await within(stopMs, probing)) log(`graphics probe: not stopped within ${stopMs / 1000} s`);
+  }
+  if (!done || done.error) {
+    const why = done ? String(done.error?.message || done.error).replace(/^PairBrowse graphics probe failed: /, "") : `it took longer than ${timeoutMs / 1000} s`;
+    log(`graphics not measured: ${why}`);
+    return `graphics: unverified (not measured: ${why.split("\n")[0].slice(0, 160)})`;
+  }
+  try { onMeasured(done.measured); } catch {}
+  return graphicsStep(done.measured);
+}
+
 // Returns what passed; throws on the first failure. On a Linux machine without a screen the check
 // runs on a private virtual screen of its own, like the browser itself (display.mjs).
-export async function selfCheck(exec, { config = loadConfig(), log = () => {}, timeoutMs = CHECK_TIMEOUT_MS, env = process.env } = {}) {
+// graphicsMs: the graphics step's bound; onGraphics(measured): its measurement (graphicsCheck).
+export async function selfCheck(exec, { config = loadConfig(), log = () => {}, timeoutMs = CHECK_TIMEOUT_MS, graphicsMs = GRAPHICS_TIMEOUT_MS, onGraphics = () => {}, env = process.env } = {}) {
   ensureRuntime(log);
   const { chromium } = loadBrowserDriver(createRequire(join(paths.runtime, "package.json")), config, process.versions.node, patchrightNodeMinimum(paths.runtime));
   const browserDir = paths.browser;
@@ -143,7 +191,16 @@ export async function selfCheck(exec, { config = loadConfig(), log = () => {}, t
     return passed;
   })();
   try {
-    return await withTimeout(work, timeoutMs, `the check took longer than ${timeoutMs / 1000} s`);
+    const result = await withTimeout(work, timeoutMs, `the check took longer than ${timeoutMs / 1000} s`);
+    // On the check's own screen, which stays until the finally below.
+    log("measuring the new browser's graphics");
+    const launch = (directory) => {
+      prepareProfile(directory, undefined, { browserPages: ownPages, layout: config.layout });
+      const options = probeOptions(launchOptions(config, { shell, screen, env: { ...env, ...(screen?.env || {}) }, executablePath: exec, blankStart: true }));
+      return launchEngine(chromium, { ...engine, virtualDisplay: screen?.geometry ?? null }, directory, options, log, undefined, { server: serverMode(config, env) });
+    };
+    result.push(await graphicsCheck({ launch, build: nativeManifest(exec).version, pack: NATIVE.engine?.sha256 ?? null, display: screen ? "xvfb" : "native", scratch, log, onMeasured: onGraphics, timeoutMs: graphicsMs }));
+    return result;
   } finally {
     await ctx?.close().catch(() => {});
     await work.catch(() => {});

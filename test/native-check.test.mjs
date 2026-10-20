@@ -95,10 +95,98 @@ test("an engine pack file altered after install: refused by its pinned SHA-256",
 // The wiring (read from the source: the launch needs a real browser): the check launches on the
 // screen it started and sizes the window to it, as the helper does (browser.mjs launchOptions).
 test("the check's launch passes its screen to launchOptions", () => {
-  const src = readFileSync(join(root, "scripts", "native", "check.mjs"), "utf8");
+  const all = readFileSync(join(root, "scripts", "native", "check.mjs"), "utf8");
+  const src = all.slice(all.indexOf("export async function selfCheck("));
   const at = src.indexOf("launchOptions(config, {");
   assert.ok(at > 0, "check.mjs calls launchOptions(config, {...})");
   const call = src.slice(at, src.indexOf("\n", at));
   assert.match(call, /[{,]\s*screen\s*,/, "the window is sized to the virtual screen");
   assert.match(call, /env: \{ \.\.\.env, \.\.\.\(screen\?\.env \|\| \{\}\) \}/);
+});
+
+// The graphics step (spec server-mode E4; native/probe.mjs): after the checks above, on the same
+// screen, a probe browser started as the check's was, hidden on macOS, with the same sandbox rule;
+// its line names a software backend as such and never the GPU, and a probe that fails leaves the
+// step unverified rather than failing the install.
+test("self-check graphics step names a software backend as such", async () => {
+  const { graphicsStep } = await import("../scripts/native/probe.mjs");
+  const software = { backend: { kind: "software", renderer: "llvmpipe (LLVM 15.0.6 128 bits)" }, webgl: { available: true }, webgl2: { available: true }, webgpu: { available: false } };
+  assert.equal(graphicsStep(software), "graphics: software, WebGL 2, WebGPU unavailable");
+  const src = readFileSync(join(root, "scripts", "native", "check.mjs"), "utf8");
+  const run = src.slice(src.indexOf("const result = await withTimeout(work"));
+  assert.match(run, /probeOptions\(launchOptions\(config, \{ shell, screen, env: \{ \.\.\.env, \.\.\.\(screen\?\.env \|\| \{\}\) \}/, "launched as the check's, on its screen, hidden on macOS");
+  assert.match(run, /\{ server: serverMode\(config, env\) \}/, "the same sandbox rule");
+  assert.match(run, /display: screen \? "xvfb" : "native"/);
+  assert.ok(run.indexOf("graphicsCheck(") < run.indexOf("await screen?.stop()"), "the probe runs before the check's screen stops");
+});
+
+// graphicsCheck itself, with the real probeLaunch over a stand-in browser.
+const { graphicsCheck, GRAPHICS_TIMEOUT_MS, GRAPHICS_STOP_MS } = await import("../scripts/native/check.mjs");
+const { GRAPHICS } = await import("../scripts/native/graphics.mjs");
+
+// A stand-in probe browser: a launch sets the helper's state as a real one does; its tab's page
+// load never answers until the browser is closed (hang), or is refused at once (refuse).
+function probeBrowser({ hang = false, refuse = false } = {}) {
+  const seen = { starts: 0, closed: 0, open: 0 };
+  const launch = async () => {
+    seen.starts++;
+    seen.open++;
+    Object.assign(GRAPHICS, { kind: "probe", status: "probe" });
+    let shut = () => {};
+    const closed = new Promise((_, no) => { shut = () => no(new Error("Target closed")); });
+    closed.catch(() => {});
+    const tab = {
+      goto: async () => { if (refuse) throw new Error("net::ERR_CONNECTION_REFUSED"); if (hang) await closed; },
+      evaluate: async () => null,
+    };
+    return { pages: () => [tab], browser: () => null, close: async () => { seen.closed++; seen.open--; shut(); } };
+  };
+  return { launch, seen };
+}
+
+test("graphics step bounds: fits the launch path, under four minutes past the check in the worst case", () => {
+  assert.ok(GRAPHICS_TIMEOUT_MS <= 120_000, `${GRAPHICS_TIMEOUT_MS}`);
+  assert.ok(GRAPHICS_TIMEOUT_MS + GRAPHICS_STOP_MS < 240_000, `${GRAPHICS_TIMEOUT_MS + GRAPHICS_STOP_MS}`);
+});
+
+test("graphics step past its time: the probe is stopped, its browser closed and its state put back before the line, nothing after", async () => {
+  const scratch = mkdtempSync(join(home, "probe-scratch-"));
+  const live = { requested: GRAPHICS.requested, kind: "live", status: "live" };
+  Object.assign(GRAPHICS, live);
+  const sandbox = { on: true, reason: "live" };
+  const { launch, seen } = probeBrowser({ hang: true });
+  const measured = [], logged = [];
+  const line = await graphicsCheck({ launch, build: "150.0.0.1", platform: "linux", sandbox, scratch, log: (l) => logged.push(l), onMeasured: (m) => measured.push(m), timeoutMs: 300, stepMs: 60_000, launchMs: 5000, stopMs: 5000 });
+  assert.equal(line, "graphics: unverified (not measured: it took longer than 0.3 s)");
+  assert.deepEqual(measured, [], "no measurement kept");
+  assert.equal(seen.starts, 1, "no second start after the stop");
+  assert.equal(seen.open, 0, "the probe browser is closed when the step answers");
+  assert.equal(GRAPHICS.kind, "live", "the state put back before the step answered");
+  assert.deepEqual(readdirSync(scratch), [], "its folder removed");
+  // The live browser starts now and sets its own state: nothing of the probe's comes back later.
+  Object.assign(GRAPHICS, { kind: "next", status: "next" });
+  Object.assign(sandbox, { on: false, reason: "next" });
+  await new Promise((r) => setTimeout(r, 200));
+  assert.equal(GRAPHICS.kind, "next");
+  assert.deepEqual(sandbox, { on: false, reason: "next" });
+  assert.ok(logged.some((l) => /graphics not measured: it took longer/.test(l)));
+});
+
+test("graphics step whose probe fails: an unverified line naming why, no measurement, the browser closed", async () => {
+  const scratch = mkdtempSync(join(home, "probe-scratch-"));
+  const { launch, seen } = probeBrowser({ refuse: true });
+  const measured = [];
+  const line = await graphicsCheck({ launch, build: "150.0.0.1", platform: "linux", sandbox: { on: true }, scratch, onMeasured: (m) => measured.push(m), timeoutMs: 5000, stepMs: 1000, launchMs: 1000 });
+  assert.equal(line, "graphics: unverified (not measured: net::ERR_CONNECTION_REFUSED)");
+  assert.deepEqual(measured, []);
+  assert.equal(seen.open, 0);
+  assert.deepEqual(readdirSync(scratch), []);
+});
+
+test("graphics step off macOS and Linux: a clean line, no probe started", async () => {
+  let asked = 0;
+  const probe = async () => { asked++; throw new Error("never"); };
+  assert.equal(await graphicsCheck({ platform: "win32", probe, scratch: home }), "graphics: not measured on Windows");
+  assert.equal(await graphicsCheck({ platform: "freebsd", probe, scratch: home }), "graphics: not measured on freebsd");
+  assert.equal(asked, 0);
 });

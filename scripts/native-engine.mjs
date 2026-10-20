@@ -3,7 +3,6 @@
 // in config.json. Its path is fixed: the Pro repo's engine test reads the pack calls made here.
 import { existsSync, readFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { createServer } from "node:http";
 import { execFile } from "node:child_process";
 import { NATIVE } from "./native-pack.mjs";
 import { paths } from "./paths.mjs";
@@ -12,6 +11,7 @@ import { TYPING_PACE, clampPace } from "./native/humanize.mjs";
 import { switchName, withoutNoSandbox } from "./browser-args.mjs";
 import { PAIRBROWSE_ENGINE_KEYS } from "./config-schema.mjs";
 import { normalizeWebgpu, graphicsPlan, backendSwitches, GRAPHICS, SCREEN_KEYS, LEGACY_GPU_KEYS } from "./native/graphics.mjs";
+import { boundedStep, launchWithin, localSite } from "./native/probe.mjs";
 import { STRICT_WEBRTC } from "./net/config.mjs";
 import { ENGINE_KEYS as PROFILE_ENGINE_KEYS, PICKS_THIS_COMPUTER, THIS_COMPUTER_NOTE } from "./profiles/map.mjs";
 import { PERSONA_FILE, LEGACY_PERSONA } from "./sessions.mjs";
@@ -175,33 +175,25 @@ function webglRenderer(captured) {
 // sees the real GPU (the browser itself always runs seeded). It runs headless, so no window or
 // Dock icon appears: headless on macOS still renders WebGL and WebGPU with Metal on the real GPU,
 // and the real screen is passed in. null when nothing came back.
-// Each step is bounded (CAPTURE_STEP_MS): a capture that hangs fails the launch with its reason
-// instead of holding it forever.
+// Each step is bounded (CAPTURE_STEP_MS; the steps native/probe.mjs's graphics probe uses too): a
+// capture that hangs fails the launch with its reason instead of holding it forever.
 const CAPTURE_STEP_MS = 90_000;
 export async function captureMacHost(chromium, executablePath, pack, directory, screen, stepMs = CAPTURE_STEP_MS) {
-  let browser, server, captureDirectory;
+  let browser, site, captureDirectory;
   if (screen === undefined) screen = await macScreen();
-  const step = async (what, promise) => {
-    const done = await within(stepMs, promise.then((value) => ({ value })));
-    if (!done) throw new Error(`${what} took over ${stepMs / 1000} s`);
-    return done.value;
-  };
+  const step = boundedStep(stepMs);
   try {
     // The collector comes with the engine pack, checked against its pin when the pack is loaded.
     if (typeof pack.collector !== "string") throw new Error("the engine pack has no host collector");
     captureDirectory = mkdtempSync(join(directory, ".mac-host-capture-"));
-    const launching = Promise.resolve(chromium.launchPersistentContext(captureDirectory, { headless: true, viewport: null, executablePath, chromiumSandbox: true,
+    // A launch that comes back after its time is up is closed all the same (launchWithin).
+    browser = await launchWithin(stepMs, "the hidden browser's start", () => chromium.launchPersistentContext(captureDirectory, { headless: true, viewport: null, executablePath, chromiumSandbox: true,
       ignoreDefaultArgs: pack.DEFAULT_IGNORED_ARGS,
       args: ["--disable-extensions", "--disable-gpu-fingerprint", "--window-size=1200,960", ...(screen ? [screenInfoArg(screen)] : [])] }));
-    // A launch that comes back after its time is up is closed all the same.
-    let gaveUp = false;
-    launching.then((late) => { if (gaveUp) Promise.resolve(late?.close?.()).catch(() => {}); }, () => {});
-    try { browser = await step("the hidden browser's start", launching); } catch (error) { gaveUp = true; throw error; }
     const page = browser.pages?.()[0] ?? await step("the capture tab", Promise.resolve(browser.newPage()));
     if (page.goto) {
-      server = createServer((_, response) => response.end("<!doctype html><title>PairBrowse host capture</title>"));
-      await new Promise((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
-      await step("the capture page", page.goto(`http://127.0.0.1:${server.address().port}/`, { waitUntil: "domcontentloaded" }));
+      site = await localSite("PairBrowse host capture");
+      await step("the capture page", page.goto(site.origin, { waitUntil: "domcontentloaded" }));
     }
     // The engine pack's collector (SHA-256 checked before load), run in this throwaway local page.
     // eslint-disable-next-line no-eval
@@ -218,7 +210,7 @@ export async function captureMacHost(chromium, executablePath, pack, directory, 
     throw new Error(`PairBrowse macOS host capture failed: ${error.message}`, { cause: error });
   } finally {
     try { await within(10_000, Promise.resolve(browser?.close?.())); } catch {}
-    try { if (server) await new Promise((resolve) => server.close(() => resolve())); } catch {}
+    try { if (site) await within(5000, site.close()); } catch {}
     if (captureDirectory) rmSync(captureDirectory, { recursive: true, force: true });
   }
 }

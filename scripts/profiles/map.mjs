@@ -27,6 +27,11 @@ import { screenBrowserArgs, browserArgsOf, switchName, allowedBrowserArg } from 
 import { SETTINGS, DEFAULT_PROFILE, SCHEMA_VERSION, checkProfile, profileDefaults } from "./schema.mjs";
 import { item, languagesOf, reportable } from "./device.mjs";
 
+// D9: config.json's persona "auto" and "local" (once the engine pack's pick from a library or a
+// service) are read as this computer; the note the launch log and pairbrowse_status give.
+export const PICKS_THIS_COMPUTER = ["auto", "local"];
+export const THIS_COMPUTER_NOTE = "PairBrowse no longer picks another device's profile; graphics come from this computer";
+
 // Every switch the mapper can add, and every engine key it can set (D6); the fuzz test holds it to these.
 export const SWITCHES = Object.freeze(["lang", "window-size", "force-dark-mode", "force-prefers-reduced-motion", "disable-gpu"]);
 export const ENGINE_KEYS = Object.freeze(["acceptLanguage", "timezone", "screenWidth", "screenHeight", "availWidth", "availHeight", "colorDepth", "devicePixelRatio", "fingerprint"]);
@@ -171,9 +176,9 @@ export function readConfig(config = {}, { native = false, platform = process.pla
   // Persona (D9): "auto" and "local" are this computer; a saved persona's name is offered for
   // import (spec step 38) and read in place until then; the seed.
   let source = "seed", seed = null;
-  if (pb.profile === "auto" || pb.profile === "local") {
+  if (PICKS_THIS_COMPUTER.includes(pb.profile)) {
     source = platform === "darwin" ? "host" : "seed";
-    report("pairbrowse.profile", "derived", "D", "PairBrowse no longer picks another device's profile; graphics come from this computer (spec D9)");
+    report("pairbrowse.profile", "derived", "D", `${THIS_COMPUTER_NOTE} (spec D9)`);
   } else if (typeof pb.profile === "string" && pb.profile) {
     report("pairbrowse.profile", "not-applied", "C", "a saved persona: offered for import when profiles are set up, read in place until then", "warning");
   }

@@ -27,7 +27,7 @@
 // owner: the person's operations on the sessions page (profile-owner.mjs), never an agent's.
 import { readAssignment, readBinding, writeBinding, validName, assignedTo } from "../../sessions.mjs";
 import { createProfileStore } from "../../profiles/store.mjs";
-import { fromConfig, toLaunch, ENGINE_KEYS } from "../../profiles/map.mjs";
+import { fromConfig, toLaunch, ENGINE_KEYS, PICKS_THIS_COMPUTER, THIS_COMPUTER_NOTE } from "../../profiles/map.mjs";
 import { PROFILE_ID } from "../../profiles/schema.mjs";
 import { cliCommand } from "../../profiles/validate.mjs";
 import { takeIdentity } from "../../profiles/lock.mjs";
@@ -134,8 +134,11 @@ export function createProfiles(st, deps = {}) {
 
     const warnings = record.license === "unknown" ? [unknownLicense(record.name)] : [];
     for (const w of warnings) log(`launch: warning: ${w}`);
+    // D9: config.json's persona "auto" or "local" is this computer now: one note in the status
+    // while the config-backed default on the native build still says so (the launch logs it too).
+    const notes = native && record.kind === "config" && PICKS_THIS_COMPUTER.includes(config.pairbrowse?.profile) ? [`note: ${THIS_COMPUTER_NOTE} (pairbrowse.profile "${config.pairbrowse.profile}" in config.json)`] : [];
     log(`launch: ${who} on ${named}, revision ${record.revision}, ${status}${engine ? ` on ${engine.build}` : native ? "" : " (open build)"}`);
-    st.profile = { session, id: record.id, name: record.name, kind: record.kind, revision: record.revision, status, build: engine?.build || null, browserKind, warnings, identity };
+    st.profile = { session, id: record.id, name: record.name, kind: record.kind, revision: record.revision, status, build: engine?.build || null, browserKind, warnings, notes, identity };
     return {
       id: record.id, name: record.name, kind: record.kind, revision: record.revision, status, build: engine?.build || null,
       switches: mapped.switches, network: mapped.network, adBlocker: mapped.adBlocker, results: mapped.results, warnings,
@@ -150,14 +153,14 @@ export function createProfiles(st, deps = {}) {
     st.profile = null;
   }
 
-  // pairbrowse_status's part: "Profile: <name> (rev <n>, <status> on <build>)", its warnings, the
-  // migration's notes until dismissed, and a migration that failed.
+  // pairbrowse_status's part: "Profile: <name> (rev <n>, <status> on <build>)", its warnings and
+  // notes (D9's), the migration's notes until dismissed, and a migration that failed.
   function statusParts() {
     const p = st.profile;
     const out = [];
     if (p) {
       const on = p.build || (p.browserKind === "pairbrowse" ? "this build" : "the open build");
-      out.push(`Profile: ${p.name} (rev ${p.revision}, ${p.status} on ${on})`, ...p.warnings.map((w) => `warning: ${w}`));
+      out.push(`Profile: ${p.name} (rev ${p.revision}, ${p.status} on ${on})`, ...p.warnings.map((w) => `warning: ${w}`), ...(p.notes || []));
     }
     if (migration?.problem) out.push(`warning: ${migration.problem}`);
     else if (migration?.done && !profileStore) { const note = migrationNote(readMigration()); if (note) out.push(note); }

@@ -378,7 +378,11 @@ user's file, readable by others), the section says why and refuses a username or
   `offline`, `maxEncodedSize` and `quiet` are read, and `python`, `converter`, `apiBase`,
   `licenseKey`, `localDir`, `autoDownload` and `autoDownloadCount` are refused by name (PairBrowse
   never runs a program, asks a service or fetches files to pick a persona); any other key there is
-  named as unknown. Then the engine's
+  named as unknown. Nothing reads it any more: `profile` `"auto"` and `"local"`, which once had the
+  engine pack pick another device's persona from a library or a service, now mean this computer
+  (on a Mac its own captured values, elsewhere the seed persona), with one note in the helper log
+  and `pairbrowse_status` ("PairBrowse no longer picks another device's profile; graphics come
+  from this computer"); `profile` set to a saved persona's name still reads it. Then the engine's
   fingerprint options (`fingerprint`, `fingerprintProfile`, `timezone`, `acceptLanguage`,
   `platform`, the GPU, screen and hardware values; the full list is `PAIRBROWSE_ENGINE_KEYS` in
   `scripts/config-schema.mjs`). Any other key there, such as `extensions`, a proxy, launch options or

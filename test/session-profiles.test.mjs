@@ -12,7 +12,7 @@ import { join, dirname } from "node:path";
 import { EventEmitter } from "node:events";
 import { createProfiles, unknownLicense } from "../scripts/daemon/sessions/profiles.mjs";
 import { createProfileStore } from "../scripts/profiles/store.mjs";
-import { fromConfig } from "../scripts/profiles/map.mjs";
+import { fromConfig, THIS_COMPUTER_NOTE } from "../scripts/profiles/map.mjs";
 import { createSession, assignProfile, assignmentFile, bindingFile, readBinding, personaFile, LEGACY_PERSONA, profileDir } from "../scripts/sessions.mjs";
 import { createContext } from "../scripts/daemon/context.mjs";
 import { validateProfile, cliCommand, CLI } from "../scripts/profiles/validate.mjs";
@@ -235,6 +235,29 @@ test("a profile imported with license \"unknown\" warns at every launch", () => 
   assert.deepEqual(profiles.statusParts(), [`Profile: found (rev 1, unverified on ${BUILD})`, `warning: ${unknownLicense("found")}`]);
   profiles.forLaunch(name, NATIVE);
   assert.equal(lines.filter((l) => l === `launch: warning: ${unknownLicense("found")}`).length, 2);
+});
+
+// D9: config.json's persona "auto" or "local" is this computer; the default's status says so once,
+// on the native build only (the open build never read the pairbrowse block), and a store profile's
+// doesn't (it takes none of config.json's persona settings).
+test("persona auto or local on the default: one status note", () => {
+  const store = newStore();
+  store.create(BERLIN);
+  for (const selection of ["auto", "local"]) {
+    const config = { browser: "pairbrowse", pairbrowse: { profile: selection } };
+    const name = session(`sp-d9-${selection}`);
+    const { profiles } = parts(store, config);
+    profiles.forLaunch(name, NATIVE);
+    const note = `note: ${THIS_COMPUTER_NOTE} (pairbrowse.profile "${selection}" in config.json)`;
+    assert.deepEqual(profiles.statusParts().filter((p) => p.includes(THIS_COMPUTER_NOTE)), [note], selection);
+    const open = parts(store, { browser: "pairbrowse-open", pairbrowse: { profile: selection } }).profiles;
+    open.forLaunch(session(`sp-d9-open-${selection}`), OPEN);
+    assert.equal(open.statusParts().some((p) => p.includes(THIS_COMPUTER_NOTE)), false, `${selection}: not on the open build`);
+    const other = session(`sp-d9-store-${selection}`);
+    assignProfile(other, "berlin", { store });
+    profiles.forLaunch(other, NATIVE);
+    assert.equal(profiles.statusParts().some((p) => p.includes(THIS_COMPUTER_NOTE)), false, `${selection}: not for a store profile`);
+  }
 });
 
 test("a binding that can't be written refuses the first start and gives the identity lock back", { skip: process.platform === "win32" || process.getuid?.() === 0 }, () => {

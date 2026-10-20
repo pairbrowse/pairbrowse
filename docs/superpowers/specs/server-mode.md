@@ -1265,6 +1265,14 @@ it depends on.
    `helperEnv` drops every `PAIRBROWSE_ENGINE_*` (any case) it would pass on; the helper sets its own
    folders (step 38's `applyEngineEnv`). The "F3 today" test became "helperEnv drops inherited
    PAIRBROWSE_ENGINE_*"; "profileSelect is closed" is in `test/profile-schema.test.mjs`.
+   D9: `native-engine.mjs` `readSettings` reads `pairbrowse.profile` `"auto"` and `"local"` as no
+   persona pick (`map.mjs` `PICKS_THIS_COMPUTER`), so the launch takes the path of a config without
+   one: the macOS host capture, else the seed persona (real graphics on Linux come with step 41);
+   `measureHost`, `resolveAuto` and `resolveLocal` are gone from the helper, and `profileSelect` is
+   read by nothing. The note (`map.mjs` `THIS_COMPUTER_NOTE`) is one launch log line and, for the
+   config-backed default on the native build, a `note:` part of `profiles.mjs` `statusParts`. Tests:
+   "auto never calls resolveAuto" (`test/native-engine.test.mjs`, whose recording pack now fails a
+   launch that calls any of the three), `test/session-profiles.test.mjs`.
 13. Close F1: filtered layers; `proxy` refusal shared with C10 (D7). -> 11
 14. `daemon/audit.mjs`, `paths.audit` (B17).
    Landed as: `createAudit({ file, now, log, maxBytes, channels })` returns `{ append(entry), file }`;

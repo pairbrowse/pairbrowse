@@ -13,7 +13,7 @@ import { switchName, withoutNoSandbox } from "./browser-args.mjs";
 import { PAIRBROWSE_ENGINE_KEYS } from "./config-schema.mjs";
 import { normalizeWebgpu } from "./native/graphics.mjs";
 import { STRICT_WEBRTC } from "./net/config.mjs";
-import { ENGINE_KEYS as PROFILE_ENGINE_KEYS } from "./profiles/map.mjs";
+import { ENGINE_KEYS as PROFILE_ENGINE_KEYS, PICKS_THIS_COMPUTER, THIS_COMPUTER_NOTE } from "./profiles/map.mjs";
 import { PERSONA_FILE, LEGACY_PERSONA } from "./sessions.mjs";
 
 // Humanized typing and form fills live in native/humanize.mjs; re-exported for older importers.
@@ -297,8 +297,10 @@ function readSettings(config, pack, personaPath) {
   // "combined" (the same shape at the profile's own slower speed, tremor and habits: for a more
   // careful hand) or "classic" (the engine's own). Every click still lands exactly on its point.
   // An engine pack without "combined" uses its own. formMove is PairBrowse's own (fillSettings), not the engine's.
-  const { profile: selection, profileSelect = {}, humanize = true, showCursor = false, geoip = false, typingPace = TYPING_PACE, motion: motionSetting = "fast", formMove, ...given } = config.pairbrowse ?? {};
-  void formMove;
+  const { profile: selection, profileSelect, humanize = true, showCursor = false, geoip = false, typingPace = TYPING_PACE, motion: motionSetting = "fast", formMove, ...given } = config.pairbrowse ?? {};
+  // profileSelect only steered the engine pack's persona pick, which PairBrowse no longer asks
+  // for (D9 below; config-schema.mjs PROFILE_SELECT keeps it closed, D8).
+  void formMove, profileSelect;
   // Only the engine's fingerprint options pass (config-schema.mjs PAIRBROWSE_ENGINE_KEYS): never an
   // unpacked extension, a proxy, launch options or switches from config.json, which would go
   // around the browserArgs screen. An option this engine can't honour still stops the launch below.
@@ -310,8 +312,11 @@ function readSettings(config, pack, personaPath) {
   const ignored = Object.keys(given).filter((k) => !PAIRBROWSE_ENGINE_KEYS.includes(k) && !UNSUPPORTED.includes(k));
   const motion = ["classic", "combined", "quick"].includes(motionSetting) ? motionSetting : "fast";
   if (given.canvasBridge !== undefined) throw new Error(canvasBridgeRefusal("config.json's pairbrowse block"));
-  const picked = store ? undefined : selection;
-  const saved = withFlatWebgpu(picked && !["auto", "local"].includes(picked) ? pack.resolveProfileOptions(picked) : {});
+  // D9: "auto" and "local" are this computer (the macOS host capture, else the seed persona);
+  // PairBrowse never has the engine pack pick another device's persona from a library or a service.
+  const thisComputer = !store && PICKS_THIS_COMPUTER.includes(selection);
+  const picked = store || thisComputer ? undefined : selection;
+  const saved = withFlatWebgpu(picked ? pack.resolveProfileOptions(picked) : {});
   if (saved?.canvasBridge !== undefined) throw new Error(canvasBridgeRefusal("The saved profile (pairbrowse.profile)"));
   if (saved?.proxy !== undefined) throw new Error(personaProxyRefusal("The saved profile (pairbrowse.profile)"));
   const kept = existsSync(personaPath) ? pack.Profile.load(personaPath) : null;
@@ -325,30 +330,19 @@ function readSettings(config, pack, personaPath) {
   for (const key of UNSUPPORTED) {
     if ([persisted, saved, given].some((layer) => layer[key] !== undefined)) throw new Error(`PairBrowse native does not support pairbrowse.${key} on this engine.`);
   }
-  return { selection: picked, profileSelect: store ? {} : profileSelect, humanize, showCursor, geoip: store ? !!chosen.geoip : chosen?.kind === "config" ? !!(geoip || chosen.geoip) : geoip, typingPace: clampPace(typingPace), motion, overrides, saved, persisted, ignored, bridgeDropped, personaName: chosen?.id ?? LEGACY_PERSONA };
+  return { thisComputer, humanize, showCursor, geoip: store ? !!chosen.geoip : chosen?.kind === "config" ? !!(geoip || chosen.geoip) : geoip, typingPace: clampPace(typingPace), motion, overrides, saved, persisted, ignored, bridgeDropped, personaName: chosen?.id ?? LEGACY_PERSONA };
 }
 
-// The fingerprint to launch with: the layered settings, then a persona (picked, or this Mac's own
-// captured once per Mac), the seed, and the region (geoip, else this computer's time zone and language).
+// The fingerprint to launch with: the layered settings, then a persona (this Mac's own, captured
+// once per Mac, when no layer names one), the seed, and the region (geoip, else this computer's
+// time zone and language).
 async function resolveFingerprint(chromium, options, pack, directory, settings, version, log = () => {}) {
-  const { selection, profileSelect, geoip, overrides, saved, persisted } = settings;
+  const { geoip, overrides, saved, persisted } = settings;
   const { fingerprint, rest } = pack.splitFingerprintOptions({ ...persisted, ...saved, ...overrides });
   if (fingerprint.fingerprint === "off") throw new Error(`Fingerprint passthrough needs a newer PairBrowse engine; engine version ${ENGINE_MAJOR} treats off as a seed.`);
   fingerprint.platform ??= PLATFORM;
   fingerprint.brandVersion ??= version;
-  const picksPersona = selection === "auto" || selection === "local";
-  let source = null;
   const steps = [];
-  if (picksPersona) {
-    const measureAt = Date.now();
-    const host = await pack.measureHost((probe) => chromium.launch({ ...probe, ...(options.chromiumSandbox === false ? {} : { args: withoutNoSandbox(probe?.args) }), executablePath: options.executablePath, chromiumSandbox: options.chromiumSandbox !== false, ignoreDefaultArgs: pack.DEFAULT_IGNORED_ARGS }),
-      options.executablePath, Number(ENGINE_MAJOR));
-    const resolved = selection === "local" ? pack.resolveLocal(host, profileSelect) : await pack.resolveAuto(host, profileSelect);
-    // An imported persona (the engine pack's index, or this host's) is one more layer.
-    fingerprint.fingerprintProfile = flatWebgpuProfile(resolved.profile);
-    source = resolved.source;
-    steps.push(`measure ${Date.now() - measureAt} ms`);
-  }
   let hostCapture = false;
   if (fingerprint.fingerprintProfile === undefined) {
     fingerprint.fingerprint ??= sha256(directory);
@@ -362,7 +356,7 @@ async function resolveFingerprint(chromium, options, pack, directory, settings, 
   }
   if (fingerprint.fingerprintProfile !== undefined) {
     // A seed carried over from before must not farble a newly chosen profile.
-    const newProfile = picksPersona || saved.fingerprintProfile !== undefined || overrides.fingerprintProfile !== undefined;
+    const newProfile = saved.fingerprintProfile !== undefined || overrides.fingerprintProfile !== undefined;
     const keptSeed = persisted.fingerprint !== undefined && !newProfile;
     if (!hostCapture && !keptSeed && overrides.fingerprint === undefined && saved.fingerprint === undefined) delete fingerprint.fingerprint;
   }
@@ -374,7 +368,7 @@ async function resolveFingerprint(chromium, options, pack, directory, settings, 
   }
   fingerprint.timezone ??= Intl.DateTimeFormat().resolvedOptions().timeZone;
   fingerprint.acceptLanguage ??= Intl.DateTimeFormat().resolvedOptions().locale;
-  return { fingerprint, rest, source, steps };
+  return { fingerprint, rest, steps };
 }
 
 // Only the fingerprint is kept with the profile: never proxy credentials, agent keys or a canvas
@@ -412,12 +406,12 @@ export async function launchNative(chromium, config, directory, options, pack, l
   const personaPath = join(directory, PERSONA_FILE);
   const settings = readSettings(config, pack, personaPath);
   if (settings.bridgeDropped) log(CANVAS_BRIDGE_DROPPED);
+  if (settings.thisComputer) log(`launch: pairbrowse.profile "${config.pairbrowse.profile}": ${THIS_COMPUTER_NOTE}`);
   if (settings.ignored.length) log(`launch: ${settings.ignored.map((k) => `pairbrowse.${k}`).join(", ")} in config.json not used (PairBrowse passes on only its own settings and the engine's fingerprint options; see docs/configuration.md)`);
   const fingerprintAt = Date.now();
-  const { fingerprint, rest, source, steps } = await resolveFingerprint(chromium, options, pack, directory, settings, metadata.version, log);
+  const { fingerprint, rest, steps } = await resolveFingerprint(chromium, options, pack, directory, settings, metadata.version, log);
   // Each launch step's time (plans/555 item 4): what a slow first launch spent where.
   log(`launch: fingerprint ${Date.now() - fingerprintAt} ms${steps.length ? ` (${steps.join(", ")})` : ""}`);
-  if (source) log(`PairBrowse persona selected from ${source}.`);
   savePersona(pack, personaPath, fingerprint, settings.geoip, settings.personaName);
 
   const { portableProfile, encryptionKey, extensions, disablePrivacySandbox = true, ...personaRest } = rest;

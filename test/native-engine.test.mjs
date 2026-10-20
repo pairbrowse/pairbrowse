@@ -7,6 +7,8 @@ import { join } from "node:path";
 import { launchNative, DRIVER_BLINK_SWITCH, DRIVER_BACKGROUND_SWITCH, nativeManifest, declaresOwnPages, macHostProfile, captureMacHost, MEASURING, hostCachePath, screenInfoArg, CANVAS_BRIDGE_DROPPED, isCanvasBridgeSwitch, personaProxyRefusal, PROXY_CREDENTIALS_REFUSAL, proxyCredentials, withoutAddresses, proxyAuthFile, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE, flatWebgpuProfile, personaBindingRefusal } from "../scripts/native-engine.mjs";
 import { loadEngine } from "../scripts/native/pack.mjs";
 import { normalizeWebgpu } from "../scripts/native/graphics.mjs";
+import { THIS_COMPUTER_NOTE } from "../scripts/profiles/map.mjs";
+import { sha256 } from "../scripts/util.mjs";
 import { STRICT_WEBRTC, resolverRule } from "../scripts/net/config.mjs";
 
 // The Mac host profile is cached in the PairBrowse home: keep tests away from the real one.
@@ -811,7 +813,7 @@ test("a cached Mac host profile with nested WebGPU comes back flat without a new
 });
 
 // Just enough of the engine pack for launchNative: it records the fingerprint the engine is given.
-function recordingPack({ saved = {}, imported } = {}) {
+function recordingPack({ saved = {} } = {}) {
   class Profile {
     constructor(name, options) { this.name = name; this.options = options; }
     save(path) { writeFileSync(path, JSON.stringify({ name: this.name, options: this.options })); }
@@ -825,9 +827,10 @@ function recordingPack({ saved = {}, imported } = {}) {
       const { fingerprintProfile, fingerprint, timezone, acceptLanguage, platform, brandVersion, ...rest } = options;
       return { fingerprint: Object.fromEntries(Object.entries({ fingerprintProfile, fingerprint, timezone, acceptLanguage, platform, brandVersion }).filter(([, v]) => v !== undefined)), rest };
     },
-    measureHost: async () => ({}),
-    resolveAuto: async () => ({ profile: structuredClone(imported), source: "test index" }),
-    resolveLocal: () => ({ profile: structuredClone(imported), source: "test host" }),
+    // D9: never called; a call fails the launch it came from.
+    measureHost: async () => { throw new Error("measureHost called"); },
+    resolveAuto: async () => { throw new Error("resolveAuto called"); },
+    resolveLocal: () => { throw new Error("resolveLocal called"); },
     splitAgentOptions: (options) => ({ agent: {}, rest: options }),
     resolveProxy: (proxy) => ({ args: [], proxy }),
     engineSupportsSwitch: () => false,
@@ -840,7 +843,7 @@ function recordingPack({ saved = {}, imported } = {}) {
   };
 }
 
-test("nested WebGPU is flattened on every layer: config, saved, persisted and imported", async () => {
+test("nested WebGPU is flattened on every layer: config, saved and persisted", async () => {
   const app = appFixture();
   const launch = async (config, pack, directory = mkdtempSync(join(tmpdir(), "pairbrowse-webgpu-layer-"))) => {
     await launchNative(fakeBrowserType(), config, directory, { executablePath: app.executablePath, headless: false }, pack);
@@ -864,11 +867,6 @@ test("nested WebGPU is flattened on every layer: config, saved, persisted and im
   const persisted = await launch({ pairbrowse: {} }, recordingPack(), directory);
   assert.deepEqual(persisted.engine.webgpu, FLAT_WEBGPU, "the persisted persona");
 
-  for (const selection of ["auto", "local"]) {
-    const imported = await launch({ pairbrowse: { profile: selection } }, recordingPack({ imported: nestedProfile() }));
-    assert.deepEqual(imported.engine.webgpu, FLAT_WEBGPU, `an imported persona (${selection})`);
-  }
-
   const unreadable = await launch({ pairbrowse: { fingerprint: "seed", fingerprintProfile: file.replace("profile.json", "missing.json") } }, recordingPack());
   assert.equal(unreadable.engine, file.replace("profile.json", "missing.json"), "a path that isn't readable passes on as it was");
 });
@@ -876,6 +874,45 @@ test("nested WebGPU is flattened on every layer: config, saved, persisted and im
 // Today's behavior, pinned before spec D7, D12 change it (F1, F4, F7). Each test names the decision
 // that turns it around; until then a change here is a change in what reaches the engine.
 const PINNED_PROFILE = () => ({ navigator: { languages: ["en-US"] } });
+
+// Spec D9 (F5): config.json's persona "auto" and "local" once had the engine pack measure this
+// computer and pick another device's persona from a library or a service (whose address the build
+// rewrites to .invalid). Now both are this computer: the macOS host capture, else the seed persona;
+// the pack's measureHost, resolveAuto and resolveLocal are never called, no probe browser starts,
+// and the launch says so in one log line.
+test("auto never calls resolveAuto", async () => {
+  const app = appFixture();
+  for (const selection of ["auto", "local"]) {
+    const pack = Object.assign(recordingPack(), { collector: "" });
+    const calls = [];
+    for (const name of ["measureHost", "resolveAuto", "resolveLocal"]) pack[name] = () => { calls.push(name); throw new Error(`${name} called`); };
+    const chromium = fakeBrowserType();
+    let probes = 0;
+    chromium.launch = async () => { probes++; return { close() {} }; };
+    const directory = mkdtempSync(join(tmpdir(), `pairbrowse-d9-${selection}-`));
+    const lines = [];
+    await launchNative(chromium, { pairbrowse: { profile: selection, profileSelect: { mode: "best" } } }, directory, { executablePath: app.executablePath, headless: false }, pack, (l) => lines.push(l));
+    assert.deepEqual(calls, [], `${selection}: the engine pack picks nothing`);
+    assert.equal(probes, 0, `${selection}: no probe browser`);
+    assert.equal(chromium.calls.length, 1, `${selection}: the browser starts`);
+    assert.ok(lines.includes(`launch: pairbrowse.profile "${selection}": ${THIS_COMPUTER_NOTE}`), `${selection}: one note: ${JSON.stringify(lines)}`);
+    assert.equal(lines.filter((l) => l.includes(THIS_COMPUTER_NOTE)).length, 1);
+    assert.ok(!lines.some((l) => /persona selected from/.test(l)), `${selection}: no persona picked`);
+    const given = pack.given[0];
+    if (process.platform === "darwin") assert.ok(given.fingerprintProfile && typeof given.fingerprintProfile === "object", `${selection}: this Mac's own capture`);
+    else {
+      assert.equal(given.fingerprintProfile, undefined, `${selection}: the seed persona, no other device's profile`);
+      assert.equal(given.fingerprint, sha256(directory), `${selection}: the session's own seed`);
+    }
+  }
+  // A saved persona named in config.json is still read in place (it is offered for import).
+  const named = recordingPack({ saved: { fingerprint: "seed", fingerprintProfile: PINNED_PROFILE() } });
+  const lines = [];
+  await launchNative(fakeBrowserType(), { pairbrowse: { profile: "mine" } }, mkdtempSync(join(tmpdir(), "pairbrowse-d9-named-")), { executablePath: app.executablePath, headless: false }, named, (l) => lines.push(l));
+  assert.deepEqual(named.given[0].fingerprintProfile, PINNED_PROFILE());
+  assert.ok(!lines.some((l) => l.includes(THIS_COMPUTER_NOTE)));
+});
+
 
 // F1 (D7 closes it): config.json passes only the engine's fingerprint options, but a saved profile's
 // and the persisted persona's other options reach the launch as they are. The sandbox and the

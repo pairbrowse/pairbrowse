@@ -48,6 +48,9 @@
 // refused with the U4 sentence; the username and password only mark it saved, never kept) and push
 // a `network` event; test answers the `networkTest` fixture. The real checks are tested in
 // test/liveview-network-routes.test.mjs.
+// GET profiles.json (spec server-mode step 38): the `profiles` fixture, { profiles, sessions,
+// current } (unset or null: 404, a helper without browser profiles); POST profiles is recorded and
+// answered from replies. The real routes are tested in test/session-route.test.mjs.
 // POST capture/reply (the capture page's answers and hellos, plans/550 D4): recorded, 204, the
 // body up to the helper lane's 2 MB; the test pushes `capture` events itself.
 // GET activity.json?before=<t>&limit=<n> (the helper lane's daemon/activitylog.mjs): the session's
@@ -364,10 +367,10 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
     "joins.json": () => fx.joins, "tabs.json": () => fx.tabs, "agent-tabs.json": () => fx.agentTabs, "timeline.json": () => fx.timeline, "layout.json": () => fx.layout,
     "approvals.json": () => fx.approvals, "config.json": () => fx.config, "outline.json": () => fx.outline,
     "handoffs.json": () => fx.handoffs, "downloads.json": () => fx.downloads, "recordings.json": () => fx.recordings, "diagnostics.json": () => fx.diagnostics,
-    "invites.json": () => fx.invites, "network.json": () => fx.network,
+    "invites.json": () => fx.invites, "network.json": () => fx.network, "profiles.json": () => fx.profiles ?? null,
   };
   const POSTS = new Set(["approve", "dev", "joinhost", "profile", "invite", "pick", "picker", "input", "tab", "record", "pause", "layout", "timeline", "session",
-    "handoffs", "downloads", "recordings", "diagnostics", "tab-order", "config", "report", "capture", "network"]);
+    "handoffs", "downloads", "recordings", "diagnostics", "tab-order", "config", "report", "capture", "network", "profiles"]);
   const hasItem = (name, id) => Array.isArray(fx[name]?.items) && fx[name].items.some((it) => it && String(it.id) === id);
 
   // The answer to a POST without a reply of the test's own.

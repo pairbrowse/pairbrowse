@@ -456,11 +456,11 @@ const sharing = createSharing({
     get timeline() { return timeline; },
     // The Page tab's outline (owner only); declared further down too.
     get outlines() { return outlines; },
-    // The session card (owner only): rename and Save, and whether each is possible now. Rename
-    // restarts the browser on the renamed session (a saved one that isn't open: no restart); Save writes its tabs now (tabs.mjs saveNow,
-    // the write a person's session switch makes; run_save is the agent's tool and would merge
-    // its goal log) and brings the goal log's pending write forward.
+    // The session card (owner only): rename and Save, and whether each is possible now. Rename restarts the browser on
+    // the renamed session (a saved one that isn't open: no restart); Save writes its tabs now (tabs.mjs saveNow, as a
+    // person's session switch does; run_save is the agent's and would merge its goal log) and brings the log's write forward.
     sessionOps: {
+      profiles: context.profileOps, // the sessions page's browser profiles (owner only, routes/profiles.mjs)
       state: () => { const name = context.sessionName(); return { canRename: name !== "default" && !isTemporary(name) && !follow.joined(), canSave: !isTemporary(name), savedAt: journal.savedAt(), canRenameSaved: true }; },
       // from: a saved session that isn't open (the sessions page): renamed in place, nothing restarts.
       current: () => context.sessionName(),

@@ -88,7 +88,7 @@ mockup is read in place and never committed.
 |--------|-----------|--------|
 | `test/*.test.mjs` | Unit tests. Some still start a browser for a few cases, gated by `PAIRBROWSE_TEST_RUNTIME` (`hud`, `enter`, `ui-*` and others) | `npm run test:unit` |
 | `test/integration/` | A real helper (`scripts/daemon.mjs`) and browser per file, two or three for joining; every test skips without `PAIRBROWSE_TEST_RUNTIME` | `npm run test:live` |
-| `test/optin/` | Tests behind a switch of their own, never run by `npm test`: `failover` (`PAIRBROWSE_TEST_REAL_TUNNEL=1`), `ntfy` (`PAIRBROWSE_TEST_NTFY=1`: hand-off messages published to a random ntfy.sh topic and read back), `native-join` (a native build), `two-machines` (`PAIRBROWSE_TEST_DOCKER=1`; its two sides in `test/optin/two-machines/`) | `npm run test:optin` |
+| `test/optin/` | Tests behind a switch of their own, never run by `npm test`: `failover` (`PAIRBROWSE_TEST_REAL_TUNNEL=1`), `ntfy` (`PAIRBROWSE_TEST_NTFY=1`: hand-off messages published to a random ntfy.sh topic and read back), `native-join` (a native build), `profiles-native` (a native build: a browser profile's time zone, languages, screen and pixel ratio as pages read them, a pinned seed's values in two fresh sessions and its refusal in a second instance), `two-machines` (`PAIRBROWSE_TEST_DOCKER=1`; its two sides in `test/optin/two-machines/`) | `npm run test:optin` |
 | `test/fuzz/*.test.js` | Property-based fuzzing of the security checks | `npm run test:fuzz` |
 | `test/helpers/` | Not tests: `home.mjs` (every test file imports it first: a home of its own under the temp folder), `util.mjs` (`sleep`, `until`, `text`, `rpc`), `daemon.mjs` (`helperHome`, `spawnDaemon`, `startHelper`, `stopDaemon`), `live.mjs` (`testBase`, `attachDaemon`, `session`, `patchright`), `live-helper.mjs`, and the pages' harness | |
 
@@ -123,8 +123,8 @@ is under the temp folder with a linked runtime), so none reaches an installed he
 | Switch | Kind | Who sets it | What it does |
 |--------|------|-------------|--------------|
 | `RUNTIME` | gate | you: `~/.pairbrowse/runtime` | The pinned runtime; every live test (integration, the live cases in unit files, the pages' harness) skips without it |
-| `ENGINE` | gate | you: `~/.pairbrowse/engine` | The engine pack, for the native launch tests in `native-engine` and for `optin/native-join` |
-| `EXECUTABLE` | gate | you: a browser binary | Runs the browsers of `connections`, `shared-mode`, `shared-restart`, `record` and `optin/failover` on another build (the PairBrowse browser); `optin/native-join` needs a native build here |
+| `ENGINE` | gate | you: `~/.pairbrowse/engine` | The engine pack, for the native launch tests in `native-engine` and for `optin/native-join` and `optin/profiles-native` |
+| `EXECUTABLE` | gate | you: a browser binary | Runs the browsers of `connections`, `shared-mode`, `shared-restart`, `record` and `optin/failover` on another build (the PairBrowse browser); `optin/native-join` and `optin/profiles-native` need a native build here |
 | `JOINER_EXECUTABLE` | gate | you: a browser binary | The joiner's browser in `shared-mode` and `record` |
 | `NATIVE` | gate | you: the PairBrowse browser | Also runs `draw` and a `picker` case on the native build |
 | `REAL_TUNNEL` | gate | you: `1` | Real Cloudflare Quick Tunnels: `optin/failover` and one `shared-mode` case |
@@ -180,6 +180,9 @@ picks who the helper is or relaxes a check is removed when one of those files na
 | `PAIRBROWSE_TRACE` | helper | yes | `1`: each result's phases and their time in the helper's log (no page content) |
 | `PAIRBROWSE_LATENCY_LOG` | helper | yes | `1`: joiner stream timings in the log |
 | `PAIRBROWSE_TEST_*` | helper | no: removed | The test switches above; only a helper the test harness started keeps them |
+| `PAIRBROWSE_ENGINE_PROFILE_DIR` | the engine pack, set by the helper (`profiles/migrate.mjs`) | no: the helper sets its own | Where the engine pack keeps its personas: `engine-profiles/profiles` in the home, once the home is moved to browser profiles (spec server-mode D4); an inherited value is replaced |
+| `PAIRBROWSE_ENGINE_PROFILE_SOURCE` | the engine pack, set by the helper | no: the helper sets its own | The folder the pack imports personas from: `engine-profiles/source`, empty and owner-only, so nothing from elsewhere is read |
+| `PAIRBROWSE_ENGINE_CACHE` | the engine pack, set by the helper | no: the helper sets its own | The pack's cache (its GeoIP database): `engine-profiles/cache` in the home |
 
 Not ours but read: `CLAUDE_PROJECT_DIR` (the project folder, for the hooks and the bridge alike: `projectDir` in `scripts/home.mjs`; `.mcp.json` passes it to the MCP servers), `CLAUDE_CODE_REMOTE` and
 `CLAUDE_CODE_ENTRYPOINT` (which surface, for wording and the session picker), `SSH_CONNECTION`

@@ -73,6 +73,18 @@ input:focus-visible { outline-offset: 1px; }
 .ask .agents { font-size: var(--fs-2); color: var(--ink-2); }
 .ask .buttons { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 
+/* Browser profiles: the list's rows without an avatar column's content, the assign line, import. */
+.profiles[hidden] { display: none; }
+.hint { margin: 0 0 var(--sp-2); color: var(--ink-2); font-size: var(--fs-2); }
+.assign { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-2) 0; }
+.assign[hidden] { display: none; }
+.assign select { flex: 1 1 140px; }
+select { min-width: 0; height: var(--ctl); padding: 0 var(--sp-2); border-radius: var(--r-2); border: 1px solid var(--edge-input); background: var(--bg); color: inherit; font: var(--fs-3) var(--sans); }
+select:focus { border-color: var(--accent); outline: none; }
+#import-form { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-3) 0 var(--sp-2) 36px; }
+#import-form input { flex: 1 1 180px; }
+#import-form input[type="file"] { padding-top: var(--sp-1); }
+
 .msg { margin: var(--sp-3) 0 0; color: var(--muted); }
 .msg:empty { display: none; }
 .msg[data-kind="error"] { color: var(--bad); }
@@ -83,7 +95,7 @@ body[data-s="picking"] .saved, body[data-s="picking"] .new { opacity: 0.55; poin
 body[data-s="connecting"] .msg:empty { display: block; }
 body[data-s="connecting"] .msg:empty::before { content: "Connecting to PairBrowse…"; }
 /* No helper: the resting line says it; nothing to list or start. */
-body[data-s="none"] .saved, body[data-s="none"] .new { display: none; }
+body[data-s="none"] .saved, body[data-s="none"] .new, body[data-s="none"] .profiles { display: none; }
 
 @media (max-width: 520px) {
   .list li { grid-template-columns: 24px minmax(0, 1fr); }

@@ -438,6 +438,38 @@ export function createProfileStore({ dir = paths.browserProfiles, now = Date.now
       });
     },
 
+    // The person's check of a profile on another build (D10, spec step 38: cli.mjs validate, the
+    // sessions page): engine, the { major, build } it is held to from now, replaces the one it was
+    // made on, and entry ({ status: "unverified", at, pack, items }) becomes validation[build] unless
+    // that build has measured evidence (validated or failed), kept as it is. Evidence, not settings:
+    // no new revision, but a history entry at the current revision naming "engine", by the person
+    // (by "config": a launch holding the config-backed default to a new major, daemon/sessions/
+    // profiles.mjs). A record of an older schema is refused (it is upgraded at its next change
+    // first). Returns the record as written (the config-backed one's stored part).
+    repin(id, { engine, build, entry, by = "person" }) {
+      if (!plainObject(engine) || typeof engine.major !== "string" || typeof engine.build !== "string") throw fail("PROFILE_INVALID", "A profile is held to an engine { major, build }.");
+      if (by !== "person" && by !== "config") throw fail("PROFILE_INVALID", "A profile's engine is changed by the person, or by config for the config-backed default.");
+      return locked(() => {
+        const read = readRaw(id);
+        if (!read) throw fail("PROFILE_UNKNOWN", `There is no browser profile "${shown(id)}".`);
+        if (!plainObject(read.raw) || read.raw.schema !== SCHEMA_VERSION) throw fail("PROFILE_INVALID", `Browser profile ${id} has an older record; change any setting first so it is written in this version's form.`);
+        const r = load(id);
+        const before = r.kind === "config" ? r.stub : r.profile;
+        const next = structuredClone(before);
+        next.engine = { major: engine.major, build: engine.build };
+        const prior = before.validation?.[build];
+        if (entry && typeof build === "string" && !(prior && prior.status !== "unverified")) next.validation = { ...before.validation, [build]: structuredClone(entry) };
+        if (!sameValue(before.engine, next.engine)) next.history = [...before.history, { revision: before.revision, at: at(), change: ["engine"], by }].slice(-HISTORY_MAX);
+        if (sameValue(next, before)) return structuredClone(before);
+        if (r.kind === "config") {
+          const problems = stubProblems(next);
+          if (problems.length) throw fail("PROFILE_INVALID", `Browser profile ${id} (the config-backed "${DEFAULT_PROFILE}") wasn't updated: ${problems[0]}`);
+        } else checked(next, "updated");
+        writeJsonAtomic(recordFile(id), next, { mode: 0o600 });
+        return structuredClone(next);
+      });
+    },
+
     // The config-backed "default" profile's whole record (D5) from the settings config.json gives
     // now (profiles/map.mjs fromConfig; any setting left out takes profileDefaults'): its stored id,
     // revision, history, engine and validation with these settings. Made at revision 1 the first

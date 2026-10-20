@@ -6,7 +6,7 @@
 import "./helpers/home.mjs";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, statSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { EventEmitter } from "node:events";
@@ -15,6 +15,8 @@ import { createProfileStore } from "../scripts/profiles/store.mjs";
 import { fromConfig } from "../scripts/profiles/map.mjs";
 import { createSession, assignProfile, assignmentFile, bindingFile, readBinding, personaFile, LEGACY_PERSONA, profileDir } from "../scripts/sessions.mjs";
 import { createContext } from "../scripts/daemon/context.mjs";
+import { validateProfile, cliCommand, CLI } from "../scripts/profiles/validate.mjs";
+import { identityFile } from "../scripts/profiles/lock.mjs";
 
 const dir = mkdtempSync(join(tmpdir(), "pb-session-profiles-"));
 after(() => rmSync(dir, { recursive: true, force: true }));
@@ -121,18 +123,32 @@ test("other major refuses, other build unverified, requireValidatedProfiles refu
   const { profiles } = parts(store);
   profiles.forLaunch(name, NATIVE);
   // Another major: refused, naming both, nothing recorded.
-  assert.throws(() => profiles.forLaunch(name, { ...NATIVE, build: "151.0.7900.10" }), (e) => e.message === `Session "${name}" doesn't start: browser profile "berlin" (${berlin.id}) was made on engine 150 (build ${BUILD}), and this browser is engine 151 (build 151.0.7900.10): re-validate the profile on this build or migrate it; nothing was started.`);
+  assert.throws(() => profiles.forLaunch(name, { ...NATIVE, build: "151.0.7900.10" }), (e) => e.message === `Session "${name}" doesn't start: browser profile "berlin" (${berlin.id}) was made on engine 150 (build ${BUILD}), and this browser is engine 151 (build 151.0.7900.10): re-validate the profile on this build (Check on the Sessions page, or ${cliCommand(`validate ${berlin.id}`)}) or migrate it to another profile; nothing was started.`);
   assert.equal(store.get(berlin.id).validation["151.0.7900.10"], undefined);
-  // The config-backed default isn't held to its pin until step 38 (validate, migrate): it starts
-  // unverified on the new major, its pin kept, and the log says so.
+  // The refusal names the command line by its full path, runnable from any folder.
+  assert.ok(CLI.startsWith("/") || /^[A-Za-z]:\\/.test(CLI), CLI);
+  assert.ok(existsSync(CLI));
+  // The config-backed default is held to the new major by the launch itself (its settings are
+  // config.json's): unverified there, its history naming the change by "config", logged.
   const plain = session("sp-engine-default");
-  const { profiles: own, lines } = parts(store);
+  const { profiles: own, lines: ownLines } = parts(store);
   const def = own.forLaunch(plain, NATIVE);
   assert.equal(def.kind, "config");
   const moved = own.forLaunch(plain, { ...NATIVE, build: "151.0.7900.10" });
-  assert.equal(moved.status, "unverified");
-  assert.deepEqual(store.get(def.id).engine, { major: "150", build: BUILD });
-  assert.ok(lines.some((l) => l === `launch: browser profile "default" (${def.id}) was made on engine 150; this browser is engine 151, so it starts unverified`));
+  assert.deepEqual([moved.kind, moved.status, moved.build], ["config", "unverified", "151.0.7900.10"]);
+  assert.deepEqual(store.get(def.id).engine, { major: "151", build: "151.0.7900.10" });
+  assert.deepEqual(store.get(def.id).history.at(-1), { revision: store.get(def.id).revision, at: new Date(T0).toISOString(), change: ["engine"], by: "config" });
+  assert.equal(store.get(def.id).validation["151.0.7900.10"].status, "unverified");
+  assert.ok(ownLines.some((l) => /browser profile "default" .* was made on engine 150 \(build 150\.0\.7871\.114\); its settings are config\.json's, so it is held to engine 151 \(build 151\.0\.7900\.10\) now, unverified/.test(l)), ownLines.join("\n"));
+  // Under requireValidatedProfiles it is refused there (unverified), and never re-pinned.
+  const plain2 = session("sp-engine-default-strict");
+  assert.throws(() => parts(store, { requireValidatedProfiles: true }).profiles.forLaunch(plain2, { ...NATIVE, build: "152.0.8000.1" }), /is unverified on build 152\.0\.8000\.1, and requireValidatedProfiles is on/);
+  assert.deepEqual(store.get(def.id).engine, { major: "151", build: "151.0.7900.10" });
+  // The person's check does the same for any profile (profiles/validate.mjs), by the person.
+  const checked = validateProfile(store, "default", { build: "152.0.8000.1", pack: PACK, configSettings: fromConfig({}, { native: true, platform: "linux" }), platform: "linux", now: () => T0 });
+  assert.deepEqual([checked.from, checked.build, checked.status], [{ major: "151", build: "151.0.7900.10" }, "152.0.8000.1", "unverified"]);
+  assert.equal(store.get(def.id).history.at(-1).by, "person");
+  assert.equal(own.forLaunch(plain, { ...NATIVE, build: "152.0.8000.1" }).status, "unverified");
   // Another build of the same major: unverified, the pin unchanged.
   const other = profiles.forLaunch(name, { ...NATIVE, build: "150.0.7871.200" });
   assert.equal(other.status, "unverified");
@@ -219,6 +235,28 @@ test("a profile imported with license \"unknown\" warns at every launch", () => 
   assert.deepEqual(profiles.statusParts(), [`Profile: found (rev 1, unverified on ${BUILD})`, `warning: ${unknownLicense("found")}`]);
   profiles.forLaunch(name, NATIVE);
   assert.equal(lines.filter((l) => l === `launch: warning: ${unknownLicense("found")}`).length, 2);
+});
+
+test("a binding that can't be written refuses the first start and gives the identity lock back", { skip: process.platform === "win32" || process.getuid?.() === 0 }, () => {
+  const store = newStore();
+  store.create({ name: "pinned-bind", persona: { source: "seed", seed: "sp-bind-seed" } });
+  const name = session("sp-bind-lock");
+  assignProfile(name, "pinned-bind", { store });
+  rmSync(bindingFile(name), { force: true });
+  const identityDir = join(dir, "identity-bind");
+  const st = {};
+  const profiles = createProfiles(st, { config: {}, log: () => {}, profileStore: store, now: () => T0, platform: "linux", identityDir });
+  // The session's browser folder read-only: the binding's write fails.
+  chmodSync(dirname(bindingFile(name)), 0o500);
+  try {
+    assert.throws(() => profiles.forLaunch(name, NATIVE), /its binding to browser profile "pinned-bind" .* couldn't be written \(E[A-Z]+\)/);
+  } finally { chmodSync(dirname(bindingFile(name)), 0o700); }
+  assert.equal(existsSync(identityFile("sp-bind-seed", identityDir)), false, "the lock was given back");
+  assert.equal(st.profile, null);
+  assert.equal(profiles.forLaunch(name, NATIVE).name, "pinned-bind");
+  assert.ok(existsSync(identityFile("sp-bind-seed", identityDir)), "taken again by the start that went on");
+  profiles.release();
+  assert.equal(existsSync(identityFile("sp-bind-seed", identityDir)), false);
 });
 
 // The launch (daemon/browser/launch.mjs) with a driver that records what it was given.

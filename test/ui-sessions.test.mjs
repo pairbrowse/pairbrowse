@@ -196,6 +196,49 @@ scenario("sessions: many sessions get a search", { viewport: VIEW, fixtures: { s
   await clean(ctx);
 });
 
+// Browser profiles (spec server-mode step 38): listed from profiles.json with Check and Export,
+// "Use for this session" for saved sessions that aren't open; hidden on a helper without them.
+const PROFILES = () => ({ current: "work", profiles: [
+  { id: "p-0000000000000001", name: "default", kind: "config", revision: 2, status: "active", engine: { major: "150", build: "150.0.7871.114" } },
+  { id: "p-0000000000000002", name: "berlin", kind: "store", revision: 4, status: "active", engine: null },
+  { id: "p-0000000000000003", name: "old", kind: "store", revision: 1, status: "retired", engine: null },
+], sessions: [
+  { name: "work", profileId: "p-0000000000000002", profile: "berlin" },
+  { name: "shop", profileId: "p-0000000000000001", profile: "default" },
+] });
+scenario("sessions: browser profiles, checked, exported and assigned by the person", { viewport: VIEW, fixtures: { sessions: SESSIONS(), session: OPEN, profiles: PROFILES() },
+  replies: { profiles: (body) => (body.op === "validate" ? { status: 200, body: { ok: true, text: 'Browser profile "berlin" applies on build 150.0.7871.114 and starts there now; it stays unverified until PairBrowse measures this build.' } } : { status: 200, body: { ok: true, text: 'Session "shop" starts on browser profile "berlin" from its next start.' } }) } }, async (ctx) => {
+  const { until, inPage, helper, page } = ctx;
+  await until("the profiles", () => document.querySelectorAll("#profile-list > li[data-profile]").length === 3);
+  const listed = await inPage(() => [...document.querySelectorAll("#profile-list > li")].map((li) => ({
+    name: li.querySelector(".name").textContent, meta: li.querySelector("small").textContent, acts: [...li.querySelectorAll(".acts button")].map((b) => b.textContent) })));
+  assert.deepEqual(listed, [
+    { name: "Default", meta: "From config.json · Engine 150.0.7871.114 · 1 session", acts: ["Check", "Export"] },
+    { name: "berlin", meta: "Revision 4 · Not started on the native build yet · 1 session", acts: ["Check", "Export"] },
+    { name: "old", meta: "Revision 1 · Retired · Not started on the native build yet · No session", acts: ["Export"] },
+  ]);
+  // Only saved sessions that aren't open, only profiles that aren't retired.
+  assert.deepEqual(await inPage(() => [...document.querySelectorAll("#assign-session option")].map((o) => o.value)), ["shop"]);
+  assert.deepEqual(await inPage(() => [...document.querySelectorAll("#assign-profile option")].map((o) => o.textContent)), ["Default", "berlin"]);
+  await page.locator("#profile-list > li[data-profile=p-0000000000000002]").getByRole("button", { name: "Check profile berlin on this browser build" }).click();
+  await until("checked", () => document.getElementById("msg").dataset.kind === "ok");
+  assert.match(await inPage(() => document.getElementById("msg").textContent), /applies on build 150\.0\.7871\.114/);
+  await page.selectOption("#assign-profile", "p-0000000000000002");
+  await page.click("#assign-form button");
+  await until("assigned", () => /starts on browser profile "berlin"/.test(document.getElementById("msg").textContent));
+  assert.deepEqual(posted(helper, "profiles"), [{ op: "validate", profile: "p-0000000000000002" }, { op: "assign", session: "shop", profile: "p-0000000000000002" }]);
+  await clean(ctx);
+});
+
+scenario("sessions: no browser profiles on a helper without them", { viewport: VIEW, fixtures: { sessions: SESSIONS(), session: OPEN } }, async (ctx) => {
+  const { until, inPage } = ctx;
+  await until("the rows", () => document.querySelectorAll("#list > li[data-name]").length === 4);
+  for (let t = Date.now(); !ctx.helper.gets.includes("profiles.json") && Date.now() - t < 5000;) await ctx.page.waitForTimeout(50);
+  assert.ok(ctx.helper.gets.includes("profiles.json"), "asked once");
+  assert.equal(await inPage(() => document.getElementById("profiles").hidden), true);
+  await clean(ctx);
+});
+
 scenario("sessions: no helper, the resting state", { viewport: VIEW, native: false, bridge: false }, async (ctx) => {
   const { until, inPage, helper } = ctx;
   await until("none", () => document.body.dataset.s === "none");

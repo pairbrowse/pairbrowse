@@ -114,7 +114,7 @@ test("the fixed entry paths are listed once and exist; no other file only forwar
 const PART_SEAMS = {
   "scripts/daemon/browser/launch.mjs": ["adBlockerOf", "safeStorageKeyFileOf", "adBlockerCrxOf", "proxyAuthFileOf"],
   "scripts/daemon/browser/supervise.mjs": ["startScreen", "needsScreen", "server", "now", "setTimer", "mark"],
-  "scripts/daemon/sessions/profiles.mjs": ["now", "platform"],
+  "scripts/daemon/sessions/profiles.mjs": ["now", "platform", "identityDir", "env", "migrateHome"],
 };
 const namesIn = (list) => list.split(",").map((s) => s.trim().split(/\s*=/)[0].trim()).filter(Boolean);
 

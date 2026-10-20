@@ -1,4 +1,4 @@
-import { userInfo } from "node:os";
+import { userInfo, homedir } from "node:os";
 import { join, sep } from "node:path";
 import { mkdirSync, chmodSync, appendFileSync, writeSync, readFileSync } from "node:fs";
 import { writeJsonAtomic, sha256, readJson, keepCorrupt, onCorruptJson, corruptLine } from "./util.mjs";
@@ -107,6 +107,16 @@ export const paths = {
   engineProfiles: join(HOME, "engine-profiles"),
   // One lock per pinned persona seed across the instances of one shared home (D3, spec step 38).
   identityLocks: join(SHARED, "identity-locks"),
+  // The first-start migration to browser profiles (profiles/migrate.mjs): its record (what it did,
+  // for the status line and an undo), the lock it runs under, and the folder an undo exports the
+  // store's profiles to first.
+  profileMigration: join(HOME, "browser-profiles", "migration.json"),
+  profileMigrationLock: join(HOME, "run", "profile-migration.lock"),
+  profileExports: join(HOME, "profile-exports"),
+  // The engine pack's own persona and cache folder before profiles (~/.pairbrowse-engine, one per
+  // account): the migration copies it into engineProfiles and never moves or changes it. A test
+  // run never reads the account's own: it gets one inside its home.
+  legacyEngine: process.env.NODE_TEST_CONTEXT ? join(HOME, "legacy-pairbrowse-engine") : join(homedir(), ".pairbrowse-engine"),
   // Facts Claude may fill in (facts.md above is the older format, imported once).
   factsJson: join(HOME, "facts.json"),
   // Sharing's saved state (tunnels, invites), previews of downloaded files, recordings.

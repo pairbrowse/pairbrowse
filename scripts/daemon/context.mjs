@@ -33,17 +33,18 @@ export { where };
 // network: the session's proxy at each launch (daemon/network.mjs createNetwork; null: direct, tests).
 // profileStore: the browser profile store each launch reads its session's profile from
 // (profiles/store.mjs createProfileStore; null: the helper home's own, sessions/profiles.mjs).
+// ensureNativeBuild: the native build's install and check (native/install.mjs ensureNative; tests).
 // onDownload({ op: "start", name, page }) -> id, then { op: "done", id, path } or { op: "failed", id }:
 // the Tools tab's Downloads (daemon/toolstab.mjs), in memory only.
 // personTabs: the person's own tabs (daemon/toolstab.mjs createPersonTabs), shared with serve.mjs:
 // openForPerson opens one, and no agent's fallback tab is ever one.
 export function createContext({ personTabs = createPersonTabs(), config, log, chromium, driver = "patchright", hud, presence, popups, hostNote, onTabClosed, status, shuttingDown, onStarted, onClosed, liveOthers = () => [], notify = () => {}, browserPagesOf = browserPagesIn, capturePagesOf = capturePagesIn, captureKeyedOf = captureKeyedIn, settingsSectionOf = settingsSectionIn, quietTabsOf = quietTabsIn, helperFor = async () => null,
-  beforeRename = async () => {}, onRenamed = () => {}, onDownload = () => null, phishing = null, onRestored = () => {}, onCrashLoop = () => {}, network = null, profileStore = null }) {
+  beforeRename = async () => {}, onRenamed = () => {}, onDownload = () => null, phishing = null, onRestored = () => {}, onCrashLoop = () => {}, network = null, profileStore = null, ensureNativeBuild }) {
   const st = createBrowserState({ session: currentSession(), pick: null }); // browser/state.mjs
   // What the browser's parts (browser/*.mjs, sessions/*.mjs) are given, and the functions they
   // read from each other when called (api).
   const deps = { personTabs, config, log, chromium, driver, hud, presence, popups, hostNote, onTabClosed, status, shuttingDown, onStarted, onClosed, liveOthers, notify, phishing,
-    browserPagesOf, capturePagesOf, captureKeyedOf, settingsSectionOf, quietTabsOf, helperFor, beforeRename, onRenamed, onRestored, onCrashLoop, network, profileStore };
+    browserPagesOf, capturePagesOf, captureKeyedOf, settingsSectionOf, quietTabsOf, helperFor, beforeRename, onRenamed, onRestored, onCrashLoop, network, profileStore, ensureNativeBuild };
   const api = {};
   // The virtual screen the browser runs on, when this machine needs one (browser/supervise.mjs).
   // With server.keepAlive, the browser kept up with nobody connected.
@@ -98,6 +99,8 @@ export function createContext({ personTabs = createPersonTabs(), config, log, ch
     crashLoop, statusParts: () => [...screenParts(), ...profiles.statusParts(), ...(network?.statusParts(st.session) || [])],
     // The browser profiles there are (the store's list): what an agent may pick from (spec D14).
     profiles: () => profiles.list(),
+    // The person's profile operations on the sessions page (sessions/profile-owner.mjs): owner-only routes.
+    profileOps: profiles.owner,
     // The refusal the session's starts get while its proxy's failed check holds, else null.
     networkRefusal: () => network?.refusal(st.session) || null,
     // Whether the browser runs a strict proxied session now: shared browser mode then sends

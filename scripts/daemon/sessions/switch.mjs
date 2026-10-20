@@ -136,14 +136,26 @@ export function createSwitch(st, deps, api) {
     return { ok: true };
   }
 
+  // The browser profiles an agent may pick from (spec D14): names, kinds and status only, never a
+  // setting. Retired and unreadable ones are listed as such and can't be picked.
+  function profileList() {
+    const rows = api.profiles.list();
+    const line = (r) => (r.problem ? `  ${r.id} (can't be read: the user fixes it)` : `  ${r.name}${r.kind === "config" ? " (from config.json; new sessions get it unless told otherwise)" : ""}${r.status === "retired" ? " (retired: can't be picked)" : ""}`);
+    return `Browser profiles (pick one for a new session: action "new" with name and profile; only the user makes or changes them):\n${rows.length ? rows.map(line).join("\n") : "  default (from config.json)"}`;
+  }
+
   // pairbrowse_session. Returns { text, error }.
-  async function sessionCommand({ action, name } = {}) {
+  async function sessionCommand({ action, name, profile } = {}) {
     const fail = (text) => ({ text, error: true });
     const exists = () => validName(name) && listSessions().some((s) => s.name === name);
     const list = () => listSessions().map((s) => `${s.name === st.session ? "* " : "  "}${s.temporary ? "clean (throwaway)" : s.name}${s.tabs ? `, ${s.tabs} saved tab${s.tabs === 1 ? "" : "s"}` : ""}`).join("\n");
     // The open session's count is its tabs now (its file may be up to a save behind).
     if (action === "list" && st.tabTracker && !st.switching) await within(3000, st.tabTracker.saveNow()).catch(() => {});
     if (action === "list") return { text: `Browser sessions (* = in use, ${where().toLowerCase()} browser):\n${list()}` };
+    if (action === "profiles") {
+      try { return { text: profileList() }; } catch (e) { return fail(`The browser profiles couldn't be listed: ${e?.message || e}`); }
+    }
+    if (profile !== undefined && action !== "new") return fail('profile goes with action "new" only: an agent picks a profile for a new session; the user reassigns existing ones.');
     if (action === "use") {
       if (!exists()) return fail(`No session "${name}".\n${list()}`);
       await switchTo(name);
@@ -152,13 +164,24 @@ export function createSwitch(st, deps, api) {
     if (action === "new") {
       if (name !== undefined && !validName(name)) return fail("Session names use letters, numbers, - and _ (up to 40).");
       if (name && listSessions().some((s) => s.name === name)) return fail(`Session "${name}" already exists. Use it with action "use".`);
+      if (profile !== undefined && (typeof profile !== "string" || !profile)) return fail('profile is a browser profile\'s name, from action "profiles".');
       const target = name || `clean-${Date.now()}`;
-      createSession(target);
+      // A profile chosen: the new session is assigned it (sessions.mjs createSession: unknown or
+      // retired refused by name, nothing made then).
+      let chosen = null;
+      try {
+        if (profile === undefined) createSession(target);
+        else {
+          createSession(target, profile, { store: api.profiles.store, configSettings: api.profiles.configSettings(st.engine?.browserEngine === "pairbrowse") });
+          chosen = api.profiles.store.use(profile).name;
+        }
+      } catch (e) { return fail(`${String(e?.message || e)}\n${profileList()}`); }
       await switchTo(target);
+      const on = chosen ? ` on browser profile "${chosen}"` : "";
       return {
         text: name
-          ? `Created and switched to the new session "${name}": an empty browser with no logins.`
-          : "Switched to a clean, throwaway browser: no logins, no history. It's deleted when you switch away or the browser shuts down.",
+          ? `Created and switched to the new session "${name}"${on}: an empty browser with no logins.`
+          : `Switched to a clean, throwaway browser${on}: no logins, no history. It's deleted when you switch away or the browser shuts down.`,
       };
     }
     if (action === "delete") {
@@ -174,7 +197,7 @@ export function createSwitch(st, deps, api) {
       try { deleteSession(name); } catch (e) { return fail(String(e?.message || e)); }
       return { text: `Deleted session "${name}" and its logins.` };
     }
-    return fail('Use action "list", "use", "new" or "delete".');
+    return fail('Use action "list", "use", "new", "delete" or "profiles".');
   }
 
   // At startup: throwaway sessions a crash left behind, and the note that a clean one ended.

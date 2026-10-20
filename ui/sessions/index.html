@@ -30,6 +30,31 @@
       <p class="none" id="none" hidden>No session by that name.</p>
     </section>
 
+    <!-- Browser profiles (the settings a session's browser starts with), from GET profiles.json:
+         hidden on a helper without them. The person's own: agents only pick one for a new session. -->
+    <section class="profiles" id="profiles" aria-labelledby="profiles-h" hidden>
+      <h2 id="profiles-h">Browser profiles</h2>
+      <p class="hint">What a session's browser starts with: languages, time zone, screen. Each session uses one; a change counts from its next start.</p>
+      <ul class="list" id="profile-list"></ul>
+      <form class="assign" id="assign-form" autocomplete="off">
+        <select id="assign-session" aria-label="Session"></select>
+        <select id="assign-profile" aria-label="Browser profile"></select>
+        <button class="secondary" type="submit">Use for this session</button>
+      </form>
+      <details class="choice import" id="import">
+        <summary>
+          <span class="icon" aria-hidden="true">&#8595;</span>
+          <span class="text"><strong>Import a profile file</strong><small>A PairBrowse export, or settings captured on a device: only languages, time zone and screen are taken.</small></span>
+        </summary>
+        <form id="import-form" autocomplete="off">
+          <input id="import-file" type="file" accept=".json,application/json" aria-label="Profile file">
+          <input id="import-source" type="text" placeholder="Where it came from" aria-label="Where it came from" maxlength="200" spellcheck="false">
+          <input id="import-license" type="text" placeholder="License: SPDX id, own-capture or unknown" aria-label="License" maxlength="64" spellcheck="false">
+          <button class="primary" type="submit">Import</button>
+        </form>
+      </details>
+    </section>
+
     <section class="new" aria-labelledby="new-h">
       <h2 id="new-h">Start or join</h2>
       <button class="choice" id="fresh" type="button">

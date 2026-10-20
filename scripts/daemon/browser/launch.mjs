@@ -81,7 +81,7 @@ const RESTORE_WAIT_MS = 3000;
 export const CLOSE_RESERVE_MS = 1500;
 
 export function createLaunch(st, deps, api) {
-  const { chromium, config, driver, hud, log, notify, status, shuttingDown, onStarted, onClosed, browserPagesOf, capturePagesOf, captureKeyedOf, settingsSectionOf, quietTabsOf = quietTabsIn, adBlockerOf = adBlockerIn, safeStorageKeyFileOf = safeStorageKeyFileIn, adBlockerCrxOf = adBlockerCrxIn, proxyAuthFileOf = proxyAuthFileIn, helperFor, network } = deps;
+  const { chromium, config, driver, hud, log, notify, status, shuttingDown, onStarted, onClosed, browserPagesOf, capturePagesOf, captureKeyedOf, settingsSectionOf, quietTabsOf = quietTabsIn, adBlockerOf = adBlockerIn, safeStorageKeyFileOf = safeStorageKeyFileIn, adBlockerCrxOf = adBlockerCrxIn, proxyAuthFileOf = proxyAuthFileIn, helperFor, network, ensureNativeBuild = ensureNative } = deps;
   // The driver's browser type: the object, or a getter (the helper loads its runtime after its socket listens).
   const browserType = () => (typeof chromium === "function" ? chromium() : chromium);
 
@@ -123,6 +123,10 @@ export function createLaunch(st, deps, api) {
     if (spec.problem) once(spec.problem);
     if (!spec.set) once(`browser: no choice recorded yet; using ${spec.browser} (Settings, or "browser" in ~/.pairbrowse/config.json)`);
     st.inUse = spec.browser;
+    // The home's move to browser profiles, and the engine pack's folders set, before anything here
+    // can load the pack (an install's self-check launches it in this process; it reads those
+    // folders once, when it loads). Once per helper (sessions/profiles.mjs prepare).
+    api.profiles.prepare({ native: spec.binary === "native" });
     let executablePath = spec.executablePath; // a native build of your own (the older names), a path of your own, or null
     if (spec.install) {
       const optOut = 'To use the open build instead, set "browser": "pairbrowse-open" in ~/.pairbrowse/config.json.';
@@ -135,7 +139,7 @@ export function createLaunch(st, deps, api) {
       };
       let native = null;
       try {
-        native = nativeLayout() ? await ensureNative(installLog, { asset, config }) : null;
+        native = nativeLayout() ? await ensureNativeBuild(installLog, { asset, config }) : null;
       } catch (e) {
         if (st.installing) notify("The PairBrowse browser couldn't be installed. Ask Claude what happened.");
         throw new Error(`The PairBrowse browser couldn't be installed: ${e.message} ${optOut}`);

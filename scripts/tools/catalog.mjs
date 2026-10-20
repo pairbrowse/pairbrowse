@@ -133,14 +133,17 @@ export const SESSION_TOOL = {
     "Browser sessions are separate browsers, each with its own logins and tabs. " +
     'action "list" shows them; "use" switches to one (name); "new" creates one: with clean:true and no name it is a ' +
     'throwaway clean browser deleted when you switch away, with a name it is kept; "delete" removes one (the user confirms). ' +
+    '"profiles" lists the browser profiles (language, time zone, screen) the user made; "new" with profile starts the new session on one. ' +
+    "Only the user makes, changes or reassigns profiles. " +
     "Switching closes the current browser window and opens the other session's tabs.",
   inputSchema: {
     type: "object",
     required: ["action"],
     properties: {
-      action: { type: "string", enum: ["list", "use", "new", "delete"] },
+      action: { type: "string", enum: ["list", "use", "new", "delete", "profiles"] },
       name: { type: "string", description: "Session name: letters, numbers, - and _" },
       clean: { type: "boolean" },
+      profile: { type: "string", description: 'With "new": the browser profile (its name from "profiles") the new session starts on; left out, "default"' },
     },
   },
 };

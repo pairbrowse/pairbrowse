@@ -341,5 +341,97 @@ test("renameSaved: a saved session that isn't open is renamed in place; nothing 
   await going;
 });
 
+// The browser profiles' routes (spec server-mode D14, step 38; liveview/routes/profiles.mjs over
+// daemon/sessions/profile-owner.mjs with a store of its own): the owner's alone, never an invite
+// link's or a join code's; a file over 1 MiB refused before a byte is parsed; an import, an
+// assignment, an export and a check that has no build to check on.
+test("profile routes owner-only; invite keys and join-code port 403; upload over 1 MiB refused", async () => {
+  const { createProfileOwner } = await import("../scripts/daemon/sessions/profile-owner.mjs");
+  const { createProfileStore } = await import("../scripts/profiles/store.mjs");
+  const { fromConfig } = await import("../scripts/profiles/map.mjs");
+  const store = createProfileStore({ dir: mkdtempSync(join(tmpdir(), "pb-sr-store-")) });
+  sessions.createSession("pr-saved");
+  const st = { session: "pr-open", contextPromise: Promise.resolve(), profile: null, engine: null };
+  sessions.createSession("pr-open");
+  const owner = createProfileOwner(st, { config: { browser: "pairbrowse-open" }, store, platform: "linux", configSettings: (native) => fromConfig({ browser: "pairbrowse-open" }, { native, platform: "linux" }) });
+  let imports = 0;
+  const profiles = { ...owner, importFile: (...a) => { imports++; return owner.importFile(...a); } };
+  const invites = createInvites();
+  const view = await startLiveView({ getContext: async () => ({ pages: () => [] }), currentUrl: async () => "about:blank", invites, sessionOps: { state: () => ({}), profiles } });
+  const key = view.url.split("/").at(-2);
+  const upload = (k, body, query = "", port = view.port) => new Promise((resolve, reject) => {
+    const req = http.request({ host: "127.0.0.1", port, method: "POST", path: `/${k}/profile-import${query}`, headers: { host: `127.0.0.1:${port}`, "content-type": "application/octet-stream" } }, (res) => {
+      const chunks = [];
+      res.on("data", (d) => chunks.push(d));
+      res.on("end", () => resolve({ status: res.statusCode, text: Buffer.concat(chunks).toString("utf8") }));
+    });
+    req.on("error", (e) => (e.code === "EPIPE" || e.code === "ECONNRESET" ? resolve({ status: 413, text: "" }) : reject(e)));
+    req.end(body);
+  });
+  try {
+    let r = await request(view.port, "GET", `/${key}/profiles.json`);
+    assert.equal(r.status, 200);
+    assert.deepEqual(JSON.parse(r.text).current, "pr-open");
+    // An import: the device file's settings, its source and license; a dry run first writes nothing.
+    const device = readFileSync(new URL("./fixtures/profiles/engine-device-1.json", import.meta.url));
+    r = await upload(key, device, "?file=phone.json&source=my%20phone&license=own-capture&dryRun=1");
+    assert.equal(r.status, 200, r.text);
+    assert.equal(JSON.parse(r.text).dryRun, true);
+    assert.equal(store.list().length, 0);
+    r = await upload(key, device, "?file=phone.json&source=my%20phone&license=own-capture&name=phone");
+    assert.equal(r.status, 200, r.text);
+    const made = JSON.parse(r.text);
+    assert.equal(made.name, "phone");
+    assert.ok(made.items.some((i) => i.status === "unsupported"), "another device's hardware reported, not taken");
+    // Refused with the check named, nothing made.
+    r = await upload(key, device, "?file=phone.json&license=own-capture");
+    assert.equal(r.status, 409);
+    assert.match(JSON.parse(r.text).error, /refused at the provenance check/);
+    // Over 1 MiB: 413, never parsed (the import isn't asked).
+    const n = imports;
+    r = await upload(key, Buffer.alloc(1024 * 1024 + 1, 0x20), "?source=x&license=MIT");
+    assert.equal(r.status, 413);
+    assert.equal(imports, n, "not read past the cap");
+    // Assign: a saved session that isn't open; the open one refused.
+    r = await request(view.port, "POST", `/${key}/profiles`, { body: { op: "assign", session: "pr-saved", profile: "phone" } });
+    assert.equal(r.status, 200, r.text);
+    assert.equal(sessions.readAssignment("pr-saved").profileId, made.id);
+    r = await request(view.port, "POST", `/${key}/profiles`, { body: { op: "assign", session: "pr-open", profile: "phone" } });
+    assert.equal(r.status, 409);
+    assert.match(JSON.parse(r.text).error, /is open now/);
+    r = await request(view.port, "POST", `/${key}/profiles`, { body: { op: "remove", profile: "phone" } });
+    assert.equal(r.status, 409);
+    r = await request(view.port, "POST", `/${key}/profiles`, { raw: "{" });
+    assert.equal(r.status, 400);
+    // Export: the sealed file's text.
+    r = await request(view.port, "GET", `/${key}/profile-export?profile=phone`);
+    assert.equal(r.status, 200);
+    const exported = JSON.parse(r.text);
+    assert.equal(JSON.parse(exported.text).format, "pairbrowse-profile");
+    assert.match(exported.sha256, /^[0-9a-f]{64}$/);
+    // A check with no native build in use: refused, saying why.
+    r = await request(view.port, "POST", `/${key}/profiles`, { body: { op: "validate", profile: "phone" } });
+    assert.equal(r.status, 409);
+    assert.match(JSON.parse(r.text).error, /native PairBrowse build/);
+    // Nobody but the owner, never on the join-code port.
+    const count = store.list().length;
+    for (const k of [invites.create({ role: "watch", label: "W" }).key, invites.create({ role: "drive", label: "D" }).key]) {
+      assert.equal((await request(view.port, "GET", `/${k}/profiles.json`)).status, 403);
+      assert.equal((await upload(k, device, "?source=x&license=MIT")).status, 403);
+      assert.equal((await request(view.port, "POST", `/${k}/profiles`, { body: { op: "assign", session: "pr-saved", profile: "default" } })).status, 403);
+      assert.equal((await request(view.port, "GET", `/${k}/profile-export?profile=phone`)).status, 403);
+    }
+    const c = invites.create({ role: "drive", label: "C", share: "code" });
+    for (const k of [c.key, key]) {
+      assert.notEqual((await request(view.guestPort, "GET", `/${k}/profiles.json`)).status, 200);
+      assert.notEqual((await upload(k, device, "?source=x&license=MIT", view.guestPort)).status, 200);
+    }
+    assert.equal(store.list().length, count, "nothing imported through them");
+    assert.equal(sessions.readAssignment("pr-saved").profileId, made.id);
+  } finally { view.close(); }
+  const bare = await startLiveView({ getContext: async () => ({ pages: () => [] }), currentUrl: async () => "about:blank" });
+  try { assert.equal((await request(bare.port, "GET", `/${bare.url.split("/").at(-2)}/profiles.json`)).status, 404, "no profiles part given"); } finally { bare.close(); }
+});
+
 // The helper's timers (tab memory, picker) keep running: the run ends here.
 after(() => setImmediate(() => process.exit(process.exitCode || 0)));

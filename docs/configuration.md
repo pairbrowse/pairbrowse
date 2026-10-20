@@ -334,10 +334,36 @@ user's file, readable by others), the section says why and refuses a username or
   (`pairbrowse-binding.json`): a start on any other profile is refused until the session is
   reassigned, which also drops the persona kept for the old profile (the native build saves a
   session's persona under its profile's id). A profile records the engine it first ran on: a
-  build of another major refuses to start it (the `default` profile, for now, starts `unverified`
-  there instead), another build starts it `unverified`.
+  build of another major refuses to start it until you check it on the build installed now
+  (`validate` below, or Check on the sessions page), which holds it to that build; `default`,
+  whose settings are `config.json`'s, is held to the new build by its first start there (the log
+  says so), so an engine update never stops your browser. Another build of the same major starts a
+  profile `unverified`. A profile whose seed is pinned
+  (`persona.seed`, or `pairbrowse.fingerprint` for `default`) runs in one browser at a time across
+  your instances: a second start on it is refused, naming the session that has it open.
   `pairbrowse_status` names it: `Profile: <name> (rev <n>, <status> on <build>)`, with a warning
-  for a profile imported with license `unknown`.
+  for a profile imported with license `unknown`, and, until you dismiss them, the `config.json`
+  keys the first start's migration kept out of `default`.
+
+  The first start of this version moves the home to profiles once: each kept session is put on
+  `default` (its `assignment.json` and binding written, a persona named `pairbrowse` renamed to
+  `default`'s id), `~/.pairbrowse-engine` is copied (never moved) into `engine-profiles/`, where
+  the engine pack keeps its personas and cache from then on, and `browser-profiles/migration.json`
+  records it. `config.json` is never rewritten. You manage profiles on the sessions page (the
+  browser's All sessions: Check, Export, Import a profile file, Use for this session) or with
+  `node scripts/profiles/cli.mjs` (refusals and the status line name it by its full path, so it
+  runs from any folder):
+  `list`, `show <profile>`, `create <name> [--settings <json>]`,
+  `edit <profile> [--settings <json>] [--name <new>] [--revision <n>]`, `retire` and `restore`,
+  `assign <session> <profile>` (from its next start; never the session open in a browser),
+  `import <file> [--dry-run] [--source ...] [--license ...]` (one file, at most 1 MiB; only
+  languages, time zone, screen and a seed are taken), `export <profile> [<file>] [--with-history]
+  [--include-identity]`, `validate [<profile>]`, and `migrate [--report | --dismiss | --undo]`
+  (`migrate` runs under the same lock as the helper's first start, so the home moves once;
+  `--undo`, with no helper running, exports every stored profile to `profile-exports/` first,
+  then puts each session's files back as they were and removes `browser-profiles/` and
+  `engine-profiles/`; a session it can't put back is named and both folders stay until a second
+  `--undo` after you fix it). Agents can only list profiles and pick one for a new session.
 - `reportUrl`: where a problem report you send yourself goes (default
   `https://pairbrowse.com/api/report`): an https address with no user, query or fragment.
   `null`: no report is ever sent, and Settings doesn't offer it.

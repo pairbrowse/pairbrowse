@@ -11,6 +11,11 @@
 //   or "default" (the helper refuses those too).
 // - Start a fresh session (POST pick { action: "new" }) and Join a shared session (POST pick
 //   { action: "join", code, joinName }, its address question through POST joinhost).
+// - Browser profiles (GET profiles.json; hidden on a helper without them): each profile with Export
+//   (GET profile-export, saved as a file here) and Check (POST profiles { op: "validate" }: checked on
+//   the native build installed now and held to it); "Use for this session" (POST profiles { op:
+//   "assign", session, profile }, a saved session that isn't open); Import a profile file (POST
+//   profile-import, the file's bytes, at most 1 MiB, with where it came from and its license).
 // A tab page: in the browser only window.pairbrowse.session exists here, so nothing else is called.
 // The list is GET sessions.json on every (re)connect, then the helper's sessions and session events:
 // no timer, no poll, no observer.
@@ -178,6 +183,105 @@ function renameIn(li, name, open) {
   input.select();
 }
 
+// ---- browser profiles ----
+const FILE_MAX = 1024 * 1024; // the helper refuses a bigger profile file (POST profile-import)
+let profiles = null; // the last profiles.json: { profiles, sessions, current }
+function profileMeta(p, users) {
+  const parts = [p.kind === "config" ? "From config.json" : `Revision ${Number(p.revision) || 1}`];
+  if (p.status === "retired") parts.push("Retired");
+  parts.push(p.engine?.build ? `Engine ${p.engine.build}` : "Not started on the native build yet");
+  parts.push(users.length ? `${users.length} ${users.length === 1 ? "session" : "sessions"}` : "No session");
+  return parts.join(" · ");
+}
+function profileRow(p) {
+  if (typeof p.name !== "string") return el("li", { className: "empty", textContent: `A profile file can't be read (${String(p.id || "")}).` });
+  const users = (profiles?.sessions || []).filter((s) => s.profileId === p.id).map((s) => s.name);
+  const name = p.kind === "config" ? "Default" : p.name;
+  const text = el("span", { className: "text" }, el("strong", {}, el("span", { className: "name", textContent: name, title: name })), el("small", { textContent: profileMeta(p, users) }));
+  const ex = el("button", { className: "secondary", type: "button", textContent: "Export", ariaLabel: `Export profile ${name}` });
+  ex.addEventListener("click", (ev) => { if (real(ev)) exportProfile(p.id, name, ex); });
+  const acts = el("span", { className: "acts" }, ex);
+  if (p.status !== "retired") {
+    const check = el("button", { className: "secondary", type: "button", textContent: "Check", ariaLabel: `Check profile ${name} on this browser build` });
+    check.addEventListener("click", (ev) => { if (real(ev)) checkProfile(p.id, check); });
+    acts.prepend(check);
+  }
+  const li = el("li", {}, avatar(name, null, { decorative: true }), text, acts);
+  li.dataset.profile = p.id;
+  return li;
+}
+function drawProfiles(next) {
+  if (!next || !Array.isArray(next.profiles)) return;
+  profiles = next;
+  $("profiles").hidden = false;
+  $("profile-list").replaceChildren(...(next.profiles.length ? next.profiles.map(profileRow) : [el("li", { className: "empty", textContent: "Only the default profile, from config.json, until the first start." })]));
+  const saved = (next.sessions || []).filter((s) => typeof s.name === "string" && s.name !== next.current);
+  const usable = next.profiles.filter((p) => typeof p.name === "string" && p.status !== "retired");
+  $("assign-session").replaceChildren(...saved.map((s) => el("option", { value: s.name, textContent: `${shownName(s.name)}${s.profile ? ` (now ${s.profile === "default" ? "Default" : s.profile})` : ""}` })));
+  $("assign-profile").replaceChildren(...usable.map((p) => el("option", { value: p.id, textContent: p.kind === "config" ? "Default" : p.name })));
+  $("assign-form").hidden = !saved.length || !usable.length;
+}
+async function loadProfiles() {
+  if (!base) return;
+  const r = await fetch(base + "profiles.json").then(async (x) => (x.ok ? x.json().catch(() => null) : null), () => null);
+  if (r) drawProfiles(r);
+}
+async function checkProfile(id, button) {
+  if (!base) return;
+  button.disabled = true;
+  button.setAttribute("aria-busy", "true");
+  const r = await postJson("profiles", { op: "validate", profile: id });
+  button.disabled = false;
+  button.removeAttribute("aria-busy");
+  say(r.body?.text || r.body?.error || (r.status === 0 ? UNREACHABLE_RETRY : "That didn't work."), r.status === 200 ? "ok" : "error");
+  loadProfiles();
+}
+async function exportProfile(id, name, button) {
+  if (!base) return;
+  button.disabled = true;
+  const r = await fetch(`${base}profile-export?profile=${encodeURIComponent(id)}`).then(async (x) => ({ status: x.status, body: await x.json().catch(() => null) }), () => ({ status: 0, body: null }));
+  button.disabled = false;
+  if (r.status !== 200 || typeof r.body?.text !== "string") { say(r.body?.error || (r.status === 0 ? UNREACHABLE_RETRY : "That didn't work."), "error"); return; }
+  const url = URL.createObjectURL(new Blob([r.body.text], { type: "application/json" }));
+  const a = el("a", { href: url, download: String(r.body.fileName || `${name}.pairbrowse-profile.json`) });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  say(`Exported ${name}.`, "ok");
+}
+$("assign-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  if (!ev.isTrusted || !base) return;
+  const session = $("assign-session").value, profile = $("assign-profile").value;
+  if (!session || !profile) return;
+  const r = await postJson("profiles", { op: "assign", session, profile });
+  say(r.body?.text || r.body?.error || (r.status === 0 ? UNREACHABLE_RETRY : "That didn't work."), r.status === 200 ? "ok" : "error");
+  loadProfiles();
+});
+$("import-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  if (!ev.isTrusted || !base) return;
+  const file = $("import-file").files?.[0];
+  if (!file) { say("Choose a profile file first.", "error"); return; }
+  if (file.size > FILE_MAX) { say("A profile file is at most 1 MiB.", "error"); return; }
+  const source = $("import-source").value.trim(), license = $("import-license").value.trim();
+  const q = new URLSearchParams({ file: file.name.slice(0, 200) });
+  if (source) q.set("source", source);
+  if (license) q.set("license", license);
+  say(`Importing ${file.name}…`);
+  const r = await fetch(`${base}profile-import?${q}`, { method: "POST", headers: { "content-type": "application/octet-stream" }, body: await file.arrayBuffer() })
+    .then(async (x) => ({ status: x.status, body: await x.json().catch(() => null) }), () => ({ status: 0, body: null }));
+  if (r.status === 200 && r.body?.ok) {
+    const left = (r.body.items || []).filter((i) => i.status === "unsupported").length;
+    say(`Imported ${r.body.name}.${left ? ` ${left} part${left === 1 ? "" : "s"} of the file describe another device and weren't taken.` : ""}`, "ok");
+    $("import-form").reset();
+    loadProfiles();
+    return;
+  }
+  say(r.status === 413 ? "A profile file is at most 1 MiB." : r.body?.error || (r.status === 0 ? UNREACHABLE_RETRY : "That didn't work."), "error");
+});
+
 // ---- switch, start fresh, join (POST pick, as the picker sends them) ----
 async function send(op, label) {
   if (!base || busy) return;
@@ -250,7 +354,7 @@ const connect = helperConnection({
     else if (s === "closed") none();
     else if (document.body.dataset.s !== "none") document.body.dataset.s = "connecting";
   },
-  onOpen: () => load(),
+  onOpen: () => { load(); loadProfiles(); },
 }, (stream, url) => {
   base = url;
   stream.on("sessions", draw);

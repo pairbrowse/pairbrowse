@@ -53,5 +53,52 @@ test("a session switch opens one browser, whoever asks for it meanwhile", { time
   assert.equal(now, launched[1], "the helper holds the browser it opened");
 });
 
+// Agents and profiles (spec server-mode D14): action "profiles" only lists them (names, never a
+// setting); "new" with profile starts the new session on one (unknown or retired refused by name,
+// nothing made); profile with any other action is refused (the person reassigns).
+test("session new with profile assigns it; action profiles only lists", { timeout: 30_000 }, async () => {
+  const { createContext } = await import("../scripts/daemon/context.mjs");
+  const { createProfileStore } = await import("../scripts/profiles/store.mjs");
+  const { readAssignment, listSessions } = await import("../scripts/sessions.mjs");
+  const store = createProfileStore({ dir: mkdtempSync(join(tmpdir(), "pb-ctx-store-")) });
+  const berlin = store.create({ name: "berlin", browser: { kind: "pairbrowse-open" }, locale: { languages: ["de-DE"], timezone: null, source: "set" } });
+  store.create({ name: "old" });
+  store.retire("old");
+  const chromium = { launchPersistentContext: async () => { const ctx = new EventEmitter(); ctx.pages = () => []; ctx.addInitScript = async () => {}; ctx.newPage = async () => ({ on() {}, once() {}, url: () => "about:blank", isClosed: () => false, goto: async () => {}, close: async () => {}, context: () => ctx }); ctx.browser = () => null; ctx.close = async () => { ctx.emit("close"); }; return ctx; } };
+  const quiet = () => {};
+  const context = createContext({
+    config: { browserEngine: "chromium", executablePath: "/fake/chrome", sessionPicker: false, display: "none" }, log: quiet, chromium, profileStore: store,
+    hud: { source: "", ensure: quiet, onPageLoad: quiet, clearSparks: quiet, badge: () => "" },
+    presence: { watchUser: quiet }, popups: { watchPage: quiet }, hostNote: quiet, onTabClosed: quiet, status: quiet,
+    shuttingDown: () => false, onStarted: quiet, onClosed: quiet,
+  });
+  const before = JSON.stringify(store.list());
+  const listed = await context.sessionCommand({ action: "profiles" });
+  assert.ok(!listed.error);
+  assert.match(listed.text, /^Browser profiles \(pick one for a new session: action "new" with name and profile; only the user makes or changes them\):/);
+  assert.match(listed.text, /\n {2}berlin\n/);
+  assert.match(listed.text, /old \(retired: can't be picked\)/);
+  assert.doesNotMatch(listed.text, /de-DE/, "names only, never a setting");
+  assert.equal(JSON.stringify(store.list()), before, "listing changes nothing");
+  // Refused before anything is made: a profile that isn't there, a retired one, profile on use.
+  for (const [profile, why] of [["nowhere", /There is no browser profile "nowhere"|doesn't exist/], ["old", /retired/]]) {
+    const r = await context.sessionCommand({ action: "new", name: `cs-${profile}`, profile });
+    assert.equal(r.error, true, profile);
+    assert.match(r.text, why);
+    assert.ok(!listSessions().some((x) => x.name === `cs-${profile}`), "no session left behind");
+  }
+  const misuse = await context.sessionCommand({ action: "use", name: "default", profile: "berlin" });
+  assert.equal(misuse.error, true);
+  assert.match(misuse.text, /profile goes with action "new" only/);
+  const made = await context.sessionCommand({ action: "new", name: "cs-berlin", profile: "berlin" });
+  assert.ok(!made.error, made.text);
+  assert.match(made.text, /new session "cs-berlin" on browser profile "berlin"/);
+  assert.equal(readAssignment("cs-berlin").profileId, berlin.id);
+  // An existing session is never reassigned by an agent.
+  const again = await context.sessionCommand({ action: "new", name: "cs-berlin", profile: "default" });
+  assert.equal(again.error, true);
+  assert.equal(readAssignment("cs-berlin").profileId, berlin.id);
+});
+
 // The helper's timers (tab memory, picker) keep running: the run ends here.
 after(() => setImmediate(() => process.exit(process.exitCode || 0)));

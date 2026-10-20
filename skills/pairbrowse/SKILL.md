@@ -27,7 +27,11 @@ Ask in one message (your question tool if you have one), skipping what the user 
   throwaway deleted when you switch away; `new` with a `name` is kept (for example one per client).
   `delete` asks the user. Switching closes the window and opens the other session's tabs. While
   another agent session (here or a joiner's) has used the browser in the last 10 minutes or holds
-  the whole-browser lease, only `list` works; people joined without an agent don't block it.
+  the whole-browser lease, only `list` and `profiles` work; people joined without an agent don't block it.
+  Browser profiles (languages, time zone, screen a session starts with) are the user's: `profiles`
+  lists their names, and `new` with `name` and `profile` starts the new session on one when the
+  user asks for it ("a session on my Berlin profile"). You never make, change or reassign one; a
+  start refused for its profile (another engine, its seed in use elsewhere) is the user's to fix.
 
 Then follow the session-start note on showing the browser. In the Claude desktop app call
 `pairbrowse_dock` with `action` "on" (macOS); if that isn't available, call `pairbrowse_liveview`

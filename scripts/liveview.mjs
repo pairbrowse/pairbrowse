@@ -34,6 +34,7 @@ import { OWNER_EVENTS, PAGES_EVENTS, EVENT_KIND } from "../ui/events.js";
 import { createToolsRoutes } from "./liveview/routes/tools.mjs";
 import { createTimelineRoutes } from "./liveview/routes/timeline.mjs";
 import { createSessionRoutes } from "./liveview/routes/sessions.mjs";
+import { createProfileRoutes } from "./liveview/routes/profiles.mjs";
 import { createPagesRoutes } from "./liveview/routes/pages.mjs";
 import { createOwnerRoutes, inviteItems } from "./liveview/routes/owner.mjs";
 import { createViewerRoutes } from "./liveview/routes/viewer.mjs";
@@ -569,6 +570,7 @@ export async function startLiveView({ grants = null, covers = null, activityLog 
     ...createTurnRoutes(turnGate),
     ...createOwnerRoutes({ approvals, clickApprovals, joiners, push, stopJoinerKey, collaborationChanged, log, devPanel, joinHost, profile, journal, invites, makeInvite, broadcast, onRecord, tools, mask, recordState }),
     ...createSessionRoutes({ picker, sessionOps, broadcast, ownerSession, linkGuests, layouts, joinersNow, recordState, clickApprovals }),
+    ...createProfileRoutes({ profiles: sessionOps?.profiles || null }), // browser profiles, the person's (sessions page)
     ...createNetworkRoutes({ network: settings?.network || null, broadcast }),
     ...createPagesRoutes({ history, layoutNow, layouts, sessionName: () => sessionInfo.name, broadcast, settings, reporter, outlines, webPages, getContext, idOf, mask, watchPages, tabsStrip, agentTabs, tabOrder, capture, captureOk }),
     ...timelineRoutes.routes,

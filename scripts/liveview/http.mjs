@@ -32,8 +32,9 @@ export function keyOk(given, key) {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-// The most a request body may hold, per kind of request.
-export const BODY_MAX = { approve: 2_000, profile: 20_000, input: 200_000, tabOrder: 64_000, capture: 2_000_000 };
+// The most a request body may hold, per kind of request. profileFile: a browser profile file to
+// import, in bytes (profiles/import.mjs IMPORT_MAX_BYTES, 1 MiB).
+export const BODY_MAX = { approve: 2_000, profile: 20_000, input: 200_000, tabOrder: 64_000, capture: 2_000_000, profileFile: 1024 * 1024 };
 
 // The body as text, or null once it grows past max characters (the rest isn't read). Decoded
 // across chunks: a character whose bytes arrive in two chunks stays one character.
@@ -46,6 +47,22 @@ export async function readBody(req, max) {
   }
   body += utf8.end();
   return body.length > max ? null : body;
+}
+
+// The body's bytes as they came (a file upload), or null once 413 has answered: a Content-Length
+// over max is refused before anything is read, and a body that grows past max stops being read.
+export async function readBytesCapped(req, res, max) {
+  const declared = Number(req.headers["content-length"]);
+  if (Number.isFinite(declared) && declared > max) { plain(res, 413); return null; }
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    const b = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+    size += b.length;
+    if (size > max) { plain(res, 413); return null; }
+    chunks.push(b);
+  }
+  return Buffer.concat(chunks, size);
 }
 
 // A body that isn't JSON: undefined (JSON itself never parses to undefined).

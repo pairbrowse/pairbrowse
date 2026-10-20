@@ -113,8 +113,8 @@ requested-vs-measured record, Linux and GPU-host tests.
 | `scripts/net/` (new: `config`, `credentials`, `probe`, `verdict`, `browsercheck`) | proxy config, credentials CLI, egress probes, verdicts | C |
 | `scripts/daemon/network.mjs` (new) | `forLaunch`, `checkAtLaunch`, recheck, refusal | C |
 | `scripts/daemon/logfile.mjs` (new) | masked `daemon.log` writer (moves lines out of `daemon.mjs`) | C |
-| `scripts/profiles/` (new: `schema`, `device`, `import`, `export`, `store`, `upgrade`, `map`, `migrate`, `cli`) | profile records and their lifecycle | D |
-| `scripts/daemon/sessions/profiles.mjs` (new) | `forLaunch`, binding check, identity lock | D |
+| `scripts/profiles/` (new: `schema`, `device`, `import`, `export`, `store`, `upgrade`, `map`, `migrate`, `lock`, `validate`, `cli`) | profile records and their lifecycle | D |
+| `scripts/daemon/sessions/profiles.mjs`, `profile-owner.mjs` (new) | `forLaunch`, binding check, identity lock; the person's operations for the owner routes | D |
 | `scripts/native/` (new: `graphics`, `backend`, `probe`, `validate`, `properties`) | backend plan, `SystemInfo` read, probe launch, validation | E |
 | pn patches `960-no-canvas-bridge`, `961-webgpu-real`, `962-proxy-auth-file` | engine work | C, E |
 
@@ -834,7 +834,8 @@ one.
   longer picks another device's profile; graphics come from this computer"). Store profiles cannot
   choose them. `persona.source` is `"seed"` or `"host"`.
 - **D10. Engine pin and validation status**: each profile records `engine: { major, build }`. Another
-  major refuses ("re-validate or migrate"); another build of the same major launches `unverified`.
+  major refuses a store profile ("re-validate or migrate"); the config-backed `default` is re-pinned
+  by that launch (step 38); another build of the same major launches `unverified`.
   `validation[build] = { status: "validated" | "unverified" | "failed", at, pack, runtimeKey?, graphics?,
   items: [...] }` with one item shape shared with Phase E: `{ field, rule, class, status, requested,
   measured, severity, reason }`, `class` from the property matrix (section 9), `status` one of
@@ -979,10 +980,10 @@ Fixtures: small hand-written JSON under `test/fixtures/profiles/` (no third-part
 | Mapping | `test/profile-map.test.mjs`: "fromConfig maps the inventory"; "toLaunch passes screenBrowserArgs unchanged"; "an explicit field the open build can't apply refuses"; "derived values never written into the profile"; "a network change leaves the revision unchanged" |
 | Migration | `test/profile-migrate.test.mjs`: "a home with config.pairbrowse, browserArgs and three sessions migrates; each assigned default"; "unsupported keys listed, none silently dropped"; "idempotent"; "auto is recorded as this computer with no request made"; "~/.pairbrowse-engine copied, never moved"; "a failure leaves the legacy path working"; "undo exports first and restores byte for byte". `test/profile-upgrade.test.mjs`: "older schema upgraded with history kept; newer refused; the chain has no gap". `test/integration/profiles-migration.test.mjs`: "today's layout migrates with cookies kept; undo then the previous layout launches with the same cookies" |
 | Isolation | `test/integration/profiles-isolation.test.mjs`: "cookie, localStorage, IndexedDB and history in one session are absent in the other"; "a cached resource is fetched again in the other session; cache files under each session's folder"; "Login Data and Extensions under each session's own folder" |
-| Concurrent use | `test/profile-lock.test.mjs`: "a pinned seed is exclusive across instances; a dead holder is taken over"; "an unpinned profile runs in two sessions with different seeds". `test/integration/profiles-instances.test.mjs`: "two instances on separate profiles share nothing; the same pinned seed is refused in the second; one session can't open in two browsers" |
+| Concurrent use | `test/profile-lock.test.mjs`: "a pinned seed is exclusive across instances; a dead holder is taken over"; "an unpinned profile runs in two sessions with different seeds". `test/integration/profiles-instances.test.mjs`: "two instances on separate profiles share nothing; one session can't open in two browsers" (the same pinned seed refused in the second: `test/optin/profiles-native.test.mjs`, native only) |
 | Binding and versions | `test/session-profiles.test.mjs`: "binding mismatch refuses, never re-stamps"; "other major refuses, other build unverified, requireValidatedProfiles refuses"; "unknown or retired profile refused by name". `test/native-engine.test.mjs`: "saved and persisted layers pass only engine keys"; "persona saved under the profile id"; "in-major update keeps no old brandVersion"; "auto never calls resolveAuto"; "profile languages reach --accept-lang". `test/daemon-connect.test.mjs`: "helperEnv drops inherited PAIRBROWSE_ENGINE_*" |
 | Agents and routes | `test/context-switch.test.mjs`: "session new with profile assigns it; action profiles only lists". `test/session-route.test.mjs`: "profile routes owner-only; invite keys and join-code port 403; upload over 1 MiB refused" |
-| Applied values | `test/optin/profiles-native.test.mjs` (`PAIRBROWSE_TEST_EXECUTABLE`): "a profile's time zone, languages, screen and DPR are what pages read"; "a pinned seed reproduces the same values in two fresh sessions" |
+| Applied values | `test/optin/profiles-native.test.mjs` (`PAIRBROWSE_TEST_EXECUTABLE`): "a profile's time zone, languages, screen and DPR are what pages read; a pinned seed reproduces the same values in two fresh sessions and is refused in a second instance" |
 
 ### Security table changes
 Section 12, rows D-1 to D-6.
@@ -2077,7 +2078,7 @@ it depends on.
    refuses naming both; none: written 0600 once every check passed, a write that fails refuses), D10
    (`build` the native build's manifest version: `record.engine` of another major refuses "re-validate
    the profile on this build or migrate it", except for the config-backed `default`, which until step
-   38 starts `unverified` with a log line, its pin kept; the status is `validation[build].status`, else
+   38 started `unverified` with a log line, its pin kept (step 38 holds it to the new build at that start instead); the status is `validation[build].status`, else
    `unverified`, so another build of the same major is unverified), `toLaunch` (its `problem`
    refuses), `requireValidatedProfiles` (anything but `validated`, or a validated entry with an
    error item, refuses; the open build is never validated, so it always refuses there). Then
@@ -2112,12 +2113,88 @@ it depends on.
    browser per helper and its one `st.profile`. Until step 38 (`cli.mjs validate`, `migrate`) there is
    no way to clear an engine pin, so a native build of a new major refuses store profiles pinned to
    the old one until then; the `default` is let through (above) so a desktop user is never locked
-   out, and step 38 holds it to its pin again once `validate` and `migrate` can clear one. Release
+   out, and step 38 re-pins it at that start (below). Release
    gate: no version bump ships a native build of a new major before step 38. Tests: `test/session-profiles.test.mjs`, `test/profile-store.test.mjs`,
    `test/native-engine.test.mjs`, `test/browser-args.test.mjs`, `test/net-launch.test.mjs`,
    `test/supervise.test.mjs`, `test/structure.test.mjs`.
 38. Identity lock, migration and undo, `pairbrowse_session` `profile`, CLI, owner routes and UI (D3,
     D14, Phase D migration). -> 37
+   Landed as: `scripts/profiles/lock.mjs` `takeIdentity(seed, { session, profileId, name }, { dir })`
+   (D3): one file per pinned seed in `paths.identityLocks` (0700), `<sha256(seed)>.lock` (0600, the
+   seed never written) holding `{ pid, start, token, session, profileId, instance, at }`, linked into
+   place from a file of its own so a reader never sees half of one; a live holder refuses naming its
+   session, instance and process (`PROFILE_IDENTITY_HELD`); a gone one (pid dead, or `startOf` differs)
+   or a lock file that is empty, cut short or unreadable (`{ pid: 0 }`, `install-lock.mjs`
+   `readHolder`'s rule) is moved aside atomically and taken over; no time-out (a browser runs for weeks while its helper
+   lives); this process's own hold for the same session and profile is taken again, for another
+   session refused; every hold given back at process exit. `forLaunch` takes it after every other
+   check and before the binding write (a failed write gives it back); `release()` gives it back.
+   `scripts/profiles/migrate.mjs`: `migrationReport` (step 1; a saved persona `pairbrowse.profile`
+   names is checked by a dry-run `checkImport` from `~/.pairbrowse-engine/profiles/<name>.json`,
+   never imported), `migrate` (steps 2 to 4; each change recorded with the file as it was, base64,
+   in `browser-profiles/migration.json`; any failure puts back everything done so far), and
+   `ensureMigrated` (under `paths.profileMigrationLock`, once per home, then `applyEngineEnv`:
+   `PAIRBROWSE_ENGINE_PROFILE_DIR` = `engine-profiles/profiles`, `PAIRBROWSE_ENGINE_PROFILE_SOURCE` =
+   `engine-profiles/source` (empty, 0700), `PAIRBROWSE_ENGINE_CACHE` = `engine-profiles/cache`, set
+   in the helper's own `process.env` before the pack loads; a failed migration sets none, so the pack
+   keeps its own folders). `createProfiles` runs it from `prepare({ native })`, which `launch.mjs` `chooseEngine` calls
+   before `ensureNative` (an install's `selfCheck` loads the pack in the helper's process, and the
+   pack reads those variables once, when it loads), and again harmlessly from `forLaunch`, in the
+   helper's own home (a part given a `profileStore`, as tests do, never migrates; tests pass `env`
+   and `migrateHome`; `createLaunch` takes `ensureNativeBuild` for the order test); a failure is a log and status
+   warning and the launch runs on step 37's path. The note left by the copy is `COPIED-FROM.txt` in
+   `engine-profiles/` (the original folder is never written to); links inside it are not copied.
+   Sessions already assigned keep their profile; a session whose assignment or binding can't be read
+   is listed and left as it is. Status names the keys kept out of `default` (`migrationNote`) until
+   `cli.mjs migrate --dismiss`. `migrateLocked` (the lock and record check `ensureMigrated` and `cli.mjs migrate` both use).
+   `undoMigration`: refused while `daemon.lock` names a live helper;
+   every store profile exported to `paths.profileExports` with history and pinned seed first (a
+   profile that can't be read stops it, nothing removed); each session file the migration wrote and
+   still finds as written is put back byte for byte, other assignment and binding files removed, a
+   persona under the default's id renamed back to "pairbrowse", one under another profile's id
+   removed (its seed never becomes the default's); a session whose file can't be read or written
+   is listed in `notRestored` and the others go on; then `browser-profiles/` and `engine-profiles/`
+   removed, unless a session wasn't put back (both kept so it still finds its profile; `cli.mjs`
+   exits 1 naming it, and a second undo finishes). `paths.mjs`: `profileMigration`, `profileMigrationLock`, `profileExports`,
+   `legacyEngine` (`~/.pairbrowse-engine`; inside the home under the test runner). D10 for the
+   default (decided at step 38's review, open for the user to reverse): not refused on a new major;
+   its launch holds it to the new build itself (`store.repin(..., { by: "config" })`, a history
+   entry by "config", a log line), since its settings are config.json's, mapped and refused by the
+   same `toLaunch` at every launch, so the person's check would add nothing, and on a desktop the
+   sessions page's Check is in the browser that didn't start; still `unverified`, so
+   `requireValidatedProfiles` refuses it. A store profile's refusal names `cli.mjs validate` by
+   its full path (`validate.mjs` `cliCommand`, from `import.meta.url`), as the migration note does. `scripts/profiles/validate.mjs`
+   `validateProfile(store, ref, { build, pack, configSettings })`: `toLaunch` for the native build
+   (a refusal names the field), then `store.repin(id, { engine, build, entry })` (new in `store.mjs`:
+   the engine replaced, `validation[build]` the check's `unverified` entry unless measured evidence is
+   there, a history entry `change: ["engine"]` at the same revision, no new revision); the status
+   stays `unverified` (E6), so `requireValidatedProfiles` still refuses; `installedBuild(config)` reads
+   the build the launch would pick. `pairbrowse_session`: action `profiles` (names, kinds, retired;
+   never a setting) and `profile` with `new` (`createSession(target, profile, ...)`; with any other
+   action refused); `refuse.mjs` lets `profiles` through while others use the browser, as `list`.
+   `scripts/profiles/cli.mjs` `runProfilesCli`: `list`, `show`, `create --settings <json>`, `edit
+   --settings --name --revision`, `retire`, `restore`, `assign` (refused for a clean session or one a
+   browser has open), `import [--dry-run] [--source] [--license] [--terms] [--name]`, `export [<file>]
+   [--with-history] [--include-identity] [--overwrite]` (default file under `profile-exports/`),
+   `validate [<profile>]` (every active one), `migrate [--report | --undo | --dismiss]`. Owner routes
+   in `scripts/liveview/routes/profiles.mjs` (not `routes/sessions.mjs`; the "session" right):
+   `GET profiles.json`, `POST profiles` (`assign`, `validate`), `POST profile-import` (the file's bytes
+   as the body through `http.mjs` `readBytesCapped`, 413 past `BODY_MAX.profileFile` = 1 MiB by
+   Content-Length or as it grows; source, license, name and dryRun in the query), `GET profile-export`
+   (JSON `{ fileName, text, sha256, warnings }`, saved by the page); handled by
+   `scripts/daemon/sessions/profile-owner.mjs` (`context.profileOps`, through `sessionOps.profiles`):
+   the open session, a clean one or one another browser has open is never reassigned. `ui/sessions/`:
+   a Browser profiles section (Check, Export, Use for this session, Import a profile file), hidden on
+   a helper without the route. Tests: `test/profile-lock.test.mjs`, `test/profile-migrate.test.mjs`,
+   `test/profile-cli.test.mjs`, `test/session-profiles.test.mjs`, `test/context-switch.test.mjs`,
+   `test/session-route.test.mjs`, `test/ui-sessions.test.mjs`, `test/structure.test.mjs`; live:
+   `test/integration/profiles-persistence.test.mjs`, `profiles-migration.test.mjs` ("the previous
+   layout" is the session's folder opened directly by the driver after the undo, as a PairBrowse
+   from before profiles opens it), `profiles-isolation.test.mjs`, `profiles-instances.test.mjs`
+   (two instances under a test account folder, one browser at a time; "one session can't open in two
+   browsers": a second helper on the instance leaves, and reassigning the open session is refused);
+   opt-in `test/optin/profiles-native.test.mjs`, which also holds "the same pinned seed is refused in
+   the second" (the open build can't apply a seed, so only the native build reaches the identity lock).
 39. Spike E-S1: `SystemInfo`, software switches, Linux WebGPU, fixtures; lands the A13 container
     harness `test/optin/server/container.mjs`, its first user. -> 8
 39b. The Docker half of C12: `test/optin/proxy-docker.test.mjs` on the A13 container (its only route

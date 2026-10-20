@@ -125,7 +125,8 @@ export function createRefusals(conn, api) {
     }
     // (Claude Code's answer from the browser is checked once the call's tab is known: approvalProblem.)
     // While the session picker is up nobody has tabs to lose: an agent may choose for everyone.
-    if ((name === "browser_close" || (name === "pairbrowse_session" && args.action !== "list")) && !context.picking() && inUse().length) {
+    // (Listing sessions or browser profiles changes nothing: always let through.)
+    if ((name === "browser_close" || (name === "pairbrowse_session" && args.action !== "list" && args.action !== "profiles")) && !context.picking() && inUse().length) {
       const who = inUse();
       return `${who.length === 1 ? "Another session is" : `${who.length} other sessions are`} using the browser (${who.join(", ")}): ` +
         `${name === "browser_close" ? "closing it" : "switching sessions"} would close their tabs. Wait until they're done (idle 10 minutes), ` +

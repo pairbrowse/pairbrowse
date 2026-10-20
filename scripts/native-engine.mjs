@@ -39,7 +39,29 @@ export const personaProxyRefusal = (where) => `${where} sets proxy: refused, a s
 export const PROXY_CREDENTIALS_REFUSAL = "A proxy's username and password reach the browser only through its proxy auth file, never the launch options or the command line: refused.";
 const userInfo = (server) => typeof server === "string" && server.trim().replace(/^[a-z][a-z0-9+.-]*:\/\//i, "").split(/[/?#]/)[0].includes("@");
 export const proxyCredentials = (proxy) => proxy != null && (typeof proxy === "object" ? !!(proxy.username || proxy.password) || userInfo(proxy.server) : userInfo(proxy));
+// What geoip derives from the exit address (spec C9): recomputed at each launch, never kept in the
+// persona (savePersona), so a session's region follows its proxy and its file never holds an address.
 const GEOIP_FIELDS = ["timezone", "acceptLanguage", "webrtcIp", "location"];
+// An IPv4 or IPv6 address (one with "::" or all eight groups, an IPv4 tail too) in a sentence the
+// engine pack wrote; a time such as 12:30:45 is not one.
+const IPV4 = /\b(?:\d{1,3}\.){3}\d{1,3}\b/g;
+const IPV6 = /(?<![\w:.])[0-9a-f:.]*:[0-9a-f:.]*:[0-9a-f:.]*(?![\w:.])/gi;
+const isIpv6 = (run) => run.includes("::") || run.split(":").length === 8;
+const maskIpv6 = (run) => { const end = run.match(/\.*$/)[0]; const ip = run.slice(0, run.length - end.length); return isIpv6(ip) ? `an address${end}` : run; };
+export const withoutAddresses = (text) => String(text).replace(IPV6, maskIpv6).replace(IPV4, "an address");
+// The region from the exit address (geoip), quietly (spec C9): the engine pack asks for the exit
+// address, and its fallback region service, through the session's proxy, and with quiet true writes
+// nothing to stderr, so no line of daemon.log names the address (without a proxy it is this
+// computer's own). A failure stops the launch with the pack's sentence, its address taken out for
+// the same reason. (The pack's region database, fetched once, is not yet pinned or proxied: spec
+// E11, step 48.)
+async function applyGeoipQuietly(pack, fingerprint, proxy) {
+  try {
+    await pack.applyGeoip(fingerprint, proxy, true);
+  } catch (error) {
+    throw new Error(withoutAddresses(error?.message ?? error));
+  }
+}
 const PLATFORM = { darwin: "macos", linux: "linux", win32: "windows" }[process.platform];
 
 // The build manifest of a native PairBrowse browser: in the app's Resources on macOS
@@ -323,17 +345,23 @@ async function resolveFingerprint(chromium, options, pack, directory, settings, 
   }
   if (geoip) {
     for (const key of GEOIP_FIELDS) if (overrides[key] === undefined && saved[key] === undefined) delete fingerprint[key];
-    await pack.applyGeoip(fingerprint, options.proxy ?? rest.proxy, false);
+    // The session's proxy is the launch's own (a persona's or saved profile's proxy is refused in
+    // readSettings, config.json's never reaches the settings).
+    await applyGeoipQuietly(pack, fingerprint, options.proxy);
   }
   fingerprint.timezone ??= Intl.DateTimeFormat().resolvedOptions().timeZone;
   fingerprint.acceptLanguage ??= Intl.DateTimeFormat().resolvedOptions().locale;
   return { fingerprint, rest, source, steps };
 }
 
-// Only the fingerprint is kept with the profile: never proxy credentials, agent keys or a canvas bridge.
-function savePersona(pack, personaPath, fingerprint) {
+// Only the fingerprint is kept with the profile: never proxy credentials, agent keys or a canvas
+// bridge, and with geoip never what it derived (GEOIP_FIELDS, spec C9): those are measurements of
+// this launch's exit address, not settings. One set in config.json or a saved profile is read from
+// there again at each launch.
+function savePersona(pack, personaPath, fingerprint, geoip) {
   const persona = { ...fingerprint };
   delete persona.canvasBridge;
+  if (geoip) for (const key of GEOIP_FIELDS) delete persona[key];
   new pack.Profile("pairbrowse", persona).save(personaPath);
 }
 
@@ -366,7 +394,7 @@ export async function launchNative(chromium, config, directory, options, pack, l
   // Each launch step's time (plans/555 item 4): what a slow first launch spent where.
   log(`launch: fingerprint ${Date.now() - fingerprintAt} ms${steps.length ? ` (${steps.join(", ")})` : ""}`);
   if (source) log(`PairBrowse persona selected from ${source}.`);
-  savePersona(pack, personaPath, fingerprint);
+  savePersona(pack, personaPath, fingerprint, settings.geoip);
 
   const { portableProfile, encryptionKey, extensions, disablePrivacySandbox = true, ...personaRest } = rest;
   const { agent, rest: launchOptions } = pack.splitAgentOptions(personaRest);

@@ -249,6 +249,11 @@
   in a saved profile stops with an error naming it. A proxy in a saved profile (`profile`) or in the
   persona kept with a session (`pairbrowse-persona.json`) stops the launch too, with an error saying
   to move it to `network.proxies` (above): dropping it would turn a proxied session into a direct one.
+  `geoip: true` sets the time zone, languages, location and WebRTC address from the region of the
+  address sites see (the session's proxy's, else this computer's) at each launch; a value you set
+  here or in a saved profile wins. What it finds is never kept in `pairbrowse-persona.json`, so it
+  follows the proxy, and the lookup writes no address to the helper log; when it fails the launch
+  stops with an error saying so. The engine's region database is still fetched once directly.
 - `downloadsDir`: where site downloads and recordings are saved (default: your Downloads folder): an ordinary folder inside your home folder, checked as Settings checks it when the file is read and again at every save; one that fails is not used.
 - `liveViewPort`: a fixed live view port (default: a random one each start).
 - `liveViewHosts`: extra host names the live view answers to, for invite and hand-off links only,

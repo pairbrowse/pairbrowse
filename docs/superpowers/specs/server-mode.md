@@ -709,8 +709,8 @@ readable by others (all secrets disabled, said once).
 ### Migration
 `config.json` unchanged. A `secrets.env` that is a symlink or another user's stops being read (rare;
 CHANGELOG). A saved persona with `proxy` now refuses the launch with the move-it sentence. The persona
-file stops holding geoip fields at the next geoip launch; `test/native-engine.test.mjs:548` changes
-its expectation.
+file stops holding geoip fields at the next geoip launch (the existing GeoIP test in
+`test/native-engine.test.mjs` keeps its expectation; new tests pin the persona file, step 26).
 
 ### Acceptance tests
 - `test/liveview-network-routes.test.mjs` (C14): only the owner key writes; a joiner, an agent tool
@@ -1616,6 +1616,20 @@ it depends on.
    `proxyAuthFile` are `launchPart` (step 27). Tests: `test/native-engine.test.mjs` (the F1 test no
    longer pins the proxy), `test/browser-choice.test.mjs`.
 26. Geoip fields out of the persona, quiet geoip (C9).
+   Landed as: `native-engine.mjs` `savePersona` drops `GEOIP_FIELDS` (time zone, languages, WebRTC
+   address, location) whenever `pairbrowse.geoip` is on, whichever layer set them (a value set in
+   config.json or a saved profile is read from there again each launch); a persona written before
+   loses them at the next geoip launch. `applyGeoipQuietly` calls `pack.applyGeoip(fingerprint,
+   options.proxy, true)`: the launch's own proxy only (the persisted and saved layers' `proxy` is
+   refused since step 25, so the old `rest.proxy` fallback is gone), quiet so the pack writes no
+   exit address to stderr (`daemon.log`), and a failure's sentence has its addresses taken out
+   (`withoutAddresses`) before it becomes the launch error. Through a proxy that needs credentials
+   the pack's lookup cannot authenticate (the credentials reach only the browser, C1), so such a
+   geoip launch stops until step 48's `applyGeoip` takes the IP C6 measured. The pack's one-time
+   region database download stays direct until step 48 (E11); `docs/configuration.md` says so. The
+   existing GeoIP test kept its expectation (the migration note's line 548 needed no change). Tests:
+   `test/native-engine.test.mjs` ("geoip with a proxy never writes its fields into the persona", and
+   config values, geoip off, a failure naming no address, `withoutAddresses`).
 27. `daemon/network.mjs` `forLaunch`, launch wiring in section 3.2 order (C5). -> 4, 24
 28. Probe, verdict, browser check, `NET_CHECK` (C2, C6).
 29. `checkAtLaunch`, fail closed, refusal, status; row C-1 (C7). -> 27, 28

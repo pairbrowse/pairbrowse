@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync, statSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { launchNative, DRIVER_BLINK_SWITCH, DRIVER_BACKGROUND_SWITCH, nativeManifest, declaresOwnPages, macHostProfile, captureMacHost, MEASURING, hostCachePath, screenInfoArg, CANVAS_BRIDGE_DROPPED, isCanvasBridgeSwitch, personaProxyRefusal, PROXY_CREDENTIALS_REFUSAL, proxyCredentials, proxyAuthFile, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE, flatWebgpuProfile } from "../scripts/native-engine.mjs";
+import { launchNative, DRIVER_BLINK_SWITCH, DRIVER_BACKGROUND_SWITCH, nativeManifest, declaresOwnPages, macHostProfile, captureMacHost, MEASURING, hostCachePath, screenInfoArg, CANVAS_BRIDGE_DROPPED, isCanvasBridgeSwitch, personaProxyRefusal, PROXY_CREDENTIALS_REFUSAL, proxyCredentials, withoutAddresses, proxyAuthFile, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE, flatWebgpuProfile } from "../scripts/native-engine.mjs";
 import { loadEngine } from "../scripts/native/pack.mjs";
 import { normalizeWebgpu } from "../scripts/native/graphics.mjs";
 
@@ -623,6 +623,75 @@ packTest("GeoIP refreshes persisted implicit locale after proxy changes", async 
   await launchNative(chromium, { pairbrowse: { geoip: true } }, directory,
     { executablePath: app.executablePath, headless: false }, pack);
   assert.ok(chromium.calls[0].options.args.includes('--timezone=Europe/Berlin'));
+});
+
+// Spec C9: what geoip derives is a measurement of this launch's exit address, so the persona file
+// never holds it (a session's region follows its proxy, and the file never names an address); the
+// pack is asked quietly and through the launch's proxy.
+packTest("geoip with a proxy never writes its fields into the persona", async () => {
+  const pack = await loadPack();
+  const app = appFixture();
+  const directory = mkdtempSync(join(tmpdir(), "pairbrowse-geo-persona-"));
+  const personaPath = join(directory, "pairbrowse-persona.json");
+  // A persona written before this change still holds the fields: the next geoip launch drops them.
+  new pack.Profile("old", { fingerprint: "kept-seed", timezone: "America/New_York", acceptLanguage: "en-US", webrtcIp: "192.0.2.44", location: "40.7,-74.0" }).save(personaPath);
+  const proxy = { server: "http://203.0.113.10:3128" };
+  const asked = [];
+  pack.applyGeoip = async (fingerprint, given, quiet) => {
+    asked.push({ given, quiet });
+    for (const key of ["timezone", "acceptLanguage", "webrtcIp", "location"]) assert.equal(fingerprint[key], undefined, key);
+    Object.assign(fingerprint, { timezone: "Europe/Berlin", acceptLanguage: "de-DE", webrtcIp: "198.51.100.7", location: "52.52,13.40" });
+  };
+  for (const _ of [1, 2]) {
+    const chromium = fakeBrowserType();
+    await launchNative(chromium, { pairbrowse: { geoip: true } }, directory, { executablePath: app.executablePath, headless: false, proxy }, pack);
+    assert.ok(chromium.calls[0].options.args.includes("--timezone=Europe/Berlin"), "this launch still uses what geoip found");
+    const saved = readFileSync(personaPath, "utf8");
+    for (const word of ["timezone", "acceptLanguage", "webrtcIp", "location", "Europe/Berlin", "America/New_York", "198.51.100.7", "192.0.2.44", "203.0.113.10"]) assert.ok(!saved.includes(word), `${word} kept in ${saved}`);
+    assert.equal(pack.Profile.load(personaPath).options.fingerprint, "kept-seed", "the rest of the persona stays");
+  }
+  assert.deepEqual(asked, [{ given: proxy, quiet: true }, { given: proxy, quiet: true }]);
+});
+
+packTest("geoip values set in config.json still apply, and are read from there again, not the persona", async () => {
+  const pack = await loadPack();
+  const app = appFixture();
+  const directory = mkdtempSync(join(tmpdir(), "pairbrowse-geo-set-"));
+  pack.applyGeoip = async (fingerprint) => { fingerprint.timezone ??= "Europe/Berlin"; fingerprint.acceptLanguage ??= "de-DE"; };
+  const chromium = fakeBrowserType();
+  await launchNative(chromium, { pairbrowse: { geoip: true, timezone: "Asia/Tokyo" } }, directory, { executablePath: app.executablePath, headless: false }, pack);
+  assert.ok(chromium.calls[0].options.args.includes("--timezone=Asia/Tokyo"));
+  assert.ok(!readFileSync(join(directory, "pairbrowse-persona.json"), "utf8").includes("Asia/Tokyo"));
+});
+
+packTest("without geoip the persona keeps its time zone and language as before", async () => {
+  const pack = await loadPack();
+  const app = appFixture();
+  const directory = mkdtempSync(join(tmpdir(), "pairbrowse-geo-off-"));
+  pack.applyGeoip = async () => { throw new Error("geoip is off"); };
+  await launchNative(fakeBrowserType(), { pairbrowse: { timezone: "Asia/Tokyo" } }, directory, { executablePath: app.executablePath, headless: false }, pack);
+  assert.equal(pack.Profile.load(join(directory, "pairbrowse-persona.json")).options.timezone, "Asia/Tokyo");
+});
+
+packTest("a geoip failure stops the launch with a sentence naming no address", async () => {
+  const pack = await loadPack();
+  const app = appFixture();
+  const directory = mkdtempSync(join(tmpdir(), "pairbrowse-geo-fail-"));
+  pack.applyGeoip = async () => { throw new Error("geoip: could not resolve the connection's region (no timezone for exit IP 198.51.100.7). Set timezone and acceptLanguage, or fix the proxy."); };
+  const chromium = fakeBrowserType();
+  await assert.rejects(() => launchNative(chromium, { pairbrowse: { geoip: true } }, directory, { executablePath: app.executablePath, headless: false }, pack),
+    (error) => /could not resolve the connection's region \(no timezone for exit IP an address\)/.test(error.message) && !error.message.includes("198.51.100.7"));
+  assert.equal(chromium.calls.length, 0);
+});
+
+test("withoutAddresses takes IPv4 and IPv6 addresses out of a sentence, nothing else", () => {
+  assert.equal(withoutAddresses("no timezone for exit IP 198.51.100.7."), "no timezone for exit IP an address.");
+  assert.equal(withoutAddresses("exit IP 2001:db8::1)"), "exit IP an address)");
+  assert.equal(withoutAddresses("2001:db8:0:0:0:0:0:1."), "an address.");
+  assert.equal(withoutAddresses("ip ::ffff:192.0.2.1 and ::1"), "ip an address and an address");
+  for (const kept of ["timed out after 20s (PAIRBROWSE_ENGINE_GEOIP_TIMEOUT_SECONDS)", "invalid proxy (http://proxy.example:3128)", "at 12:30:45", "geoip: could not determine the exit IP through the proxy"]) {
+    assert.equal(withoutAddresses(kept), kept);
+  }
 });
 
 packTest("native launch refuses options this engine can't honour", async () => {

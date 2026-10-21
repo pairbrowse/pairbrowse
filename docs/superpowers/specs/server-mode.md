@@ -2811,6 +2811,14 @@ binding for implementation; where a phase section above says otherwise, this sec
     person's own everyday browser on the same network. Output: one table per build and a list of
     causes fixed. Canvas noise stays on for hosts without a GPU (decision 10); the canvas bridge stays
     removed; the GPU-less identity stays the engine's single Intel UHD 770 (no pool).
+    Detector verdicts are read from our own check page on a PairBrowse-owned test domain, set up with
+    our own site keys for reCAPTCHA v3 (its 0 to 1 score), Cloudflare Turnstile and hCaptcha (whether a
+    token is issued without a challenge), under each provider's terms; a challenge that appears is
+    recorded, never solved. Every setup is run as an agent drives it (humanized input on) and with a
+    person at the controls, so fingerprint, behaviour and network signals can be told apart. Reference:
+    Proof of Human's 2026 benchmark (a detection vendor's own study, so read with that in mind)
+    found reCAPTCHA v3 caught most AI-agent sessions (including Grok's agent) but none from a stealth
+    browser on a residential proxy, while hCaptcha and Turnstile showed the reverse.
 
 Implementation conditions (from the user):
 - Keep the five phases and every agreed requirement: profile import and export, per-profile isolation,

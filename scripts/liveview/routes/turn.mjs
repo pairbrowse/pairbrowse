@@ -1,6 +1,6 @@
 // A hand-off grant's own routes on the owner's port (spec server-mode B3, B4): the landing page's
 // "Take over" (role redeem), Done and switching among the grant's tabs (role turn, right "turn"),
-// "Fill saved card" in a saved-card session (role turn, B12), and calling a hand-off off from the
+// "Fill saved card" in a saved-card session (role turn, B12), the option list (role turn), and calling a hand-off off from the
 // Tools tab (the owner, right "tools"). The landing page itself
 // is GET "" (routes/viewer.mjs hands role redeem to liveview/grants.mjs). startLiveView mounts them.
 import { json, plain, readJsonBody, BODY_MAX } from "../http.mjs";
@@ -33,6 +33,18 @@ export function createTurnRoutes(gate) {
     { method: "POST", path: "turn-fill-card", right: "turn", needs: () => gate.on, handler: async ({ req, res, invite }) => {
       if ((await body(req, res)) === undefined) return;
       await gate.fillCard(res, invite);
+    } },
+    // The option list (liveview/options.mjs): the focused select's options after a tap, and the
+    // person's choice { index, count } as their own keys.
+    { method: "POST", path: "turn-options", right: "turn", needs: () => gate.on, handler: async ({ req, res, invite }) => {
+      if ((await body(req, res)) === undefined) return;
+      await gate.options(res, invite);
+    } },
+    { method: "POST", path: "turn-pick", right: "turn", needs: () => gate.on, handler: async ({ req, res, invite }) => {
+      const op = await body(req, res);
+      if (op === undefined) return;
+      if (!Number.isSafeInteger(op.index) || !Number.isSafeInteger(op.count) || op.index < 0 || op.count < 1) return json(res, 409, { error: "Send index and count as turn-options gave them: the option's place and the list's length." });
+      await gate.pick(res, invite, { index: op.index, count: op.count });
     } },
     // { id }: the owner calls a hand-off off (the Tools tab); it ends "revoked".
     { method: "POST", path: "turn-revoke", right: "tools", needs: () => gate.on, handler: async ({ req, res }) => {

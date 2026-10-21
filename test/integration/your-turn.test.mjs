@@ -6,13 +6,16 @@
 // keys as `char`); the agent is refused in that tab, its wait returns on Done, and it goes on
 // signed in. Then a person who never finishes (PAIRBROWSE_TEST_TURN_MS): one reminder, the stop,
 // a held tab that keeps what was typed, a new hand-off to that same tab, and the tabs back after
-// a helper restart. Live: PAIRBROWSE_TEST_RUNTIME; the person's side is plain HTTP, so one browser.
+// a helper restart. And T-B18: whether open select and autofill lists reach the phone's picture,
+// and the viewer's option list that stands in for the select list. Live: PAIRBROWSE_TEST_RUNTIME;
+// the person's side is plain HTTP, so one browser.
 import "../helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { readFileSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { createRequire } from "node:module";
 import { attachDaemon, session } from "../helpers/live.mjs";
 import { sleep, text, until } from "../helpers/util.mjs";
 import { helperHome, spawnDaemon, stopDaemon } from "../helpers/daemon.mjs";
@@ -53,6 +56,20 @@ document.getElementById("tap").addEventListener("click",()=>ev("tap",1));
 const t=document.getElementById("touchonly");
 t.addEventListener("touchstart",()=>ev("touchstart",1));t.addEventListener("click",()=>ev("touchclick",1));
 ev("verify","loaded");
+</script>`,
+  // T-B18's lists: a select and a field with a suggestion list (the browser's own autofill list,
+  // the one a saved card or an address is picked from), each above plain white, a black square to
+  // check where the picture's pixels are, and each control's state as the page sees it.
+  "/lists": () => `<!doctype html><title>Lists</title><body style="margin:0;background:#fff">${REPORT}
+<select id="s" style="${ABS(20, 20, 220, 32)}">${Array.from({ length: 12 }, (_, i) => `<option>Option ${i + 1}</option>`).join("")}</select>
+<input id="d" list="dl" aria-label="Choice" style="${ABS(400, 20, 220, 32)}">
+<datalist id="dl">${Array.from({ length: 8 }, (_, i) => `<option value="Choice ${i + 1}">`).join("")}</datalist>
+<div style="${ABS(300, 300, 40, 40)};background:#000"></div>
+<script>
+const s=document.getElementById("s"),d=document.getElementById("d");
+const open=()=>{try{return String(s.matches(":open"));}catch{return "unknown";}};
+let was="";setInterval(()=>{const now=[s.value,open(),d.value,document.activeElement?.id||"",document.hasFocus()].join("|");if(now!==was){was=now;ev("sel",s.value);ev("selopen",open());ev("dl",d.value);ev("lfocus",(document.activeElement?.id||"none")+(document.hasFocus()?"":" (window not focused)"));}},150);
+ev("lists","loaded");
 </script>`,
   "/account": (signedIn) => `<!doctype html><title>Account</title><h1>${signedIn ? "Signed in as Ada" : "Sign in required"}</h1>`,
   // A form the person types into, which says what it holds every 300 ms with the page's own id
@@ -144,7 +161,8 @@ function stream(viewUrl) {
     const req = http.get({ host: u.hostname, port: u.port, path: u.pathname }, (res) => {
       res.setEncoding("utf8");
       res.on("data", (d) => (t += d));
-      resolve({ status: res.statusCode, events: (name) => t.split("\n\n").filter((b) => b.startsWith(`event: ${name}\n`)).map((b) => JSON.parse(b.slice(b.indexOf("data: ") + 6))), close: () => req.destroy() });
+      resolve({ status: res.statusCode, count: (name) => t.split(`event: ${name}\n`).length - 1,
+        last: (name) => { const i = t.lastIndexOf(`event: ${name}\n`); if (i < 0) return null; const j = t.indexOf("data: ", i) + 6; return JSON.parse(t.slice(j, t.indexOf("\n", j))); }, events: (name) => t.split("\n\n").filter((b) => b.startsWith(`event: ${name}\n`)).map((b) => JSON.parse(b.slice(b.indexOf("data: ") + 6))), close: () => req.destroy() });
     });
     req.on("error", reject);
   });
@@ -239,7 +257,7 @@ test("full path with a loopback webhook: status, link, GET, Take over, click and
     // Measurement (T-B18, reports only): whether a touch alone, without the viewer's mouse events, clicks.
     await p.input([{ type: "touch", action: "touchStart", x: AT.touchOnly[0], y: AT.touchOnly[1] }, { type: "touch", action: "touchEnd" }]);
     await sleep(1000);
-    t.diagnostic(`T-B18: dispatchTouchEvent alone ${shop.last("touchclick") ? "yields" : "does not yield"} a click (touchstart ${shop.last("touchstart") ? "seen" : "not seen"}); the viewer sends taps as mouse events either way. Select and autofill lists in frames: not measured here.`);
+    t.diagnostic(`T-B18: dispatchTouchEvent alone ${shop.last("touchclick") ? "yields" : "does not yield"} a click (touchstart ${shop.last("touchstart") ? "seen" : "not seen"}); the viewer sends taps as mouse events either way. Select and autofill lists in frames: the Measurement (T-B18) test.`);
 
     // Done: the waiting agent returns at once, told to look; its hands are back, still signed in.
     assert.equal((await request(p.view, "POST", "turn-done", {})).status, 200);
@@ -353,6 +371,118 @@ test("TURN_MS: one reminder, then the stop; the held tab keeps its address and t
       return l.includes(`${SHOP}/form`) && l;
     }, 60_000, 1000);
     assert.match(listed, /shop\.pbtest\.example\/form/);
+  } catch (e) {
+    throw new Error(`${e.message}${why(home)}`, { cause: e });
+  } finally {
+    h?.agent.sock.destroy();
+    await stopDaemon(h?.daemon);
+    shop.close();
+    hook.close();
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+// T-B18's open half (reports, does not fail): what a person sees on the phone when a list opens in
+// the handed-off tab. The viewer's picture is the tab's screencast; the browser draws an open
+// select list and its suggestion and autofill lists as popups of its own, which may never be in
+// it. Measured through the real view key: the share of non-white pixels in the plain white area
+// below each control, in the picture before and after it opens, read from the frames the turn
+// stream got (decoded with the runtime's JPEG decoder), with the page's own word that the list
+// was open (select :open; a suggestion picked by ArrowDown and Enter).
+const FRAME_DIFF = 0.02; // more than this share of the area changed: the list is in the picture
+function jpegOf() {
+  try { return createRequire(join(runtime, "package.json"))("playwright-core/lib/utilsBundle").jpegjs; } catch { return null; }
+}
+// The share of pixels in a page-pixel box that aren't near white, in a frame { img, w, h }.
+function inked(jpeg, frame, [x0, y0, x1, y1]) {
+  const { width, height, data } = jpeg.decode(Buffer.from(frame.img, "base64"), { useTArray: true });
+  const sx = width / frame.w, sy = height / frame.h;
+  let ink = 0, all = 0;
+  for (let y = Math.round(y0 * sy); y < Math.min(height, Math.round(y1 * sy)); y++) {
+    for (let x = Math.round(x0 * sx); x < Math.min(width, Math.round(x1 * sx)); x++) {
+      const i = (y * width + x) * 4;
+      all++;
+      if (Math.min(data[i], data[i + 1], data[i + 2]) < 200) ink++;
+    }
+  }
+  return all ? ink / all : 0;
+}
+const BELOW_SELECT = [20, 60, 240, 300], BELOW_FIELD = [400, 60, 620, 300], MARK = [305, 305, 335, 335];
+const keyEv = (key) => [{ type: "key", key, modifiers: 0 }];
+
+test("Measurement (T-B18): an open select list and the autofill list in screencast frames; the viewer's option list chooses through the view key", { skip: !runtime && "set PAIRBROWSE_TEST_RUNTIME", timeout: 300_000 }, async (t) => {
+  const jpeg = jpegOf();
+  assert.ok(jpeg, "the runtime's JPEG decoder");
+  const shop = await startShop();
+  const hook = await startWebhook();
+  const home = turnHome(shop, hook, "pb-yl-");
+  let h;
+  try {
+    h = await helper(home);
+    const { agent } = h;
+    assert.ok(!(await agent.tool("browser_navigate", { url: `${SHOP}/lists` })).result?.isError);
+    await until("the lists page", () => shop.last("lists"), 15_000, 100);
+    text(await agent.tool("pairbrowse_status", { kind: "you", text: "Pick an option", step: "other" }));
+    const turn = await until("the message", () => turnsFrom(hook, "turn")[0], 15_000, 100);
+    const p = await takeOver(turn.link);
+    // A frame after this moment (the stream's frames so far are older).
+    const fresh = async (what, after) => until(what, () => p.s.count("frame") > after && p.s.last("frame"), 15_000, 100);
+    // The picture is the page: the black square is where it should be, the white areas are white.
+    const first = await until("a frame with the square", () => { const f = p.s.last("frame"); return f && inked(jpeg, f, MARK) > 0.9 && f; }, 20_000, 200);
+    const before = { select: inked(jpeg, first, BELOW_SELECT), field: inked(jpeg, first, BELOW_FIELD) };
+    assert.ok(before.select < 0.01 && before.field < 0.01, `the areas start white: ${JSON.stringify(before)}`);
+
+    // The suggestion list (the browser's autofill list), first: on macOS a select's list is a menu of
+    // the system's that keys from the page don't close. A tap in the field, then ArrowDown.
+    // A second tap in the focused field is the other way the list opens.
+    let n = 0, fieldInk = 0, chose = "", how = "";
+    for (const way of ["a tap, then ArrowDown", "a second tap, then ArrowDown"]) {
+      n = p.s.count("frame");
+      assert.equal((await p.input(tap([510, 36]))).status, 204);
+      await sleep(500);
+      assert.equal((await p.input(keyEv("ArrowDown"))).status, 204);
+      await sleep(1500);
+      const withList = await fresh("a frame after ArrowDown", n).catch(() => p.s.last("frame"));
+      fieldInk = Math.max(fieldInk, inked(jpeg, withList, BELOW_FIELD));
+      assert.equal((await p.input(keyEv("Enter"))).status, 204);
+      chose = await until("a suggestion picked", () => shop.last("dl") || null, 3000, 100).catch(() => shop.last("dl") || "");
+      if (chose) { how = way; break; }
+    }
+    assert.equal((await p.input(keyEv("Escape"))).status, 204);
+    await sleep(800);
+
+    // The select: a tap opens its list.
+    n = p.s.count("frame");
+    assert.equal((await p.input(tap([130, 36]))).status, 204);
+    const focusSel = await until("the select focused", () => shop.last("lfocus")?.startsWith("s") && shop.last("lfocus"), 5000, 100).catch(() => shop.last("lfocus"));
+    const opened = await until("the select's list open", () => shop.last("selopen") === "true" && "true", 5000, 100).catch(() => shop.last("selopen"));
+    await sleep(1500);
+    const withSelect = await fresh("a frame after the tap", n).catch(() => p.s.last("frame"));
+    const selectInk = inked(jpeg, withSelect, BELOW_SELECT);
+    // The viewer's option list (liveview/options.mjs): the select's options after the tap, and the
+    // choice sent as the person's own keys.
+    const listed = await request(p.view, "POST", "turn-options", {});
+    assert.equal(listed.status, 200, listed.text);
+    const list = JSON.parse(listed.text);
+    assert.equal(list.options?.length, 12, listed.text);
+    assert.equal(list.options[5].label, "Option 6");
+    assert.equal(list.selected, 0);
+    const chosen = await request(p.view, "POST", "turn-pick", { index: 5, count: 12 });
+    const picked = await until("the option chosen from the list", () => shop.last("sel") === "Option 6" && shop.last("sel"), 5000, 100).catch(() => shop.last("sel"));
+    const closed = await until("the page's list closed", () => shop.last("selopen") !== "true" && shop.last("selopen"), 3000, 100).catch(() => shop.last("selopen"));
+    // Where the list opens on a tap (Linux, the server) by the keys; where it doesn't (macOS) set on the select.
+    assert.equal(chosen.status, 200, chosen.text);
+    assert.equal(picked, "Option 6");
+    assert.notEqual(closed, "true", "the page's list is closed after the choice");
+    t.diagnostic(`option list (${process.platform}): turn-pick answered ${chosen.status}${chosen.status === 200 ? "" : ` (${chosen.text})`}, the page's select now "${picked}", its list open: ${closed}.`);
+    if (closed === "true") assert.equal((await p.input(keyEv("Escape"))).status, 204);
+    await sleep(800);
+
+    const word = (ink, base) => (ink - base > FRAME_DIFF ? "shows" : "does not show");
+    t.diagnostic(`T-B18 (${process.platform}): an open select list (page says :open ${opened}) ${word(selectInk, before.select)} in the turn stream's frames (ink below it ${(before.select * 100).toFixed(1)}% -> ${(selectInk * 100).toFixed(1)}%); focus ${focusSel}.`);
+    t.diagnostic(`T-B18 (${process.platform}): the autofill (suggestion) list ${chose ? `opened on ${how} from Input.dispatchKeyEvent (Enter picked "${chose}")` : "did not open on a tap and ArrowDown, nor on a second tap and ArrowDown (Enter picked nothing)"} and ${word(fieldInk, before.field)} in the frames (ink below it ${(before.field * 100).toFixed(1)}% -> ${(fieldInk * 100).toFixed(1)}%).`);
+    assert.equal((await request(p.view, "POST", "turn-done", {})).status, 200);
+    p.s.close();
   } catch (e) {
     throw new Error(`${e.message}${why(home)}`, { cause: e });
   } finally {

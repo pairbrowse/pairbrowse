@@ -437,3 +437,50 @@ test("a mouse press whose gesture is cancelled comes up where it last was", { sk
   await s.page.mouse.up();
   assert.deepEqual(s.errors, []);
 });
+
+test("the option list: a tap on a select lists its options over the picture, a tap on one sends turn-pick, Close sends Escape; a tap elsewhere shows none", { skip: !runtime, timeout: 60_000 }, async (t) => {
+  const s = await phone(t);
+  // The helper's answers (its reading of the focused select is test/yourturn.test.mjs's and
+  // test/integration/your-turn.test.mjs's): a select after the first tap, nothing after the next.
+  const asks = [], picks = [];
+  let answer = { label: "Expiry month", selected: 1, options: [{ label: "Month", disabled: true }, ...Array.from({ length: 12 }, (_, i) => ({ label: `${String(i + 1).padStart(2, "0")} month`, disabled: false }))] };
+  await s.page.route(/\/turn-(options|pick)$/, async (route) => {
+    const url = route.request().url();
+    if (url.endsWith("turn-options")) { asks.push(1); return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(answer) }); }
+    picks.push(JSON.parse(route.request().postData()));
+    return route.fulfill({ status: 200, contentType: "application/json", body: '{"ok":true}' });
+  });
+  await s.takeOver();
+  const p = await s.at(200, 100);
+  await s.page.touchscreen.tap(p.x, p.y);
+  await s.page.waitForSelector("#turn-opts:not([hidden])");
+  assert.equal(await s.page.textContent("#turn-opts-title"), "Expiry month");
+  const buttons = s.page.locator("#turn-opts-list .turn-opt");
+  assert.equal(await buttons.count(), 13);
+  assert.equal(await buttons.nth(0).isDisabled(), true, "the disabled placeholder can't be chosen");
+  assert.equal(await buttons.nth(1).getAttribute("aria-selected"), "true");
+  const sheet = await s.page.locator("#turn-opts").boundingBox();
+  assert.ok(sheet.x >= 0 && sheet.x + sheet.width <= 390.5 && sheet.y + sheet.height <= 844.5 && sheet.height <= 844 * 0.61, `the sheet fits: ${JSON.stringify(sheet)}`);
+  assert.ok((await buttons.nth(3).boundingBox()).height >= 44, "a finger's size");
+  // A tap on an option: hidden at once, and the choice goes with the list's length.
+  await buttons.nth(3).tap();
+  assert.ok(await until(() => picks.length === 1));
+  assert.deepEqual(picks[0], { index: 3, count: 13 });
+  assert.equal(await s.page.isVisible("#turn-opts"), false);
+  // Again, then Close: the page's own unseen list gets Escape.
+  await s.page.touchscreen.tap(p.x, p.y);
+  await s.page.waitForSelector("#turn-opts:not([hidden])");
+  const before = s.input().length;
+  await s.page.tap("#turn-opts-close");
+  assert.ok(await until(() => s.input().slice(before).some((c) => c.method === "Input.dispatchKeyEvent" && c.params.key === "Escape")));
+  assert.equal(await s.page.isVisible("#turn-opts"), false);
+  // A tap on something that isn't a select: asked, nothing shown.
+  answer = { options: null };
+  const n = asks.length;
+  await s.page.touchscreen.tap(p.x, p.y);
+  assert.ok(await until(() => asks.length > n));
+  await wait(200);
+  assert.equal(await s.page.isVisible("#turn-opts"), false);
+  assert.equal(picks.length, 1);
+  assert.deepEqual(s.errors, []);
+});

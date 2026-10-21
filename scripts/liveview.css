@@ -456,6 +456,17 @@ body[data-role="turn"] .frame { transform-origin: 0 0; }
 .turnkeys .mini { min-width: 44px; height: 44px; color: var(--ink-2); font-size: var(--fs-3); }
 .turnkeys .turn-level { font-variant-numeric: tabular-nums; }
 .turnkeys .turn-fill { padding-inline: 10px; color: var(--accent-ink); white-space: nowrap; }
+/* The option list: a sheet over the bottom of the picture (an open select list never reaches it). */
+.turn-opts { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: grid; grid-template-rows: auto minmax(0, 1fr); max-height: 60dvh; padding-bottom: env(safe-area-inset-bottom); background: var(--elevated); color: var(--ink); border-top: 1px solid var(--edge); box-shadow: 0 -8px 24px rgb(0 0 0 / 0.18); }
+.turn-opts[hidden] { display: none; }
+.turn-opts-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--edge); }
+.turn-opts-title { flex: 1; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-3); font-weight: 650; }
+.turn-opts-head .mini { min-width: 44px; height: 44px; color: var(--accent-ink); font-size: var(--fs-3); }
+.turn-opts-list { overflow-y: auto; overscroll-behavior: contain; }
+.turn-opt { display: block; width: 100%; min-height: 44px; padding: 10px 16px; border: 0; border-bottom: 1px solid var(--edge); background: transparent; color: var(--ink); font: inherit; font-size: 1rem; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+.turn-opt[aria-selected="true"] { font-weight: 650; color: var(--accent-ink); }
+.turn-opt:disabled { color: var(--muted); cursor: default; }
+.turn-opt:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 /* Network (ui/network.js) in the Profile drawer, the owner's only: proxies, the form, a test's
    result, each session's choice. */

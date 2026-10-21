@@ -6,7 +6,10 @@
 // (pinch, + and -: the page's own size never changes mid-step), the type box that opens the
 // phone's keyboard, the one input queue, and "Fill saved card" in a session with a saved card
 // (spec server-mode B12: the helper sends the person's own ArrowDown and Enter into the focused
-// card number field, so the browser's autofill picks the card). The helper checks every event again
+// card number field, so the browser's autofill picks the card), and the option list: an open select
+// list is the browser's own popup and never in the picture, so after a tap the viewer asks for the
+// focused select's options, lists them over the picture, and the helper sends the choice as the
+// person's own keys (liveview/options.mjs). The helper checks every event again
 // (liveview/input.mjs readViewerInput); this only shapes what a person's hands do.
 import { $, el } from "./common.js";
 
@@ -80,9 +83,17 @@ export function startTurn({ base, img, stage, on, frame, reopen, end }) {
   const fill = el("button", { className: "mini turn-fill", id: "turn-fill", type: "button", textContent: "Fill saved card", hidden: true });
   fill.setAttribute("aria-label", "Fill saved card: tap the card number field first");
   const keys = el("footer", { className: "turnkeys", id: "turnkeys" }, type, fill, zoomOut, level, zoomIn);
+  // The option list: a sheet over the picture with the focused select's options.
+  const optTitle = el("p", { className: "turn-opts-title", id: "turn-opts-title" });
+  const optList = el("div", { className: "turn-opts-list", id: "turn-opts-list", role: "listbox" });
+  optList.setAttribute("aria-labelledby", "turn-opts-title");
+  const optClose = el("button", { className: "mini", id: "turn-opts-close", type: "button", textContent: "Close" });
+  const opts = el("section", { className: "turn-opts", id: "turn-opts", hidden: true }, el("div", { className: "turn-opts-head" }, optTitle, optClose), optList);
+  opts.setAttribute("role", "dialog");
+  opts.setAttribute("aria-labelledby", "turn-opts-title");
   const win = document.querySelector(".window");
   win.prepend(bar);
-  win.append(keys);
+  win.append(opts, keys);
   stage.setAttribute("aria-label", "The handed-over tab. Tap to click, drag to scroll, pinch to zoom.");
 
   const say = (text) => { problem.textContent = text; problem.hidden = !text; };
@@ -137,6 +148,35 @@ export function startTurn({ base, img, stage, on, frame, reopen, end }) {
     fill.disabled = stopped;
   });
   tabs.addEventListener("change", () => act("turn", { show: tabs.value }));
+
+  // ---- the option list: asked for after each tap, once the tap was replayed ----
+  const settled = async () => { for (let i = 0; i < 50 && (out || pending.length) && !stopped; i++) await new Promise((r) => setTimeout(r, 100)); return !out && !pending.length; };
+  let asked = 0;
+  async function askOptions() {
+    const mine = ++asked;
+    if (!(await settled()) || stopped || mine !== asked) return;
+    const r = await fetch(base + "turn-options", { method: "POST", headers: { "content-type": "application/json" }, body: "{}", cache: "no-store", signal: AbortSignal.timeout(POST_MS) }).catch(() => null);
+    const b = r?.ok ? await r.json().catch(() => null) : null;
+    if (mine !== asked || stopped) return;
+    if (!Array.isArray(b?.options)) { opts.hidden = true; return; }
+    optTitle.textContent = b.label || "Choose an option";
+    const count = b.options.length;
+    optList.replaceChildren(...b.options.map((o, i) => {
+      const btn = el("button", { className: "turn-opt", type: "button", textContent: String(o?.label || "") || " ", disabled: !!o?.disabled });
+      btn.setAttribute("role", "option");
+      btn.setAttribute("aria-selected", String(i === b.selected));
+      btn.addEventListener("click", async () => {
+        opts.hidden = true;
+        await settled();
+        if (!stopped) await act("turn-pick", { index: i, count });
+      });
+      return btn;
+    }));
+    opts.hidden = false;
+    optList.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
+  }
+  // Closing the list closes the page's own (unseen) list too.
+  optClose.addEventListener("click", () => { asked++; opts.hidden = true; add({ type: "key", key: "Escape", modifiers: 0 }); });
   back.addEventListener("click", () => { const first = info?.scope?.[0]; if (first) act("turn", { show: String(first.id) }); });
 
   // ---- the input queue: one POST in flight; presses, releases and keys kept in order ----
@@ -237,6 +277,7 @@ export function startTurn({ base, img, stage, on, frame, reopen, end }) {
   }
   stage.addEventListener("pointerdown", (e) => {
     if (stopped || !live) return;
+    if (!opts.hidden) { asked++; opts.hidden = true; } // a tap elsewhere closes the page's list too
     e.preventDefault();
     stage.setPointerCapture?.(e.pointerId);
     if (e.pointerType === "mouse") {
@@ -288,9 +329,11 @@ export function startTurn({ base, img, stage, on, frame, reopen, end }) {
     if (g.mode === "wait" && e.type === "pointerup") {
       const count = tapCount(g.x0, g.y0, performance.now());
       for (const ev of [...press(g.at, count), lift(g.at, count)]) add(ev);
+      askOptions();
     } else if (g.mode === "press" || g.mode === "mouse") {
       // A pressed button always comes up, also when the gesture was cancelled.
       add(lift(e.type === "pointerup" ? point(e.clientX, e.clientY) : g.at, g.count));
+      askOptions();
     }
     g = null;
   }
@@ -357,6 +400,7 @@ export function startTurn({ base, img, stage, on, frame, reopen, end }) {
     if (g) clearTimeout(g.timer);
     pending = []; out = null;
     for (const c of [type, done, tabs, back, fill]) c.disabled = true;
+    opts.hidden = true;
     setAway(false);
   }
 

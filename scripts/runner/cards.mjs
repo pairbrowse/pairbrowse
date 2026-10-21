@@ -57,7 +57,7 @@ export async function cardFieldAt(page, target) {
 }
 
 // The element that has the focus in page (in whichever frame), as a handle the caller disposes, or null.
-async function focusedHandle(page) {
+export async function focusedHandle(page) {
   if (!page) return null;
   const frame = await focusedFrame(page);
   if (!frame || typeof frame.evaluateHandle !== "function") return null;

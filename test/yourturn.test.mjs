@@ -691,3 +691,83 @@ test("Fill saved card reads the focused field: an empty card number goes; one ho
   assert.equal(await at(null), "field", "nothing focused");
   assert.equal(fillProblem(null), "field", "a page that didn't answer");
 });
+
+test("the option list: a turn viewer gets the focused select's options of a scope tab and its choice goes as the person's arrow keys and Enter while the page's list is open, set on that select while closed; out of scope refused; no agent reaches it; labels never logged", async () => {
+  const { createTurnGate } = await import("../scripts/liveview/grants.mjs");
+  const { createTurnRoutes } = await import("../scripts/liveview/routes/turn.mjs");
+  const { roleMay } = await import("../scripts/liveview/invites.mjs");
+  const { pickKeys, listOf, OPTION_WORDS, OPTIONS_MAX } = await import("../scripts/liveview/options.mjs");
+  const s = setup();
+  const page = pageAt("https://shop.example/checkout");
+  const other = pageAt("https://news.example/");
+  s.hud.page = page;
+  await s.yt.onStatus("p1", { kind: "you", text: "Pay", step: "payment" }, page);
+  const id = s.grants.open()[0].id;
+  const guest = { id: `turn-${id}`, grant: id, role: "turn", label: "Hand-off" };
+  const month = (selected, open = true) => ({ label: "Expiry month", count: 4, selected, open,
+    options: [{ label: "Month", disabled: true }, { label: "01 January", disabled: false }, { label: "02 February", disabled: false }, { label: "03 March", disabled: false }] });
+  let sel = month(1);
+  const posted = [], logged = [];
+  const cast = { state: { shown: { page } } };
+  const set = [];
+  const gate = createTurnGate({ grants: s.grants, sessionName: () => "default", idOf: () => "aaaaaaaa", getContext: async () => null, cast, linkGuests: new Map(), clients: new Set(), viewers: new Set(),
+    humanPost: async (route, keys) => { posted.push(keys.map((k) => k.key)); const downs = keys.filter((k) => k.key === "ArrowDown").length - keys.filter((k) => k.key === "ArrowUp").length; sel = { ...sel, selected: sel.selected + downs }; },
+    select: async () => sel, choose: async (p, i, c) => { set.push([p === page, i, c]); return true; }, log: (l) => logged.push(l) });
+  const answer = () => ({ status: 0, body: null, writeHead(st) { this.status = st; }, setHeader() {}, end(b) { this.body = b ? JSON.parse(String(b)) : null; } });
+  const call = async (fn, ...a) => { const res = answer(); await gate[fn](res, guest, ...a); return res; };
+
+  // After a tap on the select: its label, choice and options (the disabled placeholder marked).
+  let r = await call("options");
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body, { label: "Expiry month", selected: 1, options: month(1).options });
+  // The choice: two enabled options down, then Enter while the list is open.
+  r = await call("pick", { index: 3, count: 4 });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.deepEqual(posted.at(-1), ["ArrowDown", "ArrowDown", "Enter"]);
+  // A closed list gets no keys (Enter there sends the form on Linux; an arrow on macOS opens a menu
+  // nobody sees): the choice is set on that same select.
+  const sentBefore = posted.length;
+  sel = month(3, false);
+  r = await call("pick", { index: 1, count: 4 });
+  assert.equal(r.status, 200);
+  assert.equal(posted.length, sentBefore, "no keys");
+  assert.deepEqual(set, [[true, 1, 4]]);
+  // The disabled placeholder, a list that changed, or a page that didn't take it: refused, said.
+  assert.equal((await call("pick", { index: 0, count: 4 })).body.error, OPTION_WORDS.disabled);
+  assert.equal((await call("pick", { index: 2, count: 5 })).body.error, OPTION_WORDS.gone);
+  const n = posted.length;
+  const real = sel;
+  sel = null;
+  assert.equal((await call("pick", { index: 2, count: 4 })).body.error, OPTION_WORDS.gone, "no select focused any more");
+  assert.deepEqual((await call("options")).body, { options: null });
+  assert.equal(posted.length, n, "nothing sent");
+  const stuck = createTurnGate({ grants: s.grants, sessionName: () => "default", idOf: () => "aaaaaaaa", getContext: async () => null, cast, linkGuests: new Map(), clients: new Set(), viewers: new Set(),
+    humanPost: async () => {}, select: async () => sel, choose: async () => false });
+  for (const open of [true, false]) {
+    sel = { ...real, selected: 1, open };
+    const res = answer();
+    await stuck.pick(res, guest, { index: 2, count: 4 });
+    assert.equal(res.status, 409);
+    assert.equal(res.body.error, OPTION_WORDS.missed, "the page kept its choice: said, not claimed");
+  }
+  stuck.close();
+  // Another tab on screen: refused and audited as out-of-scope input.
+  cast.state.shown = { page: other };
+  assert.equal((await call("options")).body.error, OPTION_WORDS.away);
+  assert.equal((await call("pick", { index: 2, count: 4 })).body.error, OPTION_WORDS.away);
+  assert.ok(s.audit().some((a) => a.kind === "input-refused" && a.detail === "out-of-scope"));
+  cast.state.shown = { page };
+  // A list too long to show is not listed (the type box's keys still work).
+  assert.deepEqual(listOf({ ...month(1), count: OPTIONS_MAX + 1 }), { options: null });
+  assert.deepEqual(pickKeys({ ...month(-1) }, 1, 4).keys.map((k) => k.key), ["ArrowDown", "Enter"], "nothing chosen yet: the first ArrowDown picks the first");
+  assert.deepEqual(pickKeys(month(1, false), 2, 4), { keys: null }, "a closed list: no keys");
+  // Only a hand-off's view key reaches the routes; no invite, join code or agent has the right.
+  for (const path of ["turn-options", "turn-pick"]) assert.equal(createTurnRoutes(gate).find((x) => x.path === path).right, "turn", path);
+  for (const role of ["drive", "watch", "redeem"]) assert.equal(roleMay(role, "turn"), false, role);
+  const catalog = readFileSync(new URL("../scripts/tools/catalog.mjs", import.meta.url), "utf8");
+  assert.ok(!/turn-options|turn-pick/.test(catalog), "no agent tool names it");
+  // The log names the grant only, never an option.
+  assert.ok(logged.length && logged.every((l) => l === `hand-off ${id}: chose from a list`), logged.join("\n"));
+  assert.ok(!JSON.stringify({ logged, audit: s.audit(), sent: s.sent, notes: s.notes }).includes("January"));
+  gate.close();
+});

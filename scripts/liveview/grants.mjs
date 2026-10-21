@@ -23,6 +23,11 @@
 // own window); it opens on an empty field, so from a field holding text, or another field of the
 // form, the Enter could send it instead: those are refused. No agent tool reaches it; the
 // card itself never passes through here (the browser fills it), and the log names the grant only.
+//
+// The option list (liveview/options.mjs): an open select list never reaches the picture, so after
+// a tap the viewer asks (POST turn-options) and gets the focused select's options, and the person's
+// choice (POST turn-pick) goes as their own arrow keys and Enter while the page's list is open, or
+// is set on that same select while it is closed.
 import { readFileSync } from "node:fs";
 import { validName } from "../sessions.mjs";
 import { ownTitle } from "../daemon/tablabels.mjs";
@@ -31,6 +36,7 @@ import { stripText } from "../sharing/join.mjs";
 import { within } from "../util.mjs";
 import { focusedFillField } from "../runner/cards.mjs";
 import { SIGNALS } from "../rules/cards.mjs";
+import { focusedSelect, chooseInPage, listOf, pickKeys, OPTION_WORDS } from "./options.mjs";
 import { sse, json, plain, originOk, pathParts, SECURITY_HEADERS, VIEWER_CSP } from "./http.mjs";
 import { hostOf, guestTabs, guestActivity } from "./tabs.mjs";
 
@@ -75,9 +81,10 @@ const FOCUS_MS = 8000; // reading the focused field (its frame, value and card s
 // revoke_all ends every grant too). onChanged(): who is watching changed. log(...): daemon.log.
 // savedCard(): whether the browser has a saved card on (B12). humanPost(route, events, role, who,
 // id): the live view's queue for a person's input (liveview.mjs). focused(page): the focused
-// field as runner/cards.mjs focusedFillField reads it (tests).
+// field as runner/cards.mjs focusedFillField reads it (tests). select(page): the focused select as
+// liveview/options.mjs focusedSelect reads it, choose(page, index, count): chooseInPage (tests).
 export function createTurnGate({ grants = null, sessionName, idOf, getContext, cast, linkGuests, clients, viewers, inviteOrigin = null, invites = null, onChanged = () => {}, log = () => {},
-  savedCard = () => false, humanPost = async () => {}, focused = (page) => focusedFillField(page), now = Date.now }) {
+  savedCard = () => false, humanPost = async () => {}, focused = (page) => focusedFillField(page), select = (page) => focusedSelect(page), choose = (page, index, count) => chooseInPage(page, index, count), now = Date.now }) {
   const streams = new Map(); // event stream -> { guest, stream, sig }
   const watched = new WeakSet(); // browser contexts whose new tabs are checked for their opener
 
@@ -275,6 +282,38 @@ export function createTurnGate({ grants = null, sessionName, idOf, getContext, c
     json(res, 200, { ok: true });
   }
 
+  // The option list: the focused select of the scope tab on screen ({ options: null } when there
+  // is none), and the person's choice of one, as their own keys. 409 with a sentence when no scope
+  // tab is on screen (audited as any out-of-scope input), the select changed or lost the focus, the
+  // option is disabled, or the page didn't take it.
+  async function readSelect(res, guest) {
+    if (!onScreen(guest)) { grants.refused(grantOf(guest), "input-refused", "out-of-scope"); json(res, 409, { error: OPTION_WORDS.away }); return undefined; }
+    return within(FOCUS_MS, Promise.resolve().then(() => select(cast.state.shown?.page)).catch(() => null));
+  }
+  async function options(res, guest) {
+    const sel = await readSelect(res, guest);
+    if (sel !== undefined) json(res, 200, listOf(sel));
+  }
+  async function pick(res, guest, { index, count }) {
+    const sel = await readSelect(res, guest);
+    if (sel === undefined) return;
+    const { keys, problem } = pickKeys(sel, index, count);
+    if (problem) return json(res, 409, { error: OPTION_WORDS[problem] });
+    const page = cast.state.shown?.page;
+    let after = sel;
+    if (keys) {
+      // The list is open in the page: the person's own keys choose in it.
+      await humanPost("input", keys, "turn", `${LABEL} (by hand)`, guest.id);
+      after = await within(FOCUS_MS, Promise.resolve().then(() => select(page)).catch(() => null));
+    } else if (await within(FOCUS_MS, Promise.resolve().then(() => choose(page, index, count)).catch(() => false))) {
+      // A closed list: set on that same select (keys there would send the form or open a menu nobody sees).
+      after = { ...sel, selected: index };
+    }
+    log(`hand-off ${grantOf(guest)}: chose from a list`);
+    if (after?.selected !== index) return json(res, 409, { error: OPTION_WORDS.missed });
+    json(res, 200, { ok: true });
+  }
+
   // The viewer shows another of the grant's tabs; never one outside it.
   async function showTab(res, guest, id) {
     const page = scopeOf(guest).find((p) => idOf(p) === id);
@@ -284,7 +323,7 @@ export function createTurnGate({ grants = null, sessionName, idOf, getContext, c
   }
 
   return {
-    on: !!grants, match, refusedOrigin, forTurn, onScreen, batchOf, openStream, started, pinned, changed, tick, watch, landing, redeem, showTab, fillCard,
+    on: !!grants, match, refusedOrigin, forTurn, onScreen, batchOf, openStream, started, pinned, changed, tick, watch, landing, redeem, showTab, fillCard, options, pick,
     // The last frame, for a turn stream that just opened: only from a scope tab, as it is.
     frameFor: (guest) => (cast.state.lastFrame && inScope(cast.state.lastFrameFrom, guest) ? cast.state.lastFrame : null),
     // Whether a stream gets a frame of the tab on screen as it is: a turn stream, that tab in its scope.

@@ -3033,6 +3033,9 @@ binding for implementation; where a phase section above says otherwise, this sec
     WebGPU consistent with that GPU, the virtual screen's geometry), replacing the Linux identity of
     decision 10. Windows fonts are added when copied from a licensed Windows; until then the setup names
     them as missing and the measurement shows what that costs.
+    GPU (user, 2026-10-22, clarified): not the Intel UHD 770; the same as the reference, the NVIDIA
+    RTX 3060 entry of the engine's Windows pool, as the default. Linux hosts stay fully supported; only
+    the identity they show changes. The Intel choice stays in code only as a measured comparison.
     Decided by the first measurement (2026-10-22, baseline in the native repo's plans): canvas
     noise on a host without a GPU, measured on and off on the same Linux host, changed one verdict
     (BrowserScan's canvas check, lost with noise on) and gained nothing measured, so

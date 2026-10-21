@@ -3023,6 +3023,10 @@ binding for implementation; where a phase section above says otherwise, this sec
     compares their newest build that downloads without one (named with its version, 145 on macOS and
     146 on Linux at the first measurement), says so plainly, and is updated if a newer public build
     appears.
+    Windows identity on Linux: on hold (user, 2026-10-22) until Windows fonts can be copied from a
+    licensed Windows (a PC or a licensed VM). Fonts are never downloaded from third-party sites and never
+    shipped; docs/server.md will tell users to copy them from their own Windows, and the setup will name
+    the ones missing. Until then the Linux identity (Intel UHD 770 on Linux) is the one measured and tuned.
     Decided by the first measurement (2026-10-22, baseline in the native repo's plans): canvas
     noise on a host without a GPU, measured on and off on the same Linux host, changed one verdict
     (BrowserScan's canvas check, lost with noise on) and gained nothing measured, so

@@ -277,6 +277,26 @@ pageTest("settings", { fixtures, viewport: VIEW }, async ({ helper, until, inPag
   await until("the dialog", () => document.getElementById("report").open);
 });
 
+// 7b2. A save answered while the person already types elsewhere leaves them there: the detail's
+// reply (late) clears its own form but never pulls the focus back to it mid-word.
+pageTest("settings", { fixtures, viewport: VIEW, replies: { profile: async (body) => { if (body?.op === "setDetail") await new Promise((r) => setTimeout(r, 400)); return { status: 200, body: { ok: true } }; } } }, async ({ page, until, inPage, errors }) => {
+  await until("the profile", () => document.querySelectorAll("#details .row").length === 2);
+  await page.fill("#add-detail [name=label]", "Phone");
+  await page.fill("#add-detail [name=value]", "+49 30 1");
+  await page.press("#add-detail [name=value]", "Enter");
+  await page.click("#add-secret [name=domains]");
+  await page.keyboard.type("shop.example", { delay: 60 }); // spans the late reply
+  await until("the reply", () => /Remembered Phone/.test(document.getElementById("profile-msg").textContent));
+  assert.deepEqual(await inPage(() => [document.querySelector("#add-secret [name=domains]").value, document.querySelector("#add-detail [name=label]").value, document.activeElement?.id]), ["shop.example", "", "secret-domains"]);
+  // With the focus still in its form (nobody moved on), the reply puts it back on the label.
+  await page.fill("#add-detail [name=label]", "City");
+  await page.fill("#add-detail [name=value]", "Berlin");
+  await page.press("#add-detail [name=value]", "Enter");
+  await until("the second reply", () => /Remembered City/.test(document.getElementById("profile-msg").textContent));
+  assert.equal(await inPage(() => document.activeElement?.id), await inPage(() => document.querySelector("#add-detail [name=label]").id));
+  assert.deepEqual(errors, []);
+});
+
 // 7c. The profile's error replies: an unreadable profile.json and a refused save say why, and the
 // page never throws on a reply that isn't a profile.
 pageTest("settings", { fixtures: { ...fixtures, profile: { error: "The profile file can't be read." } }, replies: { profile: () => ({ status: 500, body: { error: "The disk is full." } }) }, viewport: VIEW }, async ({ page, until, inPage, errors }) => {

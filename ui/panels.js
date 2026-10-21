@@ -247,7 +247,11 @@ export function profilePanel(base) {
     const f = e.target;
     const err = await change({ op: "setDetail", label: f.label.value, value: f.value.value });
     if (err) return say(err, "error");
-    say(`Remembered ${f.label.value}.`, "ok"); f.reset(); f.label.focus();
+    // Back to the label for the next one only when the person is still here: a reply that comes
+    // while they type elsewhere leaves the focus where they are (nothing jumps).
+    const here = f.contains(document.activeElement) || document.activeElement === document.body || !document.activeElement;
+    say(`Remembered ${f.label.value}.`, "ok"); f.reset();
+    if (here) f.label.focus();
   });
   $("add-secret").addEventListener("submit", async (e) => {
     e.preventDefault();

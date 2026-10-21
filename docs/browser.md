@@ -152,11 +152,15 @@ On Linux the build brings its own metric-compatible font clones (for fonts such 
 Segoe UI), so pages render the same on a bare machine. On a Linux machine without a screen, the launch
 test runs on a private virtual screen (Xvfb, as the browser itself does), so
 install `xvfb` and `xauth` first. On Linux the browser runs with a fingerprint seed kept per
-profile (the capture from your own computer is macOS only), and its graphics are this computer's
-own: pages read the real renderer's WebGL and WebGPU strings and limits (on a server's virtual
-screen that is a software renderer, named as such), with no fingerprint noise over its pixels, and
-on PairBrowse's virtual screen the screen they read is that screen (`pairbrowse.graphics` and
-`virtualScreen` in [Configuration](configuration.md)).
+profile (the capture from your own computer is macOS only), and its graphics follow the computer:
+with a graphics card, pages read the real renderer's WebGL and WebGPU strings and limits, with no
+fingerprint noise over its pixels; on a computer without one (a server's virtual screen renders in
+software, which sites block before any CAPTCHA), pages are shown one ordinary desktop identity the
+browser carries, an Intel UHD Graphics 770, the same in WebGL and WebGPU, with canvas noise on
+unless you turn it off, while PairBrowse's own status and reports say "software rendering, shown
+as Intel UHD Graphics 770". On PairBrowse's virtual screen the screen pages read is that screen
+either way (`pairbrowse.graphics`, `pairbrowse.graphicsNoise` and `virtualScreen` in
+[Configuration](configuration.md); [Running on a server](server.md) for which computer to pick).
 
 The native browser keeps its logins in its own profile, so after switching to it you sign in to
 your sites once more.

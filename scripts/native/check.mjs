@@ -138,12 +138,14 @@ export async function graphicsCheck({ launch, build, pack = null, display = "nat
 // engine config's layer: a profile's keys), the same sandbox rule (required in server mode), on
 // the given screen, hidden on macOS (probeOptions), a plain about:blank first tab, no live view.
 // Never geoip (probeEngine). Shared by the self-check, the helper's first launch per runtime key
-// and cli.mjs validate.
+// and cli.mjs validate. The launch takes { measured }: the backend read so far (native/probe.mjs
+// probeLaunch's second start on a host without a GPU, which the native launch then shows the
+// engine's identity for: decision 10, native-engine.mjs applyGraphicsPlan), null before any.
 export function probeLauncher({ chromium, engine, config = {}, shell, screen = null, env = process.env, executablePath, profileArgs = [], server = false, log = () => {} }) {
-  return (directory) => {
+  return (directory, { measured = null } = {}) => {
     prepareProfile(directory, undefined, { browserPages: !!shell?.ownPages, layout: config.layout });
     const options = probeOptions(launchOptions(config, { shell, screen, env: { ...env, ...(screen?.env || {}) }, executablePath, blankStart: true, profileArgs }));
-    return launchEngine(chromium, { ...probeEngine(engine), virtualDisplay: screen?.geometry ?? null }, directory, options, log, undefined, { server });
+    return launchEngine(chromium, { ...probeEngine(engine), virtualDisplay: screen?.geometry ?? null, measuredBackend: measured }, directory, options, log, undefined, { server });
   };
 }
 

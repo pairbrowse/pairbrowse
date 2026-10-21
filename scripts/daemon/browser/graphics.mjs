@@ -18,8 +18,13 @@
 // that doesn't match either isn't repeated until the helper restarts (a probe and a browser that
 // never agree), and nothing is dropped over a backend read that failed (an unverified read proves
 // nothing changed).
+// On a host without a GPU (a software read on Linux) the launch shows the engine's one graphics
+// identity (decision 10; native/graphics.mjs GPU_LESS_IDENTITY): the measurement before() hands
+// over tells the launch's engine config the backend (launch.mjs measuredBackend), the probe
+// itself measures under that identity (native/probe.mjs), and the verdict for it is "consistent",
+// which counts as validated wherever a status is required (PASSING_STATUSES).
 // GRAPHICS (native/graphics.mjs) holds what pairbrowse_status says (statusParts); diagnostics
-// read only its kind and status (summary).
+// read only its kind, the identity shown and its status (summary).
 //
 // st: the browser's state (st.graphics: the running browser's, or null; st.probing: true while a
 // probe runs). deps: config, log, status and hud (the live view's status line while a probe
@@ -30,7 +35,7 @@
 import { mkdirSync } from "node:fs";
 import { graphicsCheck, GRAPHICS_TIMEOUT_MS, GRAPHICS_STOP_MS } from "../../native/check.mjs";
 import { readBackend, unverifiedBackend } from "../../native/backend.mjs";
-import { GRAPHICS, compatErrors, runtimeKey, graphicsStatusPart } from "../../native/graphics.mjs";
+import { GRAPHICS, PASSING_STATUSES, compatErrors, runtimeKey, graphicsStatusPart, shownIdentity } from "../../native/graphics.mjs";
 import { measuredEntry } from "../../profiles/validate.mjs";
 import { launchableBrowserArgs, browserArgsOf } from "../../browser-args.mjs";
 import { paths } from "../../paths.mjs";
@@ -114,7 +119,7 @@ export function createGraphics(st, deps = {}, api = {}) {
     const live = await readBackendOf(ctx);
     Object.assign(GRAPHICS, { kind: live.kind, renderer: live.renderer || null, status: "unverified" });
     if (!plan?.native) {
-      Object.assign(GRAPHICS, { requested: "auto", switches: [], engineKeys: [] });
+      Object.assign(GRAPHICS, { requested: "auto", switches: [], engineKeys: [], shown: null });
       st.graphics = { build: null };
       return { ok: true };
     }
@@ -140,12 +145,13 @@ export function createGraphics(st, deps = {}, api = {}) {
     for (const item of entry.items.filter((i) => (i.rule === "backend.requested" || i.rule === "backend.stable") && i.status === "mismatch")) {
       errors.push({ field: item.field, message: `Profile ${name}: ${String(item.reason).replace(/\.$/, "")}.` });
     }
-    if (!errors.length && config.requireValidatedProfiles === true && filed !== "validated") {
+    if (!errors.length && config.requireValidatedProfiles === true && !PASSING_STATUSES.includes(filed)) {
       errors.push({ field: "requireValidatedProfiles", message: `Browser profile "${name}" is ${filed} on build ${build} for this computer's graphics, and requireValidatedProfiles is on in config.json.` });
     }
     if (errors.length) return { ok: false, refusal: refusal(session, errors, "The browser was closed before any tab loaded.").message };
     st.graphics = { build };
-    log(`launch: graphics: ${live.kind}, ${GRAPHICS.status} on ${build}${plan.source === "probe" ? " (measured now)" : plan.source === "stored" ? "" : " (not measured)"}`);
+    const shown = shownIdentity(GRAPHICS) ? `, shown as ${GRAPHICS.shown}` : "";
+    log(`launch: graphics: ${live.kind}${shown}, ${GRAPHICS.status} on ${build}${plan.source === "probe" ? " (measured now)" : plan.source === "stored" ? "" : " (not measured)"}`);
     return { ok: true };
   }
 
@@ -155,8 +161,9 @@ export function createGraphics(st, deps = {}, api = {}) {
   // pairbrowse_status's part while a browser runs (graphicsStatusPart); remote: a joiner's agent
   // asks, so the renderer is left out.
   const statusParts = ({ remote = false } = {}) => (st.graphics ? [graphicsStatusPart(GRAPHICS, { build: st.graphics.build, renderer: !remote })] : []);
-  // Diagnostics' part (row E-3): the kind and status only, never the renderer or IDs.
-  const summary = () => (st.graphics ? { kind: GRAPHICS.kind, status: GRAPHICS.status } : null);
+  // Diagnostics' part (row E-3): the kind, the identity shown (the engine's, never this computer's
+  // GPU) and the status only, never the renderer or IDs.
+  const summary = () => (st.graphics ? { kind: GRAPHICS.kind, status: GRAPHICS.status, ...(shownIdentity(GRAPHICS) ? { shown: GRAPHICS.shown } : {}) } : null);
 
   return { before, after, release, statusParts, summary };
 }

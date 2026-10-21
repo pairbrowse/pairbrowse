@@ -117,7 +117,7 @@ test("self-check graphics step names a software backend as such", async () => {
   // probeLauncher: started as the helper starts the build, on the given screen, hidden on macOS.
   const launcher = src.slice(src.indexOf("export function probeLauncher("), src.indexOf("export async function measureGraphics("));
   assert.match(launcher, /probeOptions\(launchOptions\(config, \{ shell, screen, env: \{ \.\.\.env, \.\.\.\(screen\?\.env \|\| \{\}\) \}, executablePath, blankStart: true, profileArgs \}\)\)/, "launched as the check's, on its screen, hidden on macOS");
-  assert.match(launcher, /launchEngine\(chromium, \{ \.\.\.probeEngine\(engine\), virtualDisplay: screen\?\.geometry \?\? null \}, directory, options, log, undefined, \{ server \}\)/, "never geoip");
+  assert.match(launcher, /launchEngine\(chromium, \{ \.\.\.probeEngine\(engine\), virtualDisplay: screen\?\.geometry \?\? null, measuredBackend: measured \}, directory, options, log, undefined, \{ server \}\)/, "never geoip; the backend read so far reaches the launch (decision 10)");
   assert.match(run, /probeLauncher\(\{ chromium, engine, config, shell, screen, env, executablePath: exec, profileArgs, server: serverMode\(config, env\), log \}\)/, "the check's screen, the default profile's switches and the same sandbox rule");
   assert.match(run, /display: screen \? "xvfb" : "native"/);
   assert.ok(run.indexOf("graphicsCheck(") < run.indexOf("await screen?.stop()"), "the probe runs before the check's screen stops");

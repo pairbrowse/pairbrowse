@@ -8,7 +8,7 @@ import "../helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fc from "fast-check";
-import { graphicsPlan, compatErrors, SOFTWARE_SWITCH, LINUX_REAL } from "../../scripts/native/graphics.mjs";
+import { graphicsPlan, compatErrors, SOFTWARE_SWITCH, LINUX_REAL, GPU_LESS_IDENTITY, identityKeys } from "../../scripts/native/graphics.mjs";
 import { parseSystemInfo } from "../../scripts/native/backend.mjs";
 import { screenBrowserArgs } from "../../scripts/browser-args.mjs";
 import { PAIRBROWSE_ENGINE_KEYS } from "../../scripts/config-schema.mjs";
@@ -34,7 +34,7 @@ const require = fc.option(fc.record({ webgl: fc.constantFrom(null, 1, 2), webgpu
 test("for any profile, every set graphics field is applied or named in an error", () => {
   check(fc.property(backend, platform, kind, args, display, screen, measured, require, (requested, os, browserKind, userArgs, xvfb, set, m, req) => {
     const plan = graphicsPlan({ requested, platform: os, browserKind, measured: m?.backend ?? null, userArgs, display: xvfb, screenSet: !!set, name: "p" });
-    assert.deepEqual(Object.keys(plan).sort(), ["engineKeys", "refusals", "switches"]);
+    assert.deepEqual(Object.keys(plan).sort(), ["engineKeys", "identity", "refusals", "switches"]);
     if (plan.refusals.length) assert.deepEqual([plan.switches, plan.engineKeys], [[], {}], "a refused plan applies nothing");
     for (const r of plan.refusals) assert.ok(typeof r.field === "string" && /^[^\n]+\.$/.test(r.message), r.message);
     assert.deepEqual(screenBrowserArgs(plan.switches, os, { harness: false }), { kept: plan.switches, dropped: [], refused: [] });
@@ -49,11 +49,16 @@ test("for any profile, every set graphics field is applied or named in an error"
       else assert.deepEqual(plan.switches, []);
       if (requested === "gpu" && m?.backend) assert.equal(m.backend.kind, "hardware", "gpu passes only on a measured hardware backend");
       if (browserKind === "pairbrowse-open") assert.equal(requested, "auto", "the open build takes no request");
-      // The Linux plan, whatever was asked; the screen only on a display with none set.
+      // The Linux plan, whatever was asked: the real backend's strings, or over a software read
+      // the engine's one identity (decision 10: shown over software rendering only, never for a
+      // GPU asked for, never off Linux or on the open build); the screen only on a display with
+      // none set.
       if (browserKind === "pairbrowse" && os === "linux") {
-        for (const [k, v] of Object.entries(LINUX_REAL)) assert.equal(plan.engineKeys[k], v, k);
+        const shown = m?.backend?.kind === "software" && requested !== "gpu";
+        assert.equal(plan.identity, shown ? GPU_LESS_IDENTITY.name : null);
+        for (const [k, v] of Object.entries(shown ? identityKeys(true) : LINUX_REAL)) assert.equal(plan.engineKeys[k], v, k);
         assert.equal(plan.engineKeys.screenWidth, xvfb && !set ? xvfb.width : undefined);
-      } else assert.deepEqual(plan.engineKeys, {});
+      } else { assert.deepEqual(plan.engineKeys, {}); assert.equal(plan.identity, null); }
     }
     // compatErrors: the plan's refusals and every other set field it can't meet, never thrown.
     const errors = compatErrors({ name: "p", graphics: { backend: requested, require: req }, platform: os, browserKind, measured: m, userArgs, display: xvfb, screen: set });

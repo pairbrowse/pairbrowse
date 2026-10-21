@@ -23,7 +23,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { within } from "../util.mjs";
 import { readBackend, BACKEND_MS } from "./backend.mjs";
-import { GRAPHICS, runtimeKey } from "./graphics.mjs";
+import { GRAPHICS, runtimeKey, shownIdentity } from "./graphics.mjs";
 import { measuredRecord } from "./validate.mjs";
 
 // How long one step may take (a page part, a navigation), and a probe browser's start.
@@ -269,8 +269,9 @@ const same = (a, b) => (typeof a === "string" && typeof b === "string" ? a === b
 // The probe's answers as the record measuredRecord reads (E8): canvas.stable (one scene drew the
 // same pixels twice in a page, on each origin), canvas.repeat (the same on the second launch),
 // canvas.noise (the scene differs between the two origins: per-site noise over its pixels),
-// webgl.sameOrigins (the WebGL scene the same on both).
-export function probeRecord({ at, key, pack, runtime, backend, first, other = null, again = null }) {
+// webgl.sameOrigins (the WebGL scene the same on both). shown: the identity the launch showed
+// pages (GRAPHICS.shown), or null.
+export function probeRecord({ at, key, pack, runtime, backend, shown = null, first, other = null, again = null }) {
   const p = first?.parts ?? {}, o = other?.parts ?? {};
   const scene = (c) => (answered(c) && typeof c.first === "string" ? c : null);
   const c1 = scene(p.canvas), c2 = scene(o.canvas), c3 = scene(again?.parts?.canvas);
@@ -281,16 +282,20 @@ export function probeRecord({ at, key, pack, runtime, backend, first, other = nu
   const part = (v) => (answered(v) ? v : null);
   const webgl = answered(p.webgl) ? { ...p.webgl, sameOrigins: answered(o.webgl) ? same(p.webgl.scene, o.webgl.scene) : null } : null;
   return {
-    at, runtimeKey: key, pack, runtime, backend,
+    at, runtimeKey: key, pack, runtime, backend, shown,
     webgl, webgl2: part(p.webgl2), webgpu: part(p.webgpu),
     canvas: c1 ? { stable, repeat: c3 ? same(c1.first, c3.first) : null, noise: c2 ? c1.first !== c2.first : null } : null,
     fonts: part(p.fonts), media: part(p.media), screen: part(p.screen), locale: part(p.locale), navigator: part(p.navigator),
   };
 }
 
-// Measures this runtime once (E4). launch(directory): starts the probe browser on that user-data
-// folder with the resolved options (probeOptions) and answers its context; it is called twice on
-// one temporary folder inside directory. build: the native build's version; pack: the engine
+// Measures this runtime once (E4). launch(directory, { measured }): starts the probe browser on
+// that user-data folder with the resolved options (probeOptions) and answers its context; it is
+// called twice on one temporary folder inside directory, three times on a host without a GPU
+// (decision 10): the first start, with no backend known, reads the backend; a software one on
+// Linux is closed and started again with that read (measured), under which the native launch shows
+// the engine's one graphics identity (GRAPHICS.shown), and the page is measured there, so the
+// record (shown) holds what pages read. build: the native build's version; pack: the engine
 // pack's SHA-256; platform and arch: this computer's; display: "xvfb" on the helper's virtual
 // screen, else "native"; emulated: runsEmulated(); sandbox: the helper's SANDBOX state (read after
 // the launch, put back after). launches: 2 (1 leaves canvas.repeat unmeasured). signal: an
@@ -318,9 +323,10 @@ export async function probeLaunch({ launch, directory, build, pack = null, platf
   const halt = () => { if (signal?.aborted) throw new Error("stopped: the caller's time was up"); };
   const onStop = () => { close(); };
   signal?.addEventListener("abort", onStop, { once: true });
+  let known = null; // the backend read so far, handed to each later start (launch's measured)
   const open = async (what) => {
     halt();
-    const c = await launchWithin(launchMs, what, () => launch(scratch));
+    const c = await launchWithin(launchMs, what, () => launch(scratch, { measured: known }));
     ctx = c;
     halt(); // a start that came back after the stop: closed in the finally below
     return c.pages?.()[0] ?? await step("the probe tab", Promise.resolve().then(() => c.newPage()));
@@ -329,10 +335,20 @@ export async function probeLaunch({ launch, directory, build, pack = null, platf
     halt();
     scratch = mkdtempSync(join(directory, ".graphics-probe-"));
     site = await localSite();
-    const page = await open("the probe browser's start");
+    let page = await open("the probe browser's start");
     const sandboxOn = sandbox ? sandbox.on : null;
+    let backend = await readBackend(ctx, { ms: backendMs });
+    // A host without a GPU (decision 10): measured again under the identity the launch shows there.
+    if (where === "linux" && backend.kind === "software") {
+      known = { kind: backend.kind, renderer: backend.renderer };
+      await close();
+      log(`graphics probe: software rendering (${backend.renderer || "a software renderer"}); measuring what pages read under the identity shown there`);
+      page = await open("the probe browser's start under the identity");
+      const again = await readBackend(ctx, { ms: backendMs });
+      if (again.kind !== "unverified") backend = again;
+    }
     const switches = [...GRAPHICS.switches];
-    const backend = await readBackend(ctx, { ms: backendMs });
+    const shown = shownIdentity(GRAPHICS);
     await step("the probe page", page.goto(site.origin, { waitUntil: "domcontentloaded" }));
     const first = await runProbe(page, { stepMs, fonts: list });
     if (first.hung) log("graphics probe: the page stopped answering; the parts after it are unmeasured");
@@ -356,7 +372,7 @@ export async function probeLaunch({ launch, directory, build, pack = null, platf
     halt();
     const key = runtimeKey({ build, pack, platform: where, arch, display, backend, switches });
     const runtime = { platform: where, arch, display, emulated: !!emulated, sandbox: { on: sandboxOn, page: sandboxPage } };
-    const measured = measuredRecord(probeRecord({ at: now().toISOString(), key, pack, runtime, backend, first, other, again }));
+    const measured = measuredRecord(probeRecord({ at: now().toISOString(), key, pack, runtime, backend, shown, first, other, again }));
     if (!measured) throw new Error(`the measurement has no runtime key or runtime (build ${build || "not named"}, ${where} ${arch}, display ${display})`);
     return measured;
   } catch (error) {
@@ -372,9 +388,10 @@ export async function probeLaunch({ launch, directory, build, pack = null, platf
 }
 
 // The self-check's line for a measurement (spec Phase E design, native/check.mjs): the backend's
-// kind, WebGL's level and WebGPU's adapter, never the GPU's name or IDs.
+// kind (with the identity shown on a host without a GPU: the engine's, never this computer's),
+// WebGL's level and WebGPU's adapter, never the GPU's name or IDs.
 export function graphicsStep(measured) {
-  const kind = measured?.backend?.kind || "unverified";
+  const kind = (measured?.backend?.kind || "unverified") + (shownIdentity(measured) ? ` (shown as ${measured.shown})` : "");
   const webgl = measured?.webgl2?.available ? "WebGL 2" : measured?.webgl?.available ? "WebGL 1" : "no WebGL";
   const g = measured?.webgpu;
   const webgpu = g?.available ? (g.isFallbackAdapter ? "WebGPU fallback adapter" : "WebGPU adapter") : "WebGPU unavailable";

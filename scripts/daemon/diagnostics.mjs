@@ -5,6 +5,7 @@
 import { open, stat } from "node:fs/promises";
 import { homedir, platform, arch, release } from "node:os";
 import { paths } from "../paths.mjs";
+import { PASSING_STATUSES, shownIdentity } from "../native/graphics.mjs";
 
 const LINE_MAX = 200;
 const TAIL_BYTES = 256 * 1024;
@@ -93,11 +94,17 @@ export function pinnedBrowserVersion({ engine, nativeRecord = null, ungoogled = 
 }
 
 // The running browser's graphics as a report may carry them (spec server-mode E-3): the backend's
-// kind and the profile's status on this build, never the renderer, the GPU's name or its IDs.
+// kind, the identity shown on a host without a GPU (decision 10: the engine's own, never this
+// computer's GPU) and the profile's status on this build, never the renderer, the GPU's name or
+// its IDs.
 export function graphicsSummary(g) {
   if (!g || typeof g !== "object") return null;
-  return { kind: ["hardware", "software"].includes(g.kind) ? g.kind : "unverified", status: ["validated", "failed"].includes(g.status) ? g.status : "unverified" };
+  const shown = shownIdentity(g);
+  return { kind: ["hardware", "software"].includes(g.kind) ? g.kind : "unverified", status: [...PASSING_STATUSES, "failed"].includes(g.status) ? g.status : "unverified", ...(shown ? { shown } : {}) };
 }
+// A report's graphics line (row E-3): "Graphics: <kind>, <status>", or on a host without a GPU
+// "Graphics: software rendering, shown as <identity>, <status>".
+export const graphicsLine = (g) => (g ? `Graphics: ${g.kind}${g.shown ? ` rendering, shown as ${g.shown}` : ""}, ${g.status}` : "Graphics: not read");
 
 // version: the helper's version. browser(): { engine, version, build } (never a path). graphics():
 // the running browser's { kind, status } or null (graphicsSummary keeps only those). agents():
@@ -128,7 +135,7 @@ export function createDiagnostics({ version = "", browser = async () => ({ engin
         `Helper: ${diag.helper?.version || "?"} (Node ${diag.helper?.node || "?"}, up ${diag.helper?.uptime ?? "?"} s)`,
         `OS: ${platform()} ${arch()} ${release()}`,
         `Browser: ${diag.browser?.engine || "none"} ${diag.browser?.version || "?"}${diag.browser?.build ? ` (build ${diag.browser.build})` : ""}`,
-        ((g) => (g ? `Graphics: ${g.kind}, ${g.status}` : "Graphics: not read"))(graphicsSummary(diag.browser?.graphics)),
+        graphicsLine(graphicsSummary(diag.browser?.graphics)),
         `Connections: ${c.agents ?? 0} agents, ${c.viewers ?? 0} viewers, ${c.joiners ?? 0} joiners, ${c.streams ?? 0} streams`,
         `Joined: ${roles.drive} drive, ${roles.watch} watch`,
         (diag.errors || []).length ? "Errors:" : "Errors: none",

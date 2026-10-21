@@ -17,7 +17,7 @@ import { join } from "node:path";
 import { createGraphics, MEASURING_GRAPHICS, MEASURING_BUSY, MEASURING_WAIT_MS } from "../scripts/daemon/browser/graphics.mjs";
 import { throughMeasurement } from "../scripts/daemon/browser/launch.mjs";
 import { GRAPHICS_TIMEOUT_MS, GRAPHICS_STOP_MS } from "../scripts/native/check.mjs";
-import { GRAPHICS, runtimeKey, graphicsStatusPart, SOFTWARE_SWITCH } from "../scripts/native/graphics.mjs";
+import { GRAPHICS, GPU_LESS_IDENTITY, runtimeKey, graphicsStatusPart, SOFTWARE_SWITCH } from "../scripts/native/graphics.mjs";
 import { parseSystemInfo } from "../scripts/native/backend.mjs";
 import { measuredRecord } from "../scripts/native/validate.mjs";
 import { createProfiles } from "../scripts/daemon/sessions/profiles.mjs";
@@ -237,6 +237,38 @@ test("a backend read that failed never drops a kept measurement; a probe that is
   assert.equal(c.probes(), 1);
 });
 
+// Decision 10: on a host without a GPU the launch shows the engine's identity (GRAPHICS.shown, set
+// by the native launch from the measurement before() hands it), the verdict for a measurement
+// made under it is "consistent", requireValidatedProfiles takes that, and the status part, log
+// and diagnostics say "shown as <identity>" (the engine's, never this computer's GPU).
+test("a host without a GPU: the identity shown reaches the status part, the log and diagnostics; consistent counts as validated", async () => {
+  const p = part({ config: { requireValidatedProfiles: true } });
+  const shownMeasured = measuredRecord({ ...LINUX_MEASURED, shown: GPU_LESS_IDENTITY.name, webgl: { ...LINUX_MEASURED.webgl, unmaskedVendor: "Google Inc. (Intel)", unmaskedRenderer: "ANGLE (Intel, Mesa Intel(R) UHD Graphics 770 (RPL-S), OpenGL 4.6 (Core Profile) Mesa 23.2.1)" },
+    webgl2: { ...LINUX_MEASURED.webgl2, unmaskedVendor: "Google Inc. (Intel)", unmaskedRenderer: "ANGLE (Intel, Mesa Intel(R) UHD Graphics 770 (RPL-S), OpenGL 4.6 (Core Profile) Mesa 23.2.1)" } });
+  const chosen = chosenWith({ measured: shownMeasured });
+  const plan = await p.g.before({ ...NATIVE, chosen });
+  assert.equal(plan.measured.shown, GPU_LESS_IDENTITY.name);
+  assert.equal(plan.measured.backend.kind, "software", "the backend handed to the launch's engine config (measuredBackend) is the host's");
+  Object.assign(GRAPHICS, { shown: GPU_LESS_IDENTITY.name }); // as the native launch sets it from measuredBackend
+  try {
+    const r = await p.g.after({}, plan, { chosen, switches: [], session: "shop" });
+    assert.deepEqual(r, { ok: true }, "consistent passes requireValidatedProfiles");
+    assert.equal(p.filed[0].entry.status, "consistent", JSON.stringify(p.filed[0].entry.items.filter((i) => i.status === "mismatch" || i.status === "unverified")));
+    assert.equal(GRAPHICS.status, "consistent");
+    assert.deepEqual(p.g.statusParts(), [`Graphics: software (${LLVMPIPE.renderer.slice(0, 80)}), shown as Intel UHD Graphics 770, requested auto, consistent on ${BUILD}`]);
+    assert.equal(p.g.statusParts({ remote: true })[0], `Graphics: software, shown as Intel UHD Graphics 770, requested auto, consistent on ${BUILD}`);
+    assert.deepEqual(p.g.summary(), { kind: "software", status: "consistent", shown: "Intel UHD Graphics 770" });
+    assert.ok(p.lines.some((l) => l === `launch: graphics: software, shown as Intel UHD Graphics 770, consistent on ${BUILD}`), p.lines.join("\n"));
+    // The same launch without the identity shown (the real strings measured): validated, no "shown as".
+    GRAPHICS.shown = null;
+    const real = part();
+    const planReal = await real.g.before({ ...NATIVE, chosen: chosenWith({ measured: LINUX_MEASURED }) });
+    await real.g.after({}, planReal, { chosen: chosenWith({ measured: LINUX_MEASURED }), switches: [], session: "shop" });
+    assert.deepEqual(real.g.summary(), { kind: "software", status: "validated" });
+    assert.ok(!real.g.statusParts()[0].includes("shown as"));
+  } finally { GRAPHICS.shown = null; }
+});
+
 test("the status part and diagnostics: kind and status only in a report, never the renderer or IDs (row E-3)", async () => {
   assert.equal(graphicsStatusPart({ kind: "hardware", renderer: "ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Pro)", requested: "gpu", status: "failed" }, { build: BUILD }),
     `Graphics: hardware (ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Pro)), requested gpu, failed on ${BUILD}`);
@@ -250,6 +282,15 @@ test("the status part and diagnostics: kind and status only in a report, never t
   const text = d.reportText(read);
   assert.match(text, /^Graphics: hardware, failed$/m);
   assert.ok(!/M4|4203/.test(JSON.stringify(read) + text), "no GPU model or ID");
+  // A host without a GPU: the identity shown is the engine's, so a report names it (decision 10).
+  assert.deepEqual(graphicsSummary({ kind: "software", status: "consistent", renderer: "llvmpipe (LLVM 15)", shown: GPU_LESS_IDENTITY.name }), { kind: "software", status: "consistent", shown: "Intel UHD Graphics 770" });
+  assert.deepEqual(graphicsSummary({ kind: "software", status: "validated", shown: "Zq GPU 9000" }), { kind: "software", status: "validated" }, "an identity PairBrowse doesn't know isn't repeated");
+  const gpuLess = createDiagnostics({ version: "1", logFile: join(dir, "none.log"), home: dir, browser: async () => ({ engine: "pairbrowse", version: BUILD, build: BUILD }),
+    graphics: () => ({ kind: "software", status: "consistent", renderer: "llvmpipe (LLVM 15)", shown: GPU_LESS_IDENTITY.name }) });
+  const readGpuLess = await gpuLess.read();
+  const textGpuLess = gpuLess.reportText(readGpuLess);
+  assert.match(textGpuLess, /^Graphics: software rendering, shown as Intel UHD Graphics 770, consistent$/m);
+  assert.ok(!/llvmpipe/.test(JSON.stringify(readGpuLess) + textGpuLess), "never the renderer");
   const none = createDiagnostics({ version: "1", logFile: join(dir, "none.log"), home: dir });
   assert.match(none.reportText(await none.read()), /^Graphics: not read$/m);
 });

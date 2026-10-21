@@ -3,11 +3,16 @@
 // measurement belongs to (runtimeKey), the one WebGPU shape the engine reads (normalizeWebgpu), and
 // the last launch's graphics (GRAPHICS, as engine.mjs SANDBOX is the sandbox's).
 //
-// Graphics are always the runtime's own (decision D-AP2): on macOS the host capture (this Mac's GPU);
-// on Linux the engine reports the real backend's WebGL strings, limits and extensions and WebGPU
-// vendor and architecture (disableGpuFingerprint), without noise over real pixels
-// (fingerprintNoise: false), and on the helper's virtual screen the real screen. A request that
-// can't be met is an error naming it, never a partial apply. Node's standard library only.
+// Graphics are the runtime's own on a host with a GPU (decision D-AP2): on macOS the host capture
+// (this Mac's GPU); on Linux the engine reports the real backend's WebGL strings, limits and
+// extensions and WebGPU vendor and architecture (disableGpuFingerprint), without noise over real
+// pixels (fingerprintNoise: false), and on the helper's virtual screen the real screen. On a host
+// without one (decision 10: software rendering measured, which gets a session blocked before a
+// CAPTCHA is ever shown) the launch shows the engine's one graphics identity instead
+// (GPU_LESS_IDENTITY), consistent everywhere, with canvas noise as set, and the screen still the
+// real virtual screen; validation then checks that identity for consistency, never for equality
+// with the host, and PairBrowse's own diagnostics say "software rendering, shown as <identity>". A
+// request that can't be met is an error naming it, never a partial apply. Node's standard library only.
 import { createHash } from "node:crypto";
 import { switchName } from "../browser-args.mjs";
 
@@ -16,8 +21,22 @@ export const GRAPHICS_BACKENDS = Object.freeze(["auto", "software", "gpu"]);
 // The engine's own software path on Linux (ANGLE on SwiftShader Vulkan; spike E-S1, step 39). It
 // works without --enable-unsafe-swiftshader, which only allows the automatic fallback.
 export const SOFTWARE_SWITCH = "--use-angle=swiftshader";
-// The engine keys of the Linux plan: the real backend's strings, no noise over its pixels.
+// The engine keys of the Linux plan on a host with a GPU: the real backend's strings, no noise
+// over its pixels.
 export const LINUX_REAL = Object.freeze({ disableGpuFingerprint: true, fingerprintNoise: false });
+// The engine's one graphics identity for a host without a GPU (decision 10): the seed persona's
+// Intel UHD 770 on a current Linux Mesa driver, whose WebGL strings, extensions and limits the
+// engine carries and whose WebGPU vendor, architecture, features and limits follow it (engine
+// patch 961). Pages read it over software rendering; native/validate.mjs checks a measurement
+// made under it for consistency with it (the WebGL renderer's family and name, the WebGPU
+// adapter's vendor and architecture), never for equality with the host. One identity, no pool.
+export const GPU_LESS_IDENTITY = Object.freeze({ name: "Intel UHD Graphics 770", family: "intel", renderer: /\bUHD Graphics 770\b/,
+  webgpu: Object.freeze({ vendor: "intel", architecture: "gen-12-lp" }) });
+// The engine keys of the identity plan: the persona's own GPU identity (the real backend's strings
+// off) and noise as set (the engine's canvas noise and its canvas and WebGL readback noise; on by
+// default, decision 10; config.json pairbrowse.graphicsNoise, which the measurement batch of
+// decision 11 decides, so the helper keeps it switchable).
+export const identityKeys = (graphicsNoise = true) => ({ disableGpuFingerprint: false, fingerprintNoise: graphicsNoise !== false, canvasNoise: graphicsNoise !== false });
 // What the plan sets on Xvfb: the virtual screen as the screen pages read (E7).
 export const SCREEN_KEYS = Object.freeze(["screenWidth", "screenHeight", "availWidth", "availHeight", "colorDepth", "devicePixelRatio"]);
 // The legacy GPU keys in config.json (decision U6): another device's GPU, deprecated for one
@@ -46,9 +65,15 @@ export function normalizeWebgpu(profile) {
 }
 
 // This helper's browser's graphics as last launched: requested (the backend asked for), plan (the
-// switches and engine keys the plan added, by name), and kind, renderer and status once the
-// browser process's read (native/backend.mjs readBackend) is filed by the launch.
-export const GRAPHICS = { requested: "auto", switches: [], engineKeys: [], kind: "unverified", renderer: null, status: "unverified" };
+// switches and engine keys the plan added, by name), shown (the identity pages read over software
+// rendering, GPU_LESS_IDENTITY's name, or null: the runtime's own), and kind, renderer and status
+// once the browser process's read (native/backend.mjs readBackend) is filed by the launch.
+export const GRAPHICS = { requested: "auto", switches: [], engineKeys: [], shown: null, kind: "unverified", renderer: null, status: "unverified" };
+// A profile's status on a build for graphics (profiles/schema.mjs VALIDATION_STATUSES):
+// "validated" (measured, every check matched), "consistent" (the same under the identity shown on
+// a host without a GPU: checked for consistency, not for equality with the host), "failed",
+// "unverified". The two that count as checked and passed.
+export const PASSING_STATUSES = Object.freeze(["validated", "consistent"]);
 
 // The graphics switches among launch switches, as "--name=value" in their own order.
 export const backendSwitches = (args = []) => (Array.isArray(args) ? args : [])
@@ -63,21 +88,23 @@ function forcedRatio(args) {
   return finite(last) && last > 0 && last <= 5 ? last : 1;
 }
 
-// One launch's graphics: { switches, engineKeys, refusals }.
+// One launch's graphics: { switches, engineKeys, refusals, identity }.
 // requested: the backend asked for (a profile's graphics.backend, or config.json's
 // pairbrowse.graphics for the default profile). platform: process.platform's name. browserKind:
 // "pairbrowse" (the native build) or "pairbrowse-open". measured: the backend read, when one is in
-// hand ({ kind, renderer }, native/backend.mjs; null before the launch). userArgs: the launch's
+// hand ({ kind, renderer }, native/backend.mjs; null before the launch): on Linux a software one
+// makes the plan the identity's (decision 10; identity: GPU_LESS_IDENTITY's name, else null), with
+// graphicsNoise (config.json pairbrowse.graphicsNoise) as its noise keys. userArgs: the launch's
 // other switches (browserArgs, screened). display: the helper's virtual screen ({ width, height,
 // depth }, display.mjs screenGeometry) or null; screenSet: a profile or config.json sets the screen
 // (then E7 checks it against the display, compatErrors, and the plan sets none). name: the
 // profile's, for the sentences. A refusal is { field, message }, one sentence each; with any,
 // switches and engine keys are empty: the launch stops, nothing applies partly.
-export function graphicsPlan({ requested = "auto", platform = process.platform, browserKind = "pairbrowse", measured = null, userArgs = [], display = null, screenSet = false, name = "default" } = {}) {
+export function graphicsPlan({ requested = "auto", platform = process.platform, browserKind = "pairbrowse", measured = null, userArgs = [], display = null, screenSet = false, name = "default", graphicsNoise = true } = {}) {
   const refusals = [];
   const refuse = (field, message) => refusals.push({ field, message });
   const args = Array.isArray(userArgs) ? userArgs.filter((a) => typeof a === "string") : [];
-  const none = () => ({ switches: [], engineKeys: {}, refusals });
+  const none = () => ({ switches: [], engineKeys: {}, refusals, identity: null });
   if (!GRAPHICS_BACKENDS.includes(requested)) {
     refuse("graphics.backend", `graphics.backend takes "auto", "software" or "gpu".`);
     return none();
@@ -88,8 +115,10 @@ export function graphicsPlan({ requested = "auto", platform = process.platform, 
   }
   const switches = [], engineKeys = {};
   const where = PLATFORM_NAMES[platform] ?? platform;
+  // The identity is shown over software rendering only (a GPU asked for over it is refused below).
+  const identity = platform === "linux" && measured?.kind === "software" && requested !== "gpu" ? GPU_LESS_IDENTITY.name : null;
   if (platform === "linux") {
-    Object.assign(engineKeys, LINUX_REAL);
+    Object.assign(engineKeys, identity ? identityKeys(graphicsNoise) : LINUX_REAL);
     if (display && !screenSet && finite(display.width) && finite(display.height)) {
       Object.assign(engineKeys, { screenWidth: display.width, screenHeight: display.height, availWidth: display.width, availHeight: display.height,
         colorDepth: finite(display.depth) ? display.depth : 24, devicePixelRatio: forcedRatio(args) });
@@ -107,7 +136,7 @@ export function graphicsPlan({ requested = "auto", platform = process.platform, 
     if (measured?.kind === "software") refuse("graphics.backend", `Profile ${name} asks for a GPU (graphics.backend: gpu) but this computer renders in software (${measured.renderer || "a software renderer"}).`);
     else if (measured && measured.kind !== "hardware") refuse("graphics.backend", `Profile ${name} asks for a GPU (graphics.backend: gpu), and PairBrowse could not confirm which renderer this browser uses.`);
   }
-  return refusals.length ? none() : { switches, engineKeys, refusals };
+  return refusals.length ? none() : { switches, engineKeys, refusals, identity };
 }
 
 // Every graphics request that can't be met (E9), as { field, message }, one sentence each: the
@@ -176,13 +205,19 @@ export function runtimeKey({ build, pack = null, platform, arch, display, backen
   return createHash("sha256").update(JSON.stringify(key)).digest("hex");
 }
 
+// The identity a launch shows, as GRAPHICS or a measurement names it: GPU_LESS_IDENTITY's name, or
+// null (the runtime's own graphics, or no identity PairBrowse knows).
+export const shownIdentity = (g) => (typeof g?.shown === "string" && g.shown === GPU_LESS_IDENTITY.name ? g.shown : null);
+
 // pairbrowse_status's part for the running browser (spec Phase E design): "Graphics: <kind>
-// (<renderer>), requested <backend>, <status> on <build>". g: GRAPHICS as the launch filed it.
-// renderer: false leaves the renderer out (a joiner's agent, like a report, gets the kind and
-// status only: row E-3). build: the native build's version; none on the open build.
+// (<renderer>)[, shown as <identity>], requested <backend>, <status> on <build>". g: GRAPHICS as
+// the launch filed it. renderer: false leaves the renderer out (a joiner's agent, like a report,
+// gets the kind, the identity shown and the status only: row E-3; the identity is the engine's,
+// never this computer's GPU). build: the native build's version; none on the open build.
 export function graphicsStatusPart(g = GRAPHICS, { build = null, renderer = true } = {}) {
   const kind = ["hardware", "software"].includes(g?.kind) ? g.kind : "unverified";
   const name = renderer && kind !== "unverified" && typeof g?.renderer === "string" && g.renderer ? ` (${g.renderer.slice(0, 80)})` : "";
-  const status = ["validated", "failed"].includes(g?.status) ? g.status : "unverified";
-  return `Graphics: ${kind}${name}, requested ${GRAPHICS_BACKENDS.includes(g?.requested) ? g.requested : "auto"}, ${status} on ${build || "PairBrowse as an extension"}`;
+  const shown = shownIdentity(g) ? `, shown as ${g.shown}` : "";
+  const status = [...PASSING_STATUSES, "failed"].includes(g?.status) ? g.status : "unverified";
+  return `Graphics: ${kind}${name}${shown}, requested ${GRAPHICS_BACKENDS.includes(g?.requested) ? g.requested : "auto"}, ${status} on ${build || "PairBrowse as an extension"}`;
 }

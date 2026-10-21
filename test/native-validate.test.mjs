@@ -11,6 +11,7 @@ import { readFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { validate, measuredRecord, entryStatus, RULES, RULE_IDS } from "../scripts/native/validate.mjs";
+import { GPU_LESS_IDENTITY } from "../scripts/native/graphics.mjs";
 import { rendererFamily, COHERENCE_RULES } from "../scripts/rules/coherence.mjs";
 import { COHERENCE } from "../scripts/native/validate.mjs";
 import { PROPERTIES, RUNTIMES, property, classOf, runtimeOf } from "../scripts/native/properties.mjs";
@@ -259,6 +260,55 @@ test("requestDevice failing with reported limits is a webgpu.device error", () =
   assert.deepEqual([rendererFamily("ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Pro)"), rendererFamily("Google SwiftShader"), rendererFamily("ANGLE (NVIDIA, GeForce)"), rendererFamily("")], ["apple", "software", "nvidia", null]);
 });
 
+// Decision 10: a measurement made under the identity a host without a GPU shows (its shown names
+// native/graphics.mjs GPU_LESS_IDENTITY) is checked for consistency with that identity, WebGL and
+// WebGPU agreeing, and its status is "consistent"; anything else under it fails.
+test("under the identity shown on a host without a GPU the persona strings are consistent, not a mismatch; what disagrees with it fails", () => {
+  const adapter = { available: true, reason: null, vendor: "intel", architecture: "gen-12-lp", isFallbackAdapter: false, features: ["depth-clip-control", "texture-compression-bc"],
+    limits: { maxTextureDimension2D: 8192, maxBindGroups: 4, maxBindGroupsPlusVertexBuffers: 24, maxComputeInvocationsPerWorkgroup: 256, maxComputeWorkgroupSizeX: 256, maxBufferSize: 1073741824, maxUniformBufferBindingSize: 65536 },
+    requestDevice: "ok", compute: "2,4,6,8" };
+  const under = (extra = {}) => measurement("probe-linux-llvmpipe-persona", "systeminfo-linux-xvfb-llvmpipe", { shown: GPU_LESS_IDENTITY.name, webgpu: adapter, screen: { width: 1366, height: 768, availWidth: 1366, availHeight: 768, colorDepth: 24, devicePixelRatio: 1 }, ...extra });
+  const entry = validate({ requested: requested(), derived: LINUX, measured: under() });
+  assert.equal(entry.status, "consistent", JSON.stringify(entry.items.filter((i) => i.status === "mismatch" || i.status === "unverified")));
+  assert.equal(entry.graphics.shown, GPU_LESS_IDENTITY.name);
+  assert.equal(entry.graphics.backend.kind, "software", "the host's backend stays what it is");
+  const strings = itemOf(entry, "webgl.strings-vs-backend");
+  assert.deepEqual([strings.status, strings.requested], ["matched", "Intel UHD Graphics 770"]);
+  assert.match(strings.reason, /pages read the identity shown over software rendering/);
+  assert.equal(itemOf(entry, "webgpu.vendor").reason, "the adapter follows the identity shown (intel/gen-12-lp)");
+  assert.match(itemOf(entry, "gpu.software-as-hardware").reason, /one identity over software rendering \(Intel UHD Graphics 770\), WebGL and WebGPU agreeing/);
+  assert.equal(itemOf(entry, "gpu.vs-platform").status, "matched", "an Intel GPU fits Linux");
+  assert.equal(itemOf(entry, "backend.requested").measured, "software");
+  assert.equal(entryStatus(entry, { pack: PACK, runtimeKey: KEY }), "consistent");
+  const record = JSON.parse(readFileSync(new URL("./fixtures/profiles/record-1.json", import.meta.url), "utf8"));
+  assert.deepEqual(checkProfile({ ...record, validation: { [BUILD]: entry } }).problems, []);
+  // No WebGPU adapter: still consistent (a defined result, nothing to compare).
+  assert.equal(validate({ requested: requested(), derived: LINUX, measured: under({ webgpu: noWebgpu }) }).status, "consistent");
+  // A fallback or another vendor's adapter under the identity: WebGPU doesn't follow it.
+  const fallback = validate({ requested: requested(), derived: LINUX, measured: under({ webgpu: { ...adapter, vendor: "google", architecture: "swiftshader", isFallbackAdapter: true } }) });
+  assert.equal(fallback.status, "failed");
+  assert.match(itemOf(fallback, "webgpu.vendor").reason, /^the WebGPU adapter says google\/swiftshader \(a fallback adapter\) while the launch shows Intel UHD Graphics 770 \(intel\/gen-12-lp\)/);
+  assert.match(itemOf(fallback, "gpu.software-as-hardware").reason, /the WebGPU adapter says google\/swiftshader \(a fallback adapter\) while the launch shows Intel UHD Graphics 770 over software rendering/);
+  // The real llvmpipe strings under a launch that says it shows the identity: pages don't read it.
+  const real = validate({ requested: requested(), derived: LINUX, measured: measurement("probe-linux-llvmpipe-real", "systeminfo-linux-xvfb-llvmpipe", { shown: GPU_LESS_IDENTITY.name, webgpu: noWebgpu }) });
+  assert.equal(real.status, "failed");
+  assert.match(itemOf(real, "webgl.strings-vs-backend").reason, /^pages read ANGLE \(Mesa\/X\.org, llvmpipe.* while the launch shows Intel UHD Graphics 770$/);
+  assert.match(itemOf(real, "gpu.software-as-hardware").reason, /^WebGL reads ANGLE \(Mesa\/X\.org, llvmpipe.* while the launch shows Intel UHD Graphics 770 over software rendering$/);
+  // An identity PairBrowse doesn't know, or one shown over a hardware backend: never consistent.
+  const unknown = validate({ requested: requested(), derived: LINUX, measured: under({ shown: "Zq GPU 9000" }) });
+  assert.equal(unknown.status, "failed");
+  assert.match(itemOf(unknown, "webgl.strings-vs-backend").reason, /an identity PairBrowse doesn't know \(Zq GPU 9000\)/);
+  const m = under();
+  m.backend = { ...m.backend, kind: "hardware", renderer: "ANGLE (NVIDIA, NVIDIA GeForce RTX 4070)" };
+  const overHardware = validate({ requested: requested(), derived: LINUX, measured: m });
+  assert.equal(overHardware.status, "failed");
+  assert.match(itemOf(overHardware, "webgl.strings-vs-backend").reason, /shows Intel UHD Graphics 770 over a nvidia backend; an identity is shown over software rendering only/);
+  // Without shown the persona strings over llvmpipe stay the mismatch of section 13.1.
+  assert.equal(validate({ requested: requested(), derived: LINUX, measured: under({ shown: null }) }).status, "failed");
+  // A gpu request under the identity is still a software backend: refused as before.
+  assert.equal(itemOf(validate({ requested: requested({ graphics: { backend: "gpu", require: null } }), derived: LINUX, measured: under() }), "backend.requested").status, "mismatch");
+});
+
 test("backend.stable compares this launch's read with the measurement", () => {
   const m = measurement("probe-linux-llvmpipe-real", "systeminfo-linux-xvfb-llvmpipe", { webgpu: noWebgpu });
   assert.equal(itemOf(validate({ requested: requested(), derived: LINUX, measured: m }), "backend.stable"), undefined, "no live read: not checked");
@@ -353,6 +403,7 @@ test("the largest measurement measuredRecord keeps fits the schema's graphics si
       features: many(99, (i) => `f${i}-`.padEnd(48, "x")), limits: Object.fromEntries(many(99, (i) => [`L${i}`.padEnd(40, "x"), Number.MAX_SAFE_INTEGER])),
       requestDevice: { ok: false, error: q(999) }, compute: { ok: false, error: q(999) } },
     canvas: { stable: true, repeat: true, noise: true },
+    shown: q(999),
     fonts: { checked: big, missing: many(99, () => q(999)), controlFound: many(99, () => q(999)) },
     media: Object.fromEntries(many(99, (i) => [`${i}`.padEnd(64, '"'), q(999)])),
     screen: { width: big, height: big, availWidth: big, availHeight: big, colorDepth: big, devicePixelRatio: big },

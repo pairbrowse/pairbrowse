@@ -199,7 +199,12 @@ test("provenance, validation and history keep their shapes, bounded", () => {
   refused(record({ validation: { "150.0.7871.114": { ...entry, graphics: { ...graphics, backend: { kind: "fast" } } } } }), /graphics\.backend\.kind is "hardware", "software" or "unverified"/);
   refused(record({ validation: { "150.0.7871.114": { ...entry, graphics: { ...graphics, extra: 1 } } } }), /unknown key "extra" in validation\["150\.0\.7871\.114"\]\.graphics/);
   refused(record({ validation: { "../x": entry } }), /^validation has an entry whose key isn't a build/);
-  refused(record({ validation: { "150.0.7871.114": { ...entry, status: "ok" } } }), /^validation\["150\.0\.7871\.114"\]\.status is "validated", "unverified" or "failed"/);
+  refused(record({ validation: { "150.0.7871.114": { ...entry, status: "ok" } } }), /^validation\["150\.0\.7871\.114"\]\.status is "validated", "consistent", "unverified" or "failed"/);
+  // The identity shown on a host without a GPU (decision 10): a short name or null; "consistent" needs a measurement like "validated".
+  assert.deepEqual(problems(record({ validation: { "150.0.7871.114": { ...entry, status: "consistent", graphics: { ...graphics, shown: "Intel UHD Graphics 770" } } } })), []);
+  refused(record({ validation: { "150.0.7871.114": { ...plain, status: "consistent" } } }), /is consistent only with a measurement/);
+  refused(record({ validation: { "150.0.7871.114": { ...entry, graphics: { ...graphics, shown: "x".repeat(81) } } } }), /graphics\.shown is a string, or null/);
+  refused(record({ validation: { "150.0.7871.114": { ...entry, graphics: { ...graphics, shown: 7 } } } }), /graphics\.shown is a string, or null/);
   refused(record({ validation: { "150.0.7871.114": { ...entry, items: [{ ...item, status: "spoofed" }] } } }), /items\[0\]\.status is "applied", "not-applied"/);
   refused(record({ validation: { "150.0.7871.114": { ...entry, graphics: { ...graphics, webgl: { blob: "x".repeat(20001) } } } } }), /graphics is at most 20000 characters as JSON/);
   refused(record({ validation: { "150.0.7871.114": { ...entry, items: [{ ...item, measured: "x".repeat(3000) }] } } }), /items\[0\]\.measured is a short JSON value/);

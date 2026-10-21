@@ -248,7 +248,7 @@ test("launch wiring follows section 3.2: screen, profile, network, then the brow
   const engine = src.indexOf("ctx = await launchEngine(");
   assert.ok(screen > 0 && chosen > screen && network > chosen && engine > network, "ensureScreen, profiles.forLaunch, network.forLaunch, launchEngine");
   // The session's network applied to the launch options, then (a test run only) the NetLog switch.
-  assert.match(src.slice(engine), /^ctx = await launchEngine\(browserType\(\), \{ \.\.\.next, browserProfile: chosen\.engine, virtualDisplay: screen\?\.geometry \?\? null \}, profile\(\), withNetLog\(net \? net\.apply\(options\) : options\),/);
+  assert.match(src.slice(engine), /^ctx = await launchEngine\(browserType\(\), \{ \.\.\.next, browserProfile: chosen\.engine, virtualDisplay: screen\?\.geometry \?\? null, measuredBackend: graphicsPlan\?\.measured\?\.backend \?\? null \}, profile\(\), withNetLog\(net \? net\.apply\(options\) : options\),/);
   assert.match(src, /finally \{ net\?\.drop\(\);/);
   // forLaunch inside the try that drops its auth file; the network recorded only once the browser is up.
   assert.ok(src.lastIndexOf("try {", network) > src.indexOf("let ctx, net = null;"), "forLaunch inside the try");

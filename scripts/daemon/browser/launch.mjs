@@ -296,7 +296,9 @@ export function createLaunch(st, deps, api) {
       launchSwitches = options.args || [];
       // The native build's engine layer: the profile's keys, geoip and the id its persona is saved
       // under; and the virtual screen, which on Linux is the screen pages read (spec E7).
-      ctx = await launchEngine(browserType(), { ...next, browserProfile: chosen.engine, virtualDisplay: screen?.geometry ?? null }, profile(), withNetLog(net ? net.apply(options) : options), launchLog, undefined, { server: api.isServer() }); // in server mode the sandbox is required (spec server-mode A10)
+      // measuredBackend: the measurement's backend (step 4), which on a host without a GPU makes
+      // the native launch show the engine's identity (decision 10; native-engine.mjs applyGraphicsPlan).
+      ctx = await launchEngine(browserType(), { ...next, browserProfile: chosen.engine, virtualDisplay: screen?.geometry ?? null, measuredBackend: graphicsPlan?.measured?.backend ?? null }, profile(), withNetLog(net ? net.apply(options) : options), launchLog, undefined, { server: api.isServer() }); // in server mode the sandbox is required (spec server-mode A10)
     } catch (e) { dropHelperKey(keyFile, captureKeyFile); throw e; } // a failed launch leaves no key file
     finally { net?.drop(); launchLog.done(hud.badge()); } // the proxy's auth file: read by now, or the launch failed
     // The screen ended while the browser started (supervise.mjs lost() cleared it): this browser has

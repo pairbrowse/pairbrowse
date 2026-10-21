@@ -1202,6 +1202,25 @@ test("the graphics plan reaches the engine and never the persona", async () => {
   assert.equal(GRAPHICS.requested, "software");
   assert.deepEqual(GRAPHICS.switches, ["--use-angle=swiftshader"]);
   assert.equal(GRAPHICS.kind, "unverified", "until the browser process says");
+  assert.equal(GRAPHICS.shown, null, "the runtime's own graphics");
+  // Decision 10: the launch's engine config carries the backend measured or kept (measuredBackend,
+  // daemon/browser/launch.mjs and native/check.mjs probeLauncher); a software one on Linux shows
+  // the engine's identity, with canvas noise as pairbrowse.canvasNoise says, never kept in the persona.
+  const shownDir = mkdtempSync(join(tmpdir(), "pairbrowse-graphics-shown-"));
+  const shownPack = recordingPack();
+  await launchNative(fakeBrowserType(), { pairbrowse: { fingerprint: "seed", fingerprintProfile: PINNED_PROFILE(), graphicsNoise: false }, virtualDisplay: { width: 1366, height: 900, depth: 24 }, measuredBackend: { kind: "software", renderer: "llvmpipe" } }, shownDir,
+    { executablePath: app.executablePath, headless: false, args: [] }, shownPack, (l) => lines.push(l));
+  if (linux) {
+    assert.deepEqual([shownPack.given[0].disableGpuFingerprint, shownPack.given[0].fingerprintNoise, shownPack.given[0].canvasNoise, shownPack.given[0].screenWidth], [false, false, false, 1366]);
+    assert.equal(GRAPHICS.shown, "Intel UHD Graphics 770");
+    assert.ok(lines.some((l) => /graphics: software rendering, shown as Intel UHD Graphics 770 .*canvas noise off/.test(l)));
+  } else {
+    assert.equal(GRAPHICS.shown, null, "never off Linux");
+    assert.equal(shownPack.given[0].disableGpuFingerprint, undefined);
+  }
+  const shownStored = JSON.parse(readFileSync(join(shownDir, "pairbrowse-persona.json"), "utf8")).options;
+  for (const k of ["disableGpuFingerprint", "fingerprintNoise", "canvasNoise", "screenWidth"]) assert.equal(shownStored[k], undefined, `${k} is never kept`);
+  assert.ok(!lines.some((l) => /pairbrowse\.graphicsNoise in config\.json not used/.test(l)), "pairbrowse.graphicsNoise is PairBrowse's own setting");
 });
 
 // Decision U6: a legacy GPU key removed from config.json is gone at the next launch, never kept

@@ -8,7 +8,7 @@ import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { GRAPHICS_BACKENDS, SOFTWARE_SWITCH, graphicsPlan, compatErrors, runtimeKey, backendSwitches, GRAPHICS } from "../scripts/native/graphics.mjs";
+import { GRAPHICS_BACKENDS, SOFTWARE_SWITCH, GPU_LESS_IDENTITY, PASSING_STATUSES, identityKeys, graphicsPlan, compatErrors, runtimeKey, backendSwitches, graphicsStatusPart, shownIdentity, GRAPHICS } from "../scripts/native/graphics.mjs";
 import { parseSystemInfo, readBackend, unverifiedBackend } from "../scripts/native/backend.mjs";
 import { applyGraphicsPlan } from "../scripts/native-engine.mjs";
 import { configProblem, PAIRBROWSE_ENGINE_KEYS } from "../scripts/config-schema.mjs";
@@ -64,10 +64,59 @@ test("Linux plan sets disableGpuFingerprint and noise off", () => {
   assert.deepEqual(graphicsPlan({ platform: "linux" }).engineKeys, { disableGpuFingerprint: true, fingerprintNoise: false });
   assert.deepEqual(graphicsPlan({ platform: "linux", display: XVFB, screenSet: true }).engineKeys, { disableGpuFingerprint: true, fingerprintNoise: false });
   // macOS keeps the host capture (its own GPU): the plan adds nothing there.
-  assert.deepEqual(graphicsPlan({ platform: "darwin", display: XVFB }), { switches: [], engineKeys: {}, refusals: [] });
+  assert.deepEqual(graphicsPlan({ platform: "darwin", display: XVFB }), { switches: [], engineKeys: {}, refusals: [], identity: null });
   // The open build: nothing, and anything but auto is refused (E9).
-  assert.deepEqual(graphicsPlan({ platform: "linux", browserKind: "pairbrowse-open", display: XVFB }), { switches: [], engineKeys: {}, refusals: [] });
+  assert.deepEqual(graphicsPlan({ platform: "linux", browserKind: "pairbrowse-open", display: XVFB }), { switches: [], engineKeys: {}, refusals: [], identity: null });
   assert.match(messages(graphicsPlan({ requested: "software", platform: "linux", browserKind: "pairbrowse-open" }).refusals)[0], /only the native PairBrowse build can do/);
+  // A hardware read on Linux keeps the real plan.
+  const hardware = graphicsPlan({ platform: "linux", display: XVFB, measured: { kind: "hardware", renderer: "ANGLE (NVIDIA, NVIDIA GeForce RTX 4070)" } });
+  assert.deepEqual([hardware.identity, hardware.engineKeys.disableGpuFingerprint, hardware.engineKeys.fingerprintNoise], [null, true, false]);
+});
+
+// Decision 10: a host without a GPU (a software backend measured) is shown the engine's one
+// graphics identity, consistent everywhere, with canvas noise as config.json says (on by
+// default) and still the real virtual screen; a GPU host and an unmeasured launch keep the real
+// plan; a GPU asked for over software is refused, never shown an identity.
+test("a software read on Linux shows the engine's identity (decision 10): identity keys, canvas noise switchable, screen still the virtual screen", () => {
+  const software = { kind: "software", renderer: "ANGLE (Mesa/X.org, llvmpipe (LLVM 15.0.6 128 bits))" };
+  const plan = graphicsPlan({ requested: "auto", platform: "linux", display: XVFB, measured: software });
+  assert.equal(plan.identity, GPU_LESS_IDENTITY.name);
+  assert.equal(GPU_LESS_IDENTITY.name, "Intel UHD Graphics 770");
+  assert.deepEqual(plan.engineKeys, { disableGpuFingerprint: false, fingerprintNoise: true, canvasNoise: true, screenWidth: 1366, screenHeight: 900, availWidth: 1366, availHeight: 900, colorDepth: 24, devicePixelRatio: 1 });
+  assert.deepEqual(plan.switches, []);
+  for (const k of Object.keys(plan.engineKeys)) assert.ok(PAIRBROWSE_ENGINE_KEYS.includes(k), `${k} is an engine key`);
+  assert.deepEqual(identityKeys(false), { disableGpuFingerprint: false, fingerprintNoise: false, canvasNoise: false });
+  const quiet = graphicsPlan({ platform: "linux", measured: software, graphicsNoise: false }).engineKeys;
+  assert.deepEqual([quiet.fingerprintNoise, quiet.canvasNoise], [false, false], "noise off when config.json says so");
+  assert.equal(graphicsPlan({ platform: "linux", measured: software, graphicsNoise: undefined }).engineKeys.canvasNoise, true, "on by default");
+  // software asked for and measured: the identity too (the engine's software path renders in software).
+  const soft = graphicsPlan({ requested: "software", platform: "linux", measured: software });
+  assert.deepEqual([soft.identity, soft.switches], [GPU_LESS_IDENTITY.name, [SOFTWARE_SWITCH]]);
+  // gpu over software: refused, no identity; unmeasured or unverified: the real plan.
+  const gpu = graphicsPlan({ requested: "gpu", platform: "linux", measured: software, name: "p" });
+  assert.deepEqual([gpu.identity, gpu.engineKeys, gpu.refusals.length], [null, {}, 1]);
+  for (const measured of [null, { kind: "unverified", renderer: null }, { kind: "hardware", renderer: "Intel" }]) {
+    const real = graphicsPlan({ platform: "linux", display: XVFB, measured });
+    assert.deepEqual([real.identity, real.engineKeys.disableGpuFingerprint, real.engineKeys.fingerprintNoise], [null, true, false], JSON.stringify(measured));
+  }
+  // Never off Linux, never on the open build.
+  assert.equal(graphicsPlan({ platform: "darwin", measured: software }).identity, null);
+  assert.equal(graphicsPlan({ platform: "linux", browserKind: "pairbrowse-open", measured: software }).identity, null);
+  // config.json's pairbrowse.graphicsNoise is a PairBrowse setting, true or false (the engine's
+  // own canvasNoise option stays an engine key, which the plan writes over on Linux).
+  assert.equal(configProblem({ pairbrowse: { graphicsNoise: false } }), "");
+  assert.match(configProblem({ pairbrowse: { graphicsNoise: "on" } }), /pairbrowse\.graphicsNoise is true or false/);
+  assert.ok(!PAIRBROWSE_ENGINE_KEYS.includes("graphicsNoise"));
+  assert.ok(PAIRBROWSE_ENGINE_KEYS.includes("canvasNoise"));
+  // What the status part and a record say: the identity, never this computer's GPU, and "consistent".
+  assert.equal(graphicsStatusPart({ kind: "software", renderer: "llvmpipe (LLVM 15)", shown: GPU_LESS_IDENTITY.name, requested: "auto", status: "consistent" }, { build: "150.0.7871.114" }),
+    "Graphics: software (llvmpipe (LLVM 15)), shown as Intel UHD Graphics 770, requested auto, consistent on 150.0.7871.114");
+  assert.equal(graphicsStatusPart({ kind: "software", renderer: "llvmpipe", shown: GPU_LESS_IDENTITY.name, requested: "auto", status: "consistent" }, { build: "b", renderer: false }),
+    "Graphics: software, shown as Intel UHD Graphics 770, requested auto, consistent on b");
+  assert.equal(graphicsStatusPart({ kind: "software", renderer: "llvmpipe", shown: "Zq GPU 9000", requested: "auto", status: "validated" }, { build: "b" }),
+    "Graphics: software (llvmpipe), requested auto, validated on b", "an identity PairBrowse doesn't know isn't repeated");
+  assert.deepEqual([...PASSING_STATUSES], ["validated", "consistent"]);
+  assert.deepEqual([shownIdentity({ shown: GPU_LESS_IDENTITY.name }), shownIdentity({ shown: "x" }), shownIdentity({ shown: null }), shownIdentity(null)], [GPU_LESS_IDENTITY.name, null, null, null]);
 });
 
 test("the Linux plan on a launch's fingerprint: persona untouched, legacy GPU keys named and left out", () => {
@@ -81,7 +130,21 @@ test("the Linux plan on a launch's fingerprint: persona untouched, legacy GPU ke
   assert.ok(logs.some((l) => /gpuVendor, gpuRenderer not applied on Linux/.test(l)));
   assert.ok(logs.some((l) => /fingerprintNoise not applied on Linux/.test(l)));
   assert.ok(logs.some((l) => /screen 1366x900 \(the virtual screen\)/.test(l)));
+  assert.ok(logs.some((l) => /graphics: this computer's own renderer/.test(l)));
   assert.ok(!logs.join("\n").includes("Zq"), "no value repeated");
+  // A software backend measured (decision 10): the identity's keys, the log says what is shown and
+  // that canvas noise is on, or off when config.json's pairbrowse.canvasNoise says so.
+  const shownLogs = [];
+  const shownPrint = { fingerprint: "seed", disableGpuFingerprint: true, timezone: "UTC" };
+  const shown = applyGraphicsPlan(shownPrint, { overrides: { disableGpuFingerprint: true }, saved: {}, graphicsNoise: true }, { platform: "linux", display: XVFB, measured: { kind: "software", renderer: "llvmpipe" }, log: (l) => shownLogs.push(l) });
+  assert.equal(shown.identity, "Intel UHD Graphics 770");
+  assert.deepEqual([shownPrint.disableGpuFingerprint, shownPrint.fingerprintNoise, shownPrint.canvasNoise, shownPrint.screenWidth], [false, true, true, 1366]);
+  assert.ok(shownLogs.some((l) => /disableGpuFingerprint not applied on Linux: graphics there follow the measured backend \(the engine's identity over software rendering\)/.test(l)));
+  assert.ok(shownLogs.some((l) => /graphics: software rendering, shown as Intel UHD Graphics 770 \(the engine's one graphics identity for a host without a GPU, decision 10; canvas noise on\), screen 1366x900 \(the virtual screen\)/.test(l)));
+  const quiet = {};
+  applyGraphicsPlan(quiet, { overrides: {}, saved: {}, graphicsNoise: false }, { platform: "linux", measured: { kind: "software", renderer: "llvmpipe" }, log: (l) => shownLogs.push(l) });
+  assert.deepEqual([quiet.fingerprintNoise, quiet.canvasNoise], [false, false]);
+  assert.ok(shownLogs.some((l) => /canvas noise off/.test(l)));
   // A screen the settings set stays (E7 compares it with the display).
   const own = { fingerprint: "seed", screenWidth: 1920, screenHeight: 1080 };
   applyGraphicsPlan(own, { overrides: { screenWidth: 1920, screenHeight: 1080 }, saved: {} }, { platform: "linux", display: XVFB });
@@ -231,7 +294,7 @@ test("readBackend asks the browser process over its own session, bounded, never 
   assert.match(slow.reason, /opened no session/);
   await new Promise((r) => setTimeout(r, 150));
   assert.equal(late, 1, "the late session is detached");
-  assert.deepEqual(Object.keys(GRAPHICS).sort(), ["engineKeys", "kind", "renderer", "requested", "status", "switches"]);
+  assert.deepEqual(Object.keys(GRAPHICS).sort(), ["engineKeys", "kind", "renderer", "requested", "shown", "status", "switches"]);
 });
 
 test("a profile's backend reaches the launch through the plan; config.json's pairbrowse.graphics is the default's", () => {

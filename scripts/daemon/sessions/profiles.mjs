@@ -6,7 +6,7 @@
 // one it names refuses the launch, never re-stamped; the first start writes it), the engine the
 // profile ran on (another major refuses a store profile; the config-backed default is held to
 // this one, as the person's check would; another build launches unverified) and, with
-// requireValidatedProfiles, that this build's validation is "validated" (measured with this engine
+// requireValidatedProfiles, that this build's validation is "validated" or "consistent" (measured with this engine
 // pack, native/validate.mjs entryStatus) with no error item; then
 // maps the profile to the launch's parts (profiles/map.mjs toLaunch: a field the browser can't
 // apply refuses, D11). It answers what launch.mjs passes on: the switches (after browserArgs), the
@@ -45,6 +45,7 @@ import { fromConfig, toLaunch, buildFit, ENGINE_KEYS, PICKS_THIS_COMPUTER, THIS_
 import { PROFILE_ID, DEFAULT_PROFILE } from "../../profiles/schema.mjs";
 import { cliCommand, requestOf, measuredEntry } from "../../profiles/validate.mjs";
 import { entryStatus } from "../../native/validate.mjs";
+import { PASSING_STATUSES } from "../../native/graphics.mjs";
 import { takeIdentity } from "../../profiles/lock.mjs";
 import { ensureMigrated, readMigration, migrationNote } from "../../profiles/migrate.mjs";
 import { createProfileOwner } from "./profile-owner.mjs";
@@ -157,7 +158,7 @@ export function createProfiles(st, deps = {}) {
 
     if (config.requireValidatedProfiles === true) {
       const on = engine ? `build ${engine.build}` : native ? "this build" : "PairBrowse as an extension";
-      if (status !== "validated") throw refuse(`${named} is ${status} on ${on}, and requireValidatedProfiles is on in config.json: validate the profile on it first${native ? "" : " (launches of PairBrowse as an extension are never validated)"}; nothing was started.`);
+      if (!PASSING_STATUSES.includes(status)) throw refuse(`${named} is ${status} on ${on}, and requireValidatedProfiles is on in config.json: validate the profile on it first${native ? "" : " (launches of PairBrowse as an extension are never validated)"}; nothing was started.`);
       const errors = (prior.items || []).filter((i) => i.severity === "error");
       if (errors.length) throw refuse(`${named} has ${errors.length === 1 ? "an error" : `${errors.length} errors`} in its checks on ${on} (${errors.map((i) => i.field).join(", ")}), and requireValidatedProfiles is on in config.json; nothing was started.`);
     }
@@ -271,7 +272,7 @@ export function createProfiles(st, deps = {}) {
       if (entry.graphics) store.recordValidation(p.id, { build, entry });
       else store.recordLaunch(p.id, { build, entry, replaceMeasured });
     } catch (e) { log(`launch: browser profile "${shown(p.name)}": its graphics checks weren't kept (${e?.code || "error"})`); }
-    p.status = entry.graphics && ["validated", "failed"].includes(entry.status) ? entry.status : "unverified";
+    p.status = entry.graphics && [...PASSING_STATUSES, "failed"].includes(entry.status) ? entry.status : "unverified";
     p.coherence = coherenceOf(p.believable || [], entry.graphics ? entry : null, p.name);
     return p.status;
   }

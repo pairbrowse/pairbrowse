@@ -461,14 +461,22 @@ user's file, readable by others), the section says why and refuses a username or
   is refused, naming it); `"gpu"` asks for a hardware GPU: the start is refused when the
   measurement or the browser's own read of its backend says software, or can't say which
   renderer it uses ("could not confirm"), and at once with `--disable-gpu` or a software renderer
-  in `browserArgs` (on the open build it is refused, as `graphics.require` is). Graphics are always this
-  computer's own: on a Mac the captured values of this Mac; on Linux the browser reports the real
-  backend's WebGL and WebGPU strings and limits, adds no fingerprint noise over its real pixels,
-  and on PairBrowse's virtual screen reports that screen (`virtualScreen`'s size and depth,
+  in `browserArgs` (on the open build it is refused, as `graphics.require` is). Graphics follow
+  the computer: on a Mac the captured values of this Mac; on Linux with a graphics card the
+  browser reports the real backend's WebGL and WebGPU strings and limits and adds no fingerprint
+  noise over its real pixels; on a Linux computer without one (software rendering measured, which
+  sites block before any CAPTCHA) the browser shows pages one ordinary desktop identity it carries,
+  an Intel UHD Graphics 770, the same in WebGL and WebGPU, with the engine's canvas and readback
+  noise on unless `graphicsNoise` is `false` (a boolean in the `pairbrowse` block; it changes
+  nothing on a computer with a graphics card), while the helper log, `pairbrowse_status` and
+  reports say "software rendering, shown as Intel UHD Graphics 770" and a profile checked there is
+  "consistent" (which `requireValidatedProfiles` takes like "validated"); a GPU asked for
+  (`"gpu"`) over software rendering is refused, never shown an identity. Either way on
+  PairBrowse's virtual screen the browser reports that screen (`virtualScreen`'s size and depth,
   pixel ratio 1 or your `--force-device-scale-factor`); a screen `screenWidth` and
   `screenHeight` or the profile set to another size refuses the start, naming both sizes
-  (set `virtualScreen` to the size you want instead). `disableGpuFingerprint` and `fingerprintNoise` set to
-  anything else, and `gpuVendor`, `gpuRenderer` and `gpuStringSpoof`, aren't applied on Linux
+  (set `virtualScreen` to the size you want instead). `disableGpuFingerprint`, `fingerprintNoise` and
+  `canvasNoise` set to anything else, and `gpuVendor`, `gpuRenderer` and `gpuStringSpoof`, aren't applied on Linux
   (the helper log says so); on the virtual screen neither is another screen key set without
   `screenWidth` and `screenHeight` (a `devicePixelRatio` or `colorDepth` alone gives way to the
   virtual screen's, and the log names it). `gpuVendor` and `gpuRenderer` are deprecated everywhere

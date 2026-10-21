@@ -59,7 +59,9 @@ export const IMPORT_FORMATS = [`${EXPORT_FORMAT}/1`, "engine-device/1", "engine-
 // configHash changed, D5), the first-start migration, or the upgrader.
 export const HISTORY_BY = ["person", "config", "migration", "upgrade"];
 // D10's validation shape, shared with Phase E (section 9's classes).
-export const VALIDATION_STATUSES = ["validated", "unverified", "failed"];
+// "consistent": validated under the identity a host without a GPU shows (decision 10; native/
+// graphics.mjs PASSING_STATUSES).
+export const VALIDATION_STATUSES = ["validated", "consistent", "unverified", "failed"];
 export const ITEM_STATUSES = ["applied", "not-applied", "derived", "unsupported", "matched", "mismatch", "unverified"];
 export const ITEM_CLASSES = ["C", "M", "D", "U"];
 export const ITEM_SEVERITIES = ["error", "warning", "info"];
@@ -158,6 +160,8 @@ export const PROFILE_SCHEMA = {
         sandbox: MEASURED_PART,
       } },
       backend: { ...MEASURED_PART, nullable: true, fields: { kind: { values: MEASURED_BACKENDS } } },
+      // The identity the launch showed pages over software rendering (decision 10), or null.
+      shown: { ...TEXT, maxLength: 80, nullable: true },
       ...Object.fromEntries(MEASURED_PARTS.map((k) => [k, { ...MEASURED_PART, nullable: true }])),
     } },
     items: { type: "array", maxItems: 500, each: { type: "object", fields: {
@@ -179,7 +183,8 @@ export const PROFILE_SCHEMA = {
   } } },
 };
 // Keys an entry may leave out (every other key of an object spec is required).
-const OPTIONAL = new Set(["validation.*.runtimeKey", "validation.*.graphics"]);
+// shown: measurements from before decision 10 have none (read as null).
+const OPTIONAL = new Set(["validation.*.runtimeKey", "validation.*.graphics", "validation.*.graphics.shown"]);
 
 // D6: what a profile can never name, with the reason the refusal gives. Unknown keys are refused
 // anyway; these say why, wherever in the record they stand.

@@ -13,6 +13,10 @@
 // property matrix, native/properties.mjs). Status (E6):
 // - "validated" only with a measurement of this build's engine pack and runtime key, every
 //   error-severity rule matched;
+// - "consistent": the same, under the identity a host without a GPU shows (decision 10; the
+//   measurement's shown names it, native/graphics.mjs GPU_LESS_IDENTITY): WebGL's strings and the
+//   WebGPU adapter are checked for consistency with that identity and with each other, never for
+//   equality with the host's software renderer;
 // - "failed" when an error-severity rule found a mismatch: a value that disagrees, or a part the
 //   page didn't answer although the launch passed a switch for it (a switch without a matching
 //   page result counts as failed);
@@ -23,6 +27,7 @@
 // Host GPU strings stay in the profile's 0600 file (reasons may name the renderer); nothing here
 // writes or logs. Pure; Node's standard library only.
 import { classOf, runtimeOf } from "./properties.mjs";
+import { GPU_LESS_IDENTITY, PASSING_STATUSES, shownIdentity } from "./graphics.mjs";
 import { rendererFamily, softwareRenderer as softwareName, gpuVsPlatform, gpuSoftwareAsHardware, screenBelievable, platformOf } from "../rules/coherence.mjs";
 
 const SHA256 = /^[0-9a-f]{64}$/;
@@ -110,6 +115,8 @@ export function measuredRecord(raw) {
   return {
     at: raw.at, runtimeKey: raw.runtimeKey, pack: typeof raw.pack === "string" && SHA256.test(raw.pack) ? raw.pack : null,
     runtime: { platform, arch, display, emulated: rt.emulated === true, sandbox: sandboxPart(rt.sandbox) },
+    // The identity the launch showed pages (decision 10), or null: the runtime's own graphics.
+    shown: text(raw.shown, 80),
     backend: plainObject(b) ? { kind: oneOf(b.kind, ["hardware", "software", "unverified"]) || "unverified", vendor: num(b.vendor) ?? text(b.vendor, 80),
       device: num(b.device) ?? text(b.device, 80), renderer: text(b.renderer, 160), driver: text(b.driver, 80), source: "systeminfo" } : null,
     webgl: glPart(raw.webgl), webgl2: glPart(raw.webgl2), webgpu: webgpuPart(raw.webgpu),
@@ -129,6 +136,14 @@ export function measuredRecord(raw) {
 // Renderer families and software names: rules/coherence.mjs (rendererFamily), shared with the
 // coherence rules below.
 const backendFamily = (b) => (b.kind === "software" ? "software" : rendererFamily(b.renderer) || (b.kind === "hardware" ? null : "software"));
+// The identity a measurement was made under (decision 10): GPU_LESS_IDENTITY when the record names
+// it; { unknown: true, name } for a name PairBrowse doesn't know (never checked as consistent); null
+// for the runtime's own graphics.
+const identityOf = (m) => (typeof m?.shown === "string" && m.shown ? (shownIdentity(m) ? GPU_LESS_IDENTITY : { unknown: true, name: m.shown }) : null);
+// Whether the WebGL renderer pages read is the identity's: its family and its name.
+const rendererIsIdentity = (identity, renderer) => !identity.unknown && rendererFamily(renderer) === identity.family && identity.renderer.test(String(renderer || ""));
+// Whether an available WebGPU adapter is the identity's: vendor and architecture, not a fallback.
+const adapterIsIdentity = (identity, g) => !identity.unknown && g.vendor === identity.webgpu.vendor && g.architecture === identity.webgpu.architecture && g.isFallbackAdapter !== true;
 const gl = (m) => (m.webgl?.available ? m.webgl : m.webgl2?.available ? m.webgl2 : null);
 const pow2 = (n) => Number.isInteger(n) && n > 0 && (n & (n - 1)) === 0;
 
@@ -202,6 +217,15 @@ export const RULES = Object.freeze([
       if (!b || b.kind === "unverified") return unverified("the browser process didn't say which renderer it uses");
       const page = rendererFamily(part.unmaskedRenderer), proc = backendFamily(b);
       const shown = short(part.unmaskedRenderer);
+      // Under the identity a host without a GPU shows (decision 10): pages read that identity, over
+      // software rendering only; checked against the identity, not against the host.
+      const identity = identityOf(ctx.measured);
+      if (identity) {
+        if (identity.unknown) return mismatch(`the launch shows an identity PairBrowse doesn't know (${short(identity.name)})`, identity.name, shown);
+        if (proc !== "software") return mismatch(`the launch shows ${identity.name} over a ${proc} backend; an identity is shown over software rendering only`, identity.name, shown);
+        return rendererIsIdentity(identity, part.unmaskedRenderer) ? matched(`pages read the identity shown over software rendering (${identity.name})`, identity.name, shown)
+          : mismatch(`pages read ${shown} while the launch shows ${identity.name}`, identity.name, shown);
+      }
       if ((page === "software") !== (proc === "software")) {
         return mismatch(proc === "software" ? `pages read a hardware renderer (${shown}) while the browser renders in software` : `pages read a software renderer (${shown}) while the browser renders on hardware`, null, shown);
       }
@@ -233,6 +257,15 @@ export const RULES = Object.freeze([
       const g = ctx.measured?.webgpu, b = ctx.measured?.backend;
       if (!g?.available || !b || b.kind === "unverified") return null;
       const named = `${g.vendor || "?"}/${g.architecture || "?"}`;
+      const identity = identityOf(ctx.measured);
+      if (identity) {
+        // Under the identity (decision 10; patch 961 makes WebGPU follow it): the adapter is the
+        // identity's vendor and architecture, never a fallback adapter.
+        if (identity.unknown) return mismatch(`the launch shows an identity PairBrowse doesn't know (${short(identity.name)})`, identity.name, named);
+        const want = `${identity.webgpu.vendor}/${identity.webgpu.architecture}`;
+        return adapterIsIdentity(identity, g) ? matched(`the adapter follows the identity shown (${want})`, want, named)
+          : mismatch(`the WebGPU adapter says ${named}${g.isFallbackAdapter === true ? " (a fallback adapter)" : ""} while the launch shows ${identity.name} (${want})`, want, named);
+      }
       const soft = g.isFallbackAdapter === true || softwareName(g.architecture) || softwareName(g.vendor);
       if (backendFamily(b) === "software") return soft ? matched(`a software adapter (${named})`, null, named) : mismatch(`the WebGPU adapter says ${named} while the browser renders in software`, null, named);
       if (soft) return mismatch(`the WebGPU adapter is a software one (${named}) while the browser renders on hardware`, null, named);
@@ -388,6 +421,19 @@ export const COHERENCE = Object.freeze([
       if (!b || b.kind !== "software") return null;
       const page = gl(m), g = m.webgpu?.available ? m.webgpu : null;
       if (!page?.unmaskedRenderer && !g) return null;
+      // Under the identity a host without a GPU shows (decision 10) a hardware identity over
+      // software rendering is the design: what is checked is that WebGL and WebGPU show one and the
+      // same identity, the engine's.
+      const identity = identityOf(m);
+      if (identity) {
+        const read = short(page?.unmaskedRenderer || g?.vendor || null);
+        if (identity.unknown) return mismatch(`the launch shows an identity PairBrowse doesn't know (${short(identity.name)})`, identity.name, read);
+        const off = [];
+        if (page?.unmaskedRenderer && !rendererIsIdentity(identity, page.unmaskedRenderer)) off.push(`WebGL reads ${short(page.unmaskedRenderer)}`);
+        if (g && !adapterIsIdentity(identity, g)) off.push(`the WebGPU adapter says ${g.vendor || "?"}/${g.architecture || "?"}${g.isFallbackAdapter === true ? " (a fallback adapter)" : ""}`);
+        return off.length ? off.map((text) => mismatch(`${text} while the launch shows ${identity.name} over software rendering`, identity.name, read))
+          : matched(`pages read one identity over software rendering (${identity.name}), WebGL${g ? " and WebGPU" : ""} agreeing`, identity.name, read);
+      }
       const found = gpuSoftwareAsHardware({ backend: b, renderer: page?.unmaskedRenderer || null, adapter: g });
       return found.length ? found.map((c) => mismatch(c.text, null, short(page?.unmaskedRenderer || g?.vendor || null))) : matched("pages read software rendering, as the browser does", null, short(page?.unmaskedRenderer || g?.vendor || null));
     } },
@@ -446,8 +492,10 @@ export function validate({ requested = {}, derived = {}, measured = null, live =
   const errors = all.filter((i) => i.severity === "error");
   // No engine pack to tie it to (an open build, or a pack not known): the measurement is kept as
   // evidence and the entry stays unverified (E6 names the pack).
+  // Every error check passed under the identity a host without a GPU shows: "consistent", the
+  // identity checked for consistency, never the host's own graphics (decision 10).
   const status = !m || !pack ? "unverified" : errors.some((i) => FAILING.has(i.status)) ? "failed"
-    : errors.some((i) => i.status === "unverified") ? "unverified" : "validated";
+    : errors.some((i) => i.status === "unverified") ? "unverified" : m.shown ? "consistent" : "validated";
   const when = typeof at === "string" && ISO_TIME.test(at) ? at : m?.at || new Date(0).toISOString();
   const entry = { status, at: when, pack, items: all };
   if (m) Object.assign(entry, { runtimeKey: m.runtimeKey, graphics: m });
@@ -464,5 +512,5 @@ export function entryStatus(entry, { pack, runtimeKey } = {}) {
   if (!plainObject(entry.graphics) || typeof entry.runtimeKey !== "string") return "unverified";
   if (typeof pack !== "string" || !SHA256.test(pack) || entry.pack !== pack) return "unverified";
   if (runtimeKey !== undefined && entry.runtimeKey !== runtimeKey) return "unverified";
-  return entry.status === "validated" || entry.status === "failed" ? entry.status : "unverified";
+  return PASSING_STATUSES.includes(entry.status) || entry.status === "failed" ? entry.status : "unverified";
 }

@@ -112,6 +112,11 @@ export const CONFIG_SCHEMA = {
       formMove: { values: ["tab", "mouse"] },
       // The default profile's graphics.backend (spec server-mode E2; native/graphics.mjs graphicsPlan).
       graphics: { values: GRAPHICS_BACKENDS },
+      // Noise over the identity shown on a host without a GPU (decision 10: the engine's canvas
+      // noise and its canvas and WebGL readback noise, fingerprintNoise and canvasNoise; default
+      // true, which the measurement batch of decision 11 decides). On a host with a GPU the real
+      // pixels get no noise, whatever this says.
+      graphicsNoise: { type: "boolean" },
       ...Object.fromEntries(PAIRBROWSE_ENGINE_KEYS.map((k) => [k, {}])),
     },
   },

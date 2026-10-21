@@ -2862,6 +2862,22 @@ binding for implementation; where a phase section above says otherwise, this sec
     fallback, with the limits above stated plainly. The server setup installs a normal desktop font set,
     and the engine step measures the result against fingerprint test pages served locally and reports
     what a strict site would see.
+    Implemented (helper side, with step 47): `native/graphics.mjs` `GPU_LESS_IDENTITY` (one identity,
+    no pool) and `identityKeys` (`disableGpuFingerprint: false`, `fingerprintNoise` and `canvasNoise` as
+    `pairbrowse.graphicsNoise` says, default true, so the measurement batch can decide it); `graphicsPlan`
+    takes the measured backend and answers `identity` on Linux over a software read (never for `gpu`,
+    never off Linux or on the open build); the launch's engine config carries `measuredBackend` (the
+    measurement step 4 hands over: `daemon/browser/launch.mjs`; the probe's own first read:
+    `native/check.mjs` `probeLauncher`), which `native-engine.mjs` `applyGraphicsPlan` applies and
+    `GRAPHICS.shown` records. The probe (`native/probe.mjs`) reads the backend in a first start, and on
+    a software read on Linux closes it and measures the page in a start under the identity, so the record
+    (`shown`, in the stored shape and the profile schema) holds what pages read. `native/validate.mjs`
+    checks a record with `shown` for consistency with the identity (WebGL's family and name, the WebGPU
+    adapter's vendor and architecture, never a fallback adapter, the two agreeing) and answers
+    `consistent` (`PASSING_STATUSES`: counted as validated by `requireValidatedProfiles`, `entryStatus`,
+    the sessions' status); diagnostics, the status part, the self-check line and the log say "software
+    rendering, shown as Intel UHD Graphics 770" (the engine's identity, never the host's GPU; row E-3).
+    A GPU host and an unmeasured launch keep the real plan of step 41.
 
 11. **Ordinary-browser measurement, at the end (user, 2026-10-21).** After the engine builds (step 49), a
     final step measures whether each setup looks like an ordinary browser, then closes the gaps it

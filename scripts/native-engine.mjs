@@ -300,7 +300,10 @@ function readSettings(config, pack, personaPath) {
   // "combined" (the same shape at the profile's own slower speed, tremor and habits: for a more
   // careful hand) or "classic" (the engine's own). Every click still lands exactly on its point.
   // An engine pack without "combined" uses its own. formMove is PairBrowse's own (fillSettings), not the engine's.
-  const { profile: selection, profileSelect, graphics = "auto", humanize = true, showCursor = false, geoip = false, typingPace = TYPING_PACE, motion: motionSetting = "fast", formMove, ...given } = config.pairbrowse ?? {};
+  // graphicsNoise: noise over the identity shown on a host without a GPU (decision 10, on by
+  // default; native/graphics.mjs identityKeys: the engine's fingerprintNoise and canvasNoise);
+  // on a host with a GPU the real pixels get no readback noise, whatever this says.
+  const { profile: selection, profileSelect, graphics = "auto", graphicsNoise = true, humanize = true, showCursor = false, geoip = false, typingPace = TYPING_PACE, motion: motionSetting = "fast", formMove, ...given } = config.pairbrowse ?? {};
   // profileSelect only steered the engine pack's persona pick, which PairBrowse no longer asks
   // for (D9 below; config-schema.mjs PROFILE_SELECT keeps it closed, D8).
   // graphics: the default profile's backend, read by profiles/map.mjs into its switches (E2).
@@ -340,7 +343,7 @@ function readSettings(config, pack, personaPath) {
   // the engine's fingerprint options pass; every other option (launch controls, switches, env,
   // extensions, agent and storage options) is named in one log line and dropped, never applied.
   const dropped = { saved: engineOnly(saved), persisted: engineOnly(persisted) };
-  return { thisComputer, graphics: chosen?.graphics ?? graphics, humanize, showCursor, geoip: store ? !!chosen.geoip : chosen?.kind === "config" ? !!(geoip || chosen.geoip) : geoip, typingPace: clampPace(typingPace), motion, overrides, saved, persisted, ignored, dropped, bridgeDropped, personaName: chosen?.id ?? LEGACY_PERSONA };
+  return { thisComputer, graphics: chosen?.graphics ?? graphics, graphicsNoise: graphicsNoise !== false, humanize, showCursor, geoip: store ? !!chosen.geoip : chosen?.kind === "config" ? !!(geoip || chosen.geoip) : geoip, typingPace: clampPace(typingPace), motion, overrides, saved, persisted, ignored, dropped, bridgeDropped, personaName: chosen?.id ?? LEGACY_PERSONA };
 }
 
 // Keeps only the engine's fingerprint options in a persona layer, in place: the names of the
@@ -440,23 +443,26 @@ export const DRIVER_BACKGROUND_SWITCH = "--disable-background-networking";
 
 // The graphics plan (spec server-mode E2, E7; native/graphics.mjs graphicsPlan) over the resolved
 // fingerprint, in place, after the persona is saved (its keys are the runtime's, worked out at each
-// launch, never kept). On Linux: the real backend's WebGL strings, limits and extensions and WebGPU
-// vendor and architecture (disableGpuFingerprint), no noise over real pixels (fingerprintNoise:
-// false), and on the helper's virtual screen (config.virtualDisplay: { width, height, depth }) that
+// launch, never kept). On Linux with a GPU (measured: the backend read the launch has, { kind,
+// renderer } or null before any): the real backend's WebGL strings, limits and extensions and
+// WebGPU vendor and architecture (disableGpuFingerprint), no noise over real pixels
+// (fingerprintNoise: false); on a host without one (a software read: decision 10) the engine's
+// one graphics identity (GPU_LESS_IDENTITY) with noise as settings.graphicsNoise says; either
+// way on the helper's virtual screen (config.virtualDisplay: { width, height, depth }) that
 // screen, unless config.json or the profile sets one. A layer's other value for these keys, and the
 // legacy GPU identity (decision U6), aren't applied there, and the log says so. The legacy keys are
-// named deprecated on every platform. Returns the plan.
-export function applyGraphicsPlan(fingerprint, settings, { platform = process.platform, display = null, userArgs = [], log = () => {} } = {}) {
+// named deprecated on every platform. Returns the plan (its identity: what pages are shown, or null).
+export function applyGraphicsPlan(fingerprint, settings, { platform = process.platform, display = null, measured = null, userArgs = [], log = () => {} } = {}) {
   const set = (k) => settings.overrides[k] !== undefined || settings.saved[k] !== undefined;
-  const plan = graphicsPlan({ requested: "auto", platform, browserKind: "pairbrowse", userArgs, display, screenSet: SCREEN_KEYS.slice(0, 2).some(set) });
+  const plan = graphicsPlan({ requested: "auto", platform, browserKind: "pairbrowse", measured, userArgs, display, screenSet: SCREEN_KEYS.slice(0, 2).some(set), graphicsNoise: settings.graphicsNoise !== false });
   const legacy = LEGACY_GPU_KEYS.filter((k) => fingerprint[k] !== undefined);
   if (legacy.length) log(`launch: ${legacy.join(", ")} (another device's GPU) ${legacy.length > 1 ? "are" : "is"} deprecated and go${legacy.length > 1 ? "" : "es"} in the next release (decision U6): graphics come from this computer; remove ${legacy.length > 1 ? "them" : "it"} from config.json's pairbrowse block or the saved persona`);
   if (platform === "linux") {
     for (const k of legacy) delete fingerprint[k];
-    if (legacy.length) log(`launch: ${legacy.join(", ")} not applied on Linux: pages see this computer's real renderer`);
+    if (legacy.length) log(`launch: ${legacy.join(", ")} not applied on Linux: pages see ${plan.identity ? "the engine's one identity over software rendering" : "this computer's real renderer"}`);
     const differs = (k) => fingerprint[k] !== undefined && fingerprint[k] !== plan.engineKeys[k];
     const other = Object.keys(plan.engineKeys).filter((k) => !SCREEN_KEYS.includes(k) && differs(k));
-    if (other.length) log(`launch: ${other.join(", ")} not applied on Linux: graphics there are always the real backend's`);
+    if (other.length) log(`launch: ${other.join(", ")} not applied on Linux: graphics there follow the measured backend (${plan.identity ? "the engine's identity over software rendering" : "the real backend's strings"})`);
     // A screen key set without screenWidth and screenHeight (a pixel ratio, a depth) gives way to the
     // virtual screen's, never silently.
     const screenOther = SCREEN_KEYS.filter((k) => plan.engineKeys[k] !== undefined && differs(k));
@@ -464,7 +470,11 @@ export function applyGraphicsPlan(fingerprint, settings, { platform = process.pl
   }
   Object.assign(fingerprint, plan.engineKeys);
   const screen = SCREEN_KEYS.every((k) => plan.engineKeys[k] !== undefined) ? `, screen ${plan.engineKeys.screenWidth}x${plan.engineKeys.screenHeight} (the virtual screen)` : "";
-  if (platform === "linux") log(`launch: graphics: this computer's own renderer (real WebGL and WebGPU strings, no fingerprint noise)${screen}`);
+  if (platform === "linux") {
+    log(plan.identity
+      ? `launch: graphics: software rendering, shown as ${plan.identity} (the engine's one graphics identity for a host without a GPU, decision 10; canvas noise ${plan.engineKeys.canvasNoise ? "on" : "off"})${screen}`
+      : `launch: graphics: this computer's own renderer (real WebGL and WebGPU strings, no fingerprint noise)${screen}`);
+  }
   return plan;
 }
 
@@ -484,7 +494,9 @@ export async function launchNative(chromium, config, directory, options, pack, l
   // Each launch step's time (plans/555 item 4): what a slow first launch spent where.
   log(`launch: fingerprint ${Date.now() - fingerprintAt} ms${steps.length ? ` (${steps.join(", ")})` : ""}`);
   savePersona(pack, personaPath, fingerprint, settings.geoip, settings.personaName);
-  const plan = applyGraphicsPlan(fingerprint, settings, { display: config.virtualDisplay ?? null, userArgs: options.args ?? [], log });
+  // config.measuredBackend: the backend the launch measured or kept (daemon/browser/launch.mjs,
+  // native/check.mjs probeLauncher), null before any measurement.
+  const plan = applyGraphicsPlan(fingerprint, settings, { display: config.virtualDisplay ?? null, measured: config.measuredBackend ?? null, userArgs: options.args ?? [], log });
 
   const { portableProfile, encryptionKey, extensions, disablePrivacySandbox = true, ...personaRest } = rest;
   const { agent, rest: launchOptions } = pack.splitAgentOptions(personaRest);
@@ -525,7 +537,7 @@ export async function launchNative(chromium, config, directory, options, pack, l
   if (bridgeArgs.length) log(`launch: ${bridgeArgs.map((a) => a.split("=")[0]).join(", ")} stripped (the canvas bridge is gone)`);
   const finalArgs = gated.args.filter((a) => !isCanvasBridgeSwitch(a));
   // This launch's graphics (status reads GRAPHICS); the backend in use is read once it runs.
-  Object.assign(GRAPHICS, { requested: settings.graphics, switches: backendSwitches(finalArgs), engineKeys: Object.keys(plan.engineKeys), kind: "unverified", renderer: null, status: "unverified" });
+  Object.assign(GRAPHICS, { requested: settings.graphics, switches: backendSwitches(finalArgs), engineKeys: Object.keys(plan.engineKeys), shown: plan.identity ?? null, kind: "unverified", renderer: null, status: "unverified" });
   // Linux: the build's bundled fonts (FONTCONFIG_FILE) and the UI language from --lang (LANGUAGE).
   const env = pack.fontLaunchEnv?.(options.executablePath, merged.env, finalArgs);
   const contextAt = Date.now();

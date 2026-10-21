@@ -3026,7 +3026,13 @@ binding for implementation; where a phase section above says otherwise, this sec
     Windows identity on Linux: on hold (user, 2026-10-22) until Windows fonts can be copied from a
     licensed Windows (a PC or a licensed VM). Fonts are never downloaded from third-party sites and never
     shipped; docs/server.md will tell users to copy them from their own Windows, and the setup will name
-    the ones missing. Until then the Linux identity (Intel UHD 770 on Linux) is the one measured and tuned.
+    the ones missing.
+    Changed the same day (user): "go same as the reference". A Linux host without a GPU presents as a
+    Windows 11 desktop (the engine's own Windows persona: platform, UA and client hints, ANGLE D3D11 GPU
+    strings from the engine's Windows pool, Windows speech voices, a matching keyboard map, WebGL and
+    WebGPU consistent with that GPU, the virtual screen's geometry), replacing the Linux identity of
+    decision 10. Windows fonts are added when copied from a licensed Windows; until then the setup names
+    them as missing and the measurement shows what that costs.
     Decided by the first measurement (2026-10-22, baseline in the native repo's plans): canvas
     noise on a host without a GPU, measured on and off on the same Linux host, changed one verdict
     (BrowserScan's canvas check, lost with noise on) and gained nothing measured, so

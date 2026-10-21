@@ -2654,7 +2654,9 @@ it depends on.
     found ("Xvfb killed"): the crash-time write named the first tab active, since the active page
     is asked of a browser whose pages are gone; `trackTabs` gains `activeUrl` (the helper's
     `st.lastCurrentUrl`) for that write. All seven integration cases and the three Docker cases
-    passed in the A13 container (emulated x64, 2026-10-21); `server-native` waits for a Linux host. Rows A-1
+    passed in the A13 container (emulated x64, 2026-10-21); `server-native` passed there too at
+    the Phase A and E gate (the pinned Linux build, 2026-10-21), once it retried through the first
+    start's graphics measurement (step 44 refuses calls while it runs). Rows A-1
     and the sandbox row name the new tests.
 47. pn: 960, 961, 962 patches, locks, tail-patch tests, `ENGINE-AUDIT.md`; next engine build (E1 pn
     part, E10 F4, C1, E14). -> 9, 10

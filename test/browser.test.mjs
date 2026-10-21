@@ -463,3 +463,42 @@ test("the browser setting: pairbrowse, pairbrowse-open (or chromium), a path of 
   // "browser" wins over the older names.
   assert.equal(pick({ browser: "chromium", browserEngine: "pairbrowse", executablePath: "/fake/chrome" }).browser, "pairbrowse-open");
 });
+
+test("payment autofill stays off by default and turns on only for a savedCard profile with a real key store; the open build and a fixed key refuse it with a status line", async () => {
+  const { profilePreferences, prepareProfile, launchOptions } = await import("../scripts/browser.mjs");
+  const { safeStorageFor, savedCardFor, SAVED_CARD_REFUSED } = await import("../scripts/browser/safe-storage.mjs");
+  const { readFileSync, mkdtempSync: mk } = await import("node:fs");
+  // By default (and for every profile that doesn't ask): off, addresses and password saving too.
+  for (const prefs of [profilePreferences({}), profilePreferences({ autofill: { credit_card_enabled: true } }, undefined, [], { browserPages: true })]) {
+    assert.equal(prefs.autofill.credit_card_enabled, false);
+    assert.equal(prefs.autofill.profile_enabled, false);
+    assert.equal(prefs.credentials_enable_service, false);
+  }
+  // A saved card the launch honors: payment autofill on, and nothing else.
+  const on = profilePreferences({}, undefined, [], { browserPages: true, savedCard: true });
+  assert.equal(on.autofill.credit_card_enabled, true);
+  assert.equal(on.autofill.profile_enabled, false);
+  assert.equal(on.credentials_enable_service, false);
+  assert.equal(on.credentials_enable_autosignin, false);
+  // The launch's decision: the profile's prefs, the key store, the build.
+  const key = join(mk(join(tmpdir(), "pb-card-key-")), "safe-storage-key");
+  const can = { kind: "pages", ownPages: true, safeStorageKeyFile: true };
+  const real = safeStorageFor({}, can, key, "linux");
+  assert.equal(savedCardFor({ asked: true, native: true, storage: real, platform: "linux" }).on, true);
+  for (const [why, card] of [
+    ["the open build", savedCardFor({ asked: true, native: false, storage: real, platform: "linux" })],
+    ["a fixed key", savedCardFor({ asked: true, native: true, storage: safeStorageFor({}, { ...can, safeStorageKeyFile: false }, key, "linux"), platform: "linux" })],
+  ]) {
+    assert.equal(card.on, false, why);
+    assert.ok(card.line.startsWith(SAVED_CARD_REFUSED), why);
+  }
+  // Written into the profile folder at the launch, and off again at the next launch that doesn't honor it.
+  const dir = mkdtempSync(join(tmpdir(), "pb-card-prof-"));
+  prepareProfile(dir, undefined, { browserPages: true, savedCard: true });
+  assert.equal(JSON.parse(readFileSync(join(dir, "Default", "Preferences"), "utf8")).autofill.credit_card_enabled, true);
+  prepareProfile(dir, undefined, { browserPages: true });
+  assert.equal(JSON.parse(readFileSync(join(dir, "Default", "Preferences"), "utf8")).autofill.credit_card_enabled, false);
+  // The key store the preference counted on is the one the browser gets (launchOptions takes it as read).
+  const given = { keyFile: key, mock: true };
+  assert.ok(launchOptions({}, { shell: can, platform: "linux", storage: given }).args.includes(`--pairbrowse-safe-storage-key-file=${key}`));
+});

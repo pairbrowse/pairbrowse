@@ -34,6 +34,10 @@
 // follow. fileSelfCheck(measured): an install self-check's measurement (native/check.mjs), filed
 // with the config-backed default, whose settings the self-check's browser started with;
 // selfCheckArgs(): the default's mapped switches that self-check's graphics probe starts with.
+// Saved card (spec server-mode B12): forLaunch answers savedCard (the profile asks for one); the
+// launch decides with its key store (browser/safe-storage.mjs savedCardFor) and files the answer
+// with setSavedCard, which the status part says; savedCard() is it for the browser running now
+// ({ asked, on, store, line }, or null with none running or none asked).
 import { readAssignment, readBinding, writeBinding, validName, assignedTo } from "../../sessions.mjs";
 import { createProfileStore } from "../../profiles/store.mjs";
 import { launchableBrowserArgs, browserArgsOf } from "../../browser-args.mjs";
@@ -197,6 +201,8 @@ export function createProfiles(st, deps = {}) {
     return {
       id: record.id, name: record.name, kind: record.kind, revision: record.revision, status, build: engine?.build || null,
       switches: mapped.switches, network: mapped.network, adBlocker: mapped.adBlocker, results, warnings,
+      // Whether the profile asks for a saved card (the launch honors it only with a key store).
+      savedCard: mapped.prefs.savedCard === true,
       // What it asked for (graphics, screen, window, locale) and the measurement kept for this
       // build and pack: the graphics steps' inputs (daemon/browser/graphics.mjs).
       request: requestOf(record), measured: stored,
@@ -224,11 +230,21 @@ export function createProfiles(st, deps = {}) {
     if (p) {
       const on = p.build || (p.browserKind === "pairbrowse" ? "this build" : "the open build");
       out.push(`Profile: ${p.name} (rev ${p.revision}, ${p.status} on ${on})`, ...p.warnings.map((w) => `warning: ${w}`), ...(p.notes || []));
+      if (p.savedCard?.line) out.push(p.savedCard.on ? p.savedCard.line : `warning: ${p.savedCard.line}`);
     }
     if (migration?.problem) out.push(`warning: ${migration.problem}`);
     else if (migration?.done && !profileStore) { const note = migrationNote(readMigration()); if (note) out.push(note); }
     return out;
   }
+
+  // The launch's saved-card answer for the running profile (savedCardFor), and the browser running
+  // now's: null when none runs or its profile asks for none. Logged once per launch, no card data.
+  function setSavedCard(card) {
+    if (!st.profile) return;
+    st.profile.savedCard = card?.asked ? { asked: true, on: card.on === true, store: card.on ? String(card.store || "") : "", line: String(card.line || "") } : null;
+    if (st.profile.savedCard) log(`launch: ${st.profile.savedCard.line}`);
+  }
+  const savedCard = () => (st.profile?.savedCard ? { ...st.profile.savedCard } : null);
 
   // Every profile (the store's list): what agents may pick from (D14).
   const list = () => store.list();
@@ -288,7 +304,7 @@ export function createProfiles(st, deps = {}) {
     } catch (e) { log(`launch: the install check's graphics weren't kept (${e?.code || e?.message || "error"})`); return false; }
   }
 
-  const api = { prepare, forLaunch, release, statusParts, list, store, configSettings, coherence, fileValidation, fileSelfCheck, selfCheckArgs };
+  const api = { prepare, forLaunch, release, statusParts, list, store, configSettings, coherence, fileValidation, fileSelfCheck, selfCheckArgs, setSavedCard, savedCard };
   api.owner = createProfileOwner(st, { config, log, store, platform, now, configSettings });
   return api;
 }

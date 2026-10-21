@@ -354,3 +354,45 @@ test("daemon.mjs: keep-alive keeps the helper when the browser closes and starts
   const runtimeAt = daemon.indexOf("try { runtime(); }");
   assert.ok(runtimeAt > 0 && runtimeAt < daemon.indexOf("context.keepAliveStart();"), "after the runtime loads");
 });
+
+test("a saved card at launch: the Safe Storage read once decides payment autofill, the status hears it before the start, and the browser gets that same key store", async () => {
+  const src = readFileSync(new URL("../scripts/daemon/browser/launch.mjs", import.meta.url), "utf8");
+  const launch = src.slice(src.indexOf("  async function launch() {"), src.indexOf("  function getContext() {"));
+  const at = (s) => { const i = launch.indexOf(s); assert.ok(i > 0, s); assert.equal(launch.indexOf(s, i + 1), -1, `once: ${s}`); return i; };
+  // Read once, decided from the profile's choice and the build, kept for the status, then written and handed on.
+  assert.match(launch, /const storage = safeStorageFor\(config, st\.shell, paths\.safeStorageKey\);/);
+  assert.match(launch, /const card = savedCardFor\(\{ asked: chosen\.savedCard === true, native, storage \}\);/);
+  assert.match(launch, /api\.profiles\.setSavedCard\?\.\(card\);/);
+  assert.match(launch, /prepareProfile\(profile\(\), undefined, \{[^}]*savedCard: card\.on \}\);/, "the preference is the decision's");
+  assert.match(launch, /\.\.\.launchOptions\(config, \{[\s\S]*?\n\s+storage, \/\/ the Safe Storage the saved card was decided on\n/, "the browser gets the storage the decision read");
+  assert.ok(at("safeStorageFor(") < at("savedCardFor(") && at("savedCardFor(") < at("setSavedCard?.(card)") && at("setSavedCard?.(card)") < at("prepareProfile(profile()")
+    && at("prepareProfile(profile()") < at("...launchOptions(config, {") && at("...launchOptions(config, {") < at("await launchEngine("), "in that order, all before the browser starts");
+  assert.equal((launch.match(/safeStorageFor\(/g) || []).length, 1, "one read per launch");
+  // The same chain run on a home of its own: credit_card_enabled is what savedCardFor said, and the
+  // key file switch comes from the same storage, for each build and shell.
+  const { mkdtempSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { prepareProfile, launchOptions } = await import("../scripts/browser.mjs");
+  const { safeStorageFor, savedCardFor } = await import("../scripts/browser/safe-storage.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "pb-launch-card-"));
+  const key = join(dir, "safe-storage-key");
+  const pages = { kind: "pages", ownPages: true, safeStorageKeyFile: true };
+  for (const [why, shell, native, asked, platform, want] of [
+    ["native, key file, asked", pages, true, true, "linux", true],
+    ["native, key file, not asked", pages, true, false, "linux", false],
+    ["the open build", pages, false, true, "linux", false],
+    ["no key file in this build: the fixed key", { ...pages, safeStorageKeyFile: false }, true, true, "linux", false],
+    ["the extension shell: no key store of its own", { kind: "extension", ownPages: false, safeStorageKeyFile: true }, true, true, "linux", false],
+  ]) {
+    const storage = safeStorageFor({}, shell, key, platform);
+    const card = savedCardFor({ asked, native, storage, platform });
+    assert.equal(card.on, want, why);
+    const profile = join(dir, why.replace(/\W+/g, "-"));
+    prepareProfile(profile, undefined, { browserPages: shell.ownPages, savedCard: card.on });
+    const prefs = JSON.parse(readFileSync(join(profile, "Default", "Preferences"), "utf8"));
+    assert.equal(prefs.autofill.credit_card_enabled, card.on, `${why}: the preference matches savedCardFor`);
+    const args = launchOptions({}, { shell, platform, storage }).args || [];
+    assert.equal(args.includes(`--pairbrowse-safe-storage-key-file=${key}`), !!storage.keyFile, `${why}: the key file switch from the same storage`);
+  }
+});

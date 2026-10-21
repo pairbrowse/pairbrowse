@@ -257,7 +257,9 @@ test("a payment hand-off masks every agent result from scope tabs and covers pic
   s.grants.sweep();
   for (let i = 0; i < 6; i++) await tick();
   const everything = JSON.stringify({ sent: s.sent, notes: s.notes, journal: s.journal, logged: s.logged, audit: s.audit(), tools: s.handoffs.list().map(({ page: _p, ...h }) => h) });
-  assert.ok(!everything.includes("4242") && !everything.includes("737"));
+  // Random keys and ids are hex and can hold these digits by chance; the check is on the rest.
+  const plain = everything.replace(/[0-9a-f]{8,}/g, "");
+  assert.ok(!plain.includes("4242") && !plain.includes("737"), everything);
   // After the grant ended and the tab was released, the agent reads the page again as it is.
   s.yt.personUsed(page);
   assert.equal(s.yt.masked(page), false);
@@ -598,4 +600,94 @@ test("a browser restart whose tab doesn't come back, or a crash loop, ends with 
   t.tabs.list = [page];
   await t.s.yt.recover();
   assert.equal(t.s.grants.open().length, 0, "nothing comes back after the crash loop ended it");
+});
+
+test("Fill saved card is sent only from a turn viewer's tap; no agent tool reaches it; saved card data stays out of logs and notifications", async () => {
+  const { createTurnGate, FILL_CARD_WORDS } = await import("../scripts/liveview/grants.mjs");
+  const { createTurnRoutes } = await import("../scripts/liveview/routes/turn.mjs");
+  const { roleMay } = await import("../scripts/liveview/invites.mjs");
+  const { SIGNALS, holdsCardNumber } = await import("../scripts/rules/cards.mjs");
+  const s = setup();
+  const page = pageAt("https://shop.example/checkout");
+  const other = pageAt("https://news.example/");
+  s.hud.page = page;
+  await s.yt.onStatus("p1", { kind: "you", text: "Pay", step: "payment" }, page);
+  const id = s.grants.open()[0].id;
+  const guest = { id: `turn-${id}`, grant: id, role: "turn", label: "Hand-off" };
+  const field = (signal, more = {}) => ({ signal, number: signal === SIGNALS.token("cc-number"), empty: true, first: true, numberElsewhere: false, ...more });
+  let on = true, focus = field(SIGNALS.token("cc-number")), t = 0;
+  const posted = [], logged = [];
+  const cast = { state: { shown: { page } } };
+  const gate = createTurnGate({ grants: s.grants, sessionName: () => "default", idOf: () => "aaaaaaaa", getContext: async () => null, cast, linkGuests: new Map(), clients: new Set(), viewers: new Set(),
+    savedCard: () => on, humanPost: async (...a) => { posted.push(a); }, focused: async () => focus, now: () => t, log: (l) => logged.push(l) });
+  const answer = () => { const r = { status: 0, body: null, writeHead(st) { this.status = st; }, setHeader() {}, end(b) { this.body = b ? JSON.parse(String(b)) : null; } }; return r; };
+  const fill = async () => { const res = answer(); await gate.fillCard(res, guest); return res; };
+  // The tap, with the card number field focused in the tab on screen: the person's own two keys.
+  let r = await fill();
+  assert.equal(r.status, 200);
+  assert.deepEqual(posted, [["input", [{ type: "key", key: "ArrowDown", modifiers: 0 }, { type: "key", key: "Enter", modifiers: 0 }], "turn", "Hand-off (by hand)", `turn-${id}`]]);
+  // A second tap at once is a repeat (its Enter could send the form): refused, said.
+  r = await fill();
+  assert.equal(r.status, 409);
+  assert.equal(r.body.error, FILL_CARD_WORDS.again);
+  t += 5000;
+  // Another field focused, another tab on screen, or no saved card: refused with a sentence, nothing sent.
+  focus = field(SIGNALS.token("cc-name"));
+  assert.equal((await fill()).body.error, FILL_CARD_WORDS.field);
+  // The card number holding text: the list wouldn't open and the Enter would reach the page.
+  focus = field(SIGNALS.token("cc-number"), { empty: false });
+  assert.equal((await fill()).body.error, FILL_CARD_WORDS.filled);
+  // In a payment frame, only its card number: not the postal code after it, nor any field when the frame has a cc-number field elsewhere.
+  focus = field(SIGNALS.payFrame, { first: false });
+  assert.equal((await fill()).body.error, FILL_CARD_WORDS.field);
+  focus = field(SIGNALS.cardFrame, { numberElsewhere: true });
+  assert.equal((await fill()).body.error, FILL_CARD_WORDS.field);
+  focus = null;
+  assert.equal((await fill()).body.error, FILL_CARD_WORDS.field, "a page that didn't answer: nothing sent");
+  assert.equal(posted.length, 1);
+  focus = field(SIGNALS.cardFrame);
+  assert.equal((await fill()).status, 200, "a card frame's first, empty field (a provider's form)");
+  t += 5000;
+  focus = field(SIGNALS.token("cc-number"));
+  cast.state.shown = { page: other };
+  assert.equal((await fill()).body.error, FILL_CARD_WORDS.away);
+  cast.state.shown = { page };
+  on = false;
+  assert.equal((await fill()).body.error, FILL_CARD_WORDS.off);
+  assert.equal(posted.length, 2);
+  // Only a hand-off's view key reaches the route; no invite, join code or agent has the right.
+  const route = createTurnRoutes(gate).find((x) => x.path === "turn-fill-card");
+  assert.equal(route.right, "turn");
+  for (const role of ["drive", "watch", "redeem"]) assert.equal(roleMay(role, "turn"), false, role);
+  const catalog = readFileSync(new URL("../scripts/tools/catalog.mjs", import.meta.url), "utf8");
+  assert.ok(!/fill-card|fill saved card|savedCard/i.test(catalog), "no agent tool names it");
+  // Nothing of a card in the log, the trail or a message: the browser fills it, never this side.
+  const everything = JSON.stringify({ logged, posted, sent: s.sent, audit: s.audit(), notes: s.notes });
+  assert.ok(!holdsCardNumber(everything) && !everything.includes("4242"), everything);
+  assert.ok(logged.every((l) => l === `hand-off ${id}: Fill saved card`), logged.join("\n"));
+  gate.close();
+});
+
+test("Fill saved card reads the focused field: an empty card number goes; one holding text, or another field of a payment frame, never", async () => {
+  const { fillProblem } = await import("../scripts/liveview/grants.mjs");
+  const { focusedFillField } = await import("../scripts/runner/cards.mjs");
+  const { cardPage } = await import("./helpers/card-page.mjs");
+  const pay = { origin: "https://pay.example", allow: "payment" };
+  const card = { origin: "https://js.pay.example", cardFields: true };
+  const fields = {
+    e1: { autocomplete: "cc-number" }, e2: { autocomplete: "cc-number", value: "4" }, e3: { autocomplete: "cc-name" }, e4: { name: "email", type: "email" },
+    f1e1: { frame: pay, name: "number", placeholder: "1234 1234 1234 1234" }, f1e2: { frame: pay, name: "postal", placeholder: "ZIP" },
+    f2e1: { frame: card, name: "postal" }, f3e1: { frame: { origin: "https://js.pay.example" }, autocomplete: "cc-number" },
+  };
+  const at = async (focused) => fillProblem(await focusedFillField(cardPage({ fields, focused })));
+  assert.equal(await at("e1"), null, "the empty card number field");
+  assert.equal(await at("e2"), "filled", "the card number field holding a value");
+  assert.equal(await at("e3"), "field", "the name on the card");
+  assert.equal(await at("e4"), "field");
+  assert.equal(await at("f1e1"), null, "a payment frame's first field, empty");
+  assert.equal(await at("f1e2"), "field", "a payment frame's postal code: its Enter would send the form");
+  assert.equal(await at("f2e1"), "field", "a card frame's field that isn't its card number");
+  assert.equal(await at("f3e1"), null, "a frame's own card number field");
+  assert.equal(await at(null), "field", "nothing focused");
+  assert.equal(fillProblem(null), "field", "a page that didn't answer");
 });

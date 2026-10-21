@@ -172,13 +172,12 @@ test("an explicit field the open build can't apply refuses", () => {
     assert.ok(!out.problem.includes("pinned-1"));
   }
   // On either build: a scheme or motion setting no switch can force, a GPU or a graphics
-  // requirement on the open build, a saved card, and a profile made for the other browser.
+  // requirement on the open build, and a profile made for the other browser.
   for (const [changes, field, options] of [
     [{ display: { colorScheme: "light", reducedMotion: true } }, "display.colorScheme", NATIVE],
     [{ display: { colorScheme: null, reducedMotion: false } }, "display.reducedMotion", OPEN],
     [{ graphics: { backend: "gpu", require: null } }, "graphics.backend", OPEN],
     [{ graphics: { backend: "auto", require: { webgl: 2, webgpu: false, platforms: [] } } }, "graphics.require", OPEN],
-    [{ payments: { savedCard: true } }, "payments.savedCard", NATIVE],
     [{ browser: { kind: "pairbrowse" } }, "browser.kind", OPEN],
   ]) {
     const base = options === OPEN ? openRecord(changes) : record({ ...LAUNCHABLE, ...changes });
@@ -186,6 +185,17 @@ test("an explicit field the open build can't apply refuses", () => {
     assert.ok(out.problem, field);
     assert.ok(out.results.some((r) => r.field === field && r.severity === "error"), field);
   }
+  // A saved card is a preference, never a refusal (spec B12): on the native build it maps to the
+  // launch's prefs (the launch writes it only with a real key store); on the open build it is
+  // named and left off. Off writes nothing.
+  const card = toLaunch(record({ ...LAUNCHABLE, payments: { savedCard: true } }), NATIVE);
+  assert.equal(card.problem, null, card.problem);
+  assert.deepEqual(card.prefs, { savedCard: true });
+  assert.ok(card.results.some((r) => r.field === "payments.savedCard" && r.status === "applied" && r.severity === "info"));
+  const openCard = toLaunch(openRecord({ payments: { savedCard: true } }), OPEN);
+  assert.equal(openCard.problem, null, openCard.problem);
+  assert.ok(openCard.results.some((r) => r.field === "payments.savedCard" && r.status === "not-applied" && r.severity === "warning"));
+  assert.deepEqual(toLaunch(record(LAUNCHABLE), NATIVE).prefs, {});
   // On the native build a GPU and a requirement map (no switch): the launch checks them against
   // the measurement and the browser's own read (daemon/browser/graphics.mjs, step 44).
   for (const graphics of [{ backend: "gpu", require: null }, { backend: "auto", require: { webgl: 2, webgpu: true, platforms: ["linux"] } }]) {

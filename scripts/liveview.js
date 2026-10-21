@@ -3,7 +3,7 @@
 // body data-role is "owner" (your own link), "drive" or "watch" (invite links): the server
 // enforces it; this only keeps refused controls out of sight.
 import { AGENT_COLOR, markOf } from "./vocab.js";
-import { $, el, rich, clock, activityHead, sparkIcon, joinBanners, profilePanel, whose, avatar, splitLabel, stateWord, ago, doneLine, shareCard, awaySwitch, networkPanel } from "./common.js";
+import { $, el, rich, clock, activityHead, sparkIcon, joinBanners, profilePanel, whose, avatar, splitLabel, stateWord, ago, doneLine, shareCard, awaySwitch, networkPanel, savedCardPanel } from "./common.js";
 
 const base = location.pathname.replace(/\/?$/, "/");
 const img = $("screen"), stage = $("stage");
@@ -492,6 +492,8 @@ if (role === "owner") {
   const drawAway = (a) => { $("away-row").hidden = !(a && typeof a === "object"); away.draw(a); };
   const loadAway = () => fetch(base + "config.json", { signal: AbortSignal.timeout(8000) }).then((x) => (x.ok ? x.json() : null)).then((c) => drawAway(c?.away), () => {});
   on("config", (c) => { if (c && typeof c === "object" && "away" in c) drawAway(c.away); });
+  // The saved card (common.js savedCardPanel, spec server-mode B12): read with the Profile panel.
+  const card = savedCardPanel($("card-row"), $("card-note"), $("card-add"), $("card-msg"), () => base);
   // Network (common.js networkPanel, spec server-mode C14): proxies, read with the Profile panel.
   const network = networkPanel($("network-panel"), () => base, { shown: (s) => { $("network-h").hidden = !s; $("network-note").hidden = !s; } });
   on("network", (n) => network.draw(n));
@@ -520,6 +522,7 @@ if (role === "owner") {
     drawerEl.dataset.open = "true";
     showTab("profile");
     loadAway();
+    card.load();
     network.load();
     if (!await profile.load()) profile.say("Couldn't reach PairBrowse.", "error");
     // Don't pull the cursor away from a field the person already clicked into.
@@ -562,7 +565,7 @@ if (role === "owner") {
   }
   profileBtn.addEventListener("click", () => openProfile(!(isOpen() && drawerTab === "profile")));
   timelineBtn.addEventListener("click", () => openTimeline(!(isOpen() && drawerTab === "timeline")));
-  $("drawer-tab-profile").addEventListener("click", () => { if (drawerTab !== "profile") { showTab("profile"); loadAway(); network.load(); profile.load(); } });
+  $("drawer-tab-profile").addEventListener("click", () => { if (drawerTab !== "profile") { showTab("profile"); loadAway(); card.load(); network.load(); profile.load(); } });
   $("drawer-tab-timeline").addEventListener("click", () => { if (drawerTab !== "timeline") { showTab("timeline"); loadJournal(); } });
   for (const x of ["profile", "timeline"]) $("drawer-tab-" + x).addEventListener("keydown", (e) => {
     if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;

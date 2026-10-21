@@ -174,7 +174,9 @@ function extensionPreferences(prefs, panelId, oldPanels) {
 // Run before every launch and by the install step; keeps everything else the user set.
 // browserPages (a build with its own pages): no extension or theme settings; the docks' layout
 // starts from config.layout (layout) the first time, and the browser keeps its own after that.
-export function profilePreferences(prefs = {}, panelId = panelExtensionId(), oldPanels = [], { browserPages = false, layout = null } = {}) {
+// savedCard: the launch honors the session's profile's saved card (browser/safe-storage.mjs
+// savedCardFor: a real key store): payment autofill on, and nothing else (spec server-mode B12).
+export function profilePreferences(prefs = {}, panelId = panelExtensionId(), oldPanels = [], { browserPages = false, layout = null, savedCard = false } = {}) {
   // The browser starts on a blank tab (its own restore would reload every tab during startup);
   // PairBrowse then brings the tabs back itself, one by one (see tabs.mjs).
   prefs.session = { ...(prefs.session || {}), restore_on_startup: 5 };
@@ -197,13 +199,16 @@ export function profilePreferences(prefs = {}, panelId = panelExtensionId(), old
   if (!browserPages) prefs.ntp_footer = { ...(prefs.ntp_footer || {}), settings: { ...(prefs.ntp_footer?.settings || {}), extension_attribution: false, management_notice: false } };
   // PairBrowse, not a Google browser: no browser sign-in or sync (signing into Google on websites works as on
   // any site), no default-browser check, no translate bubble, and no password or autofill popups
-  // over forms (PairBrowse fills forms itself and keeps passwords in its own secrets file).
+  // over forms (PairBrowse fills forms itself and keeps passwords in its own secrets file). A saved
+  // card's profile turns payment autofill back on (only the person picks it, during a hand-off);
+  // addresses and password saving stay off. Written at every launch, so a profile that stops asking
+  // (or a launch with no key store) has it off again.
   prefs.signin = { ...(prefs.signin || {}), allowed: false };
   prefs.browser = { ...(prefs.browser || {}), check_default_browser: false };
   prefs.translate = { ...(prefs.translate || {}), enabled: false };
   prefs.credentials_enable_service = false;
   prefs.credentials_enable_autosignin = false;
-  prefs.autofill = { ...(prefs.autofill || {}), profile_enabled: false, credit_card_enabled: false };
+  prefs.autofill = { ...(prefs.autofill || {}), profile_enabled: false, credit_card_enabled: savedCard === true };
   return prefs;
 }
 
@@ -260,8 +265,9 @@ export function localStatePreferences(state) {
 // new tab acknowledgement are left alone). adBlocker (a build with its own pages): true, the browser
 // installs uBlock Origin Lite from the store (browser/adblock.mjs); false removes it at the next
 // start; null (the install step, the self-check) leaves it as it is. adBlockerCrx: the CRX the app
-// ships ({ file, version }, browser/adblock.mjs shippedCrx), else the store's.
-export function prepareProfile(profile, panelId = panelExtensionId(), { browserPages = false, layout = null, adBlocker = null, adBlockerCrx = null } = {}) {
+// ships ({ file, version }, browser/adblock.mjs shippedCrx), else the store's. savedCard: as
+// profilePreferences (the launch's savedCardFor said on).
+export function prepareProfile(profile, panelId = panelExtensionId(), { browserPages = false, layout = null, adBlocker = null, adBlockerCrx = null, savedCard = false } = {}) {
   const dir = join(profile, "Default");
   mkdirSync(dir, { recursive: true });
   const file = join(dir, "Preferences");
@@ -271,11 +277,11 @@ export function prepareProfile(profile, panelId = panelExtensionId(), { browserP
   const secure = readJson(secureFile, null);
   const oldPanels = oldPanelIds(secure, panelId);
   if (browserPages) {
-    writeJsonAtomic(file, profilePreferences(prefs, panelId, oldPanels, { browserPages, layout }), { indent: 0 });
+    writeJsonAtomic(file, profilePreferences(prefs, panelId, oldPanels, { browserPages, layout, savedCard }), { indent: 0 });
     if (adBlocker !== null) adBlockerFiles(profile, adBlocker, { crx: adBlockerCrx });
   } else {
     if (secure && profileSecurePreferences(secure, panelId)) writeJsonAtomic(secureFile, secure, { indent: 0 });
-    writeJsonAtomic(file, acknowledgeNewTabPage(profilePreferences(prefs, panelId, oldPanels), secure, panelId), { indent: 0 });
+    writeJsonAtomic(file, acknowledgeNewTabPage(profilePreferences(prefs, panelId, oldPanels, { savedCard }), secure, panelId), { indent: 0 });
   }
   const localStateFile = join(profile, "Local State");
   const localState = readJson(localStateFile, null);
@@ -379,10 +385,12 @@ export function launchArgs(config = {}, { firstRun = false, browserPages = false
 // null (the self-check has no live view). screen: the virtual screen it runs on, or null; profileArgs:
 // the session's browser profile's switches (launchArgs).
 // env, executablePath: as Playwright takes them. The Safe Storage password: browser/safe-storage.mjs
-// (a key file of this install's own, the Keychain, or the driver's mock keychain).
-export function launchOptions(config = {}, { shell, firstRun = false, helper = null, env, executablePath, blankStart = false, platform = process.platform, screen = null, profileArgs = [] } = {}) {
+// (a key file of this install's own, the Keychain, or the driver's mock keychain); storage: that
+// answer when the caller read it already (the launch, whose saved card depends on it), so the key
+// store the profile's preferences counted on is the one the browser gets.
+export function launchOptions(config = {}, { shell, firstRun = false, helper = null, env, executablePath, blankStart = false, platform = process.platform, screen = null, profileArgs = [], storage: given = null } = {}) {
   const ownPages = !!shell?.ownPages;
-  const storage = safeStorageFor(config, shell, paths.safeStorageKey, platform);
+  const storage = given || safeStorageFor(config, shell, paths.safeStorageKey, platform);
   return {
     headless: false,
     env,

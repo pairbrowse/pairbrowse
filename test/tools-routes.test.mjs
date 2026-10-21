@@ -905,3 +905,51 @@ test("a document preview's tab tells the owner which download it shows (preview)
     assert.ok(!guest.includes(doc) && !guest.includes("preview\""), "guests never get it");
   } finally { for (const p of opened) p.closed = true; t.done(); }
 });
+
+test("the saved card (B12): its state and Add a saved card are the owner's; it opens the payment methods page once as the person's own tab, never while recording", async () => {
+  const { PAYMENT_SETTINGS } = await import("../ui/urls.js");
+  const t = await setup();
+  try {
+    const get = (k = t.key) => request(t.view.port, "GET", `/${k}/saved-card.json`);
+    const add = (k = t.key) => request(t.view.port, "POST", `/${k}/saved-card`, { body: {} });
+    assert.deepEqual(JSON.parse((await get()).text), { asked: false, on: false, store: "", line: "" }, "no saved card asked: nothing");
+    let card = null;
+    t.tools.savedCard = () => card;
+    const opened = [];
+    t.tools.openTab = async (url, onClose) => { const page = fakePage(url, "Payment methods"); opened.push({ url, onClose, page }); return { ok: true, page }; };
+    // Asked, but refused for want of a key store: said, nothing opened.
+    card = { asked: true, on: false, store: "", line: "saved card refused: this browser has no key store for it (the open build); payment autofill stays off" };
+    let r = await add();
+    assert.equal(r.status, 409);
+    assert.match(JSON.parse(r.text).error, /^Not now: saved card refused: .*then start the session again\.$/);
+    card = { asked: true, on: true, store: "key-file", line: "Saved card: on (encrypted with this install's key file); only you fill it, during a hand-off" };
+    assert.deepEqual(JSON.parse((await get()).text), card);
+    // Invite links never reach it.
+    for (const role of ["watch", "drive"]) {
+      const i = t.invites.create({ role, label: role });
+      assert.equal((await get(i.key)).status, 403, role);
+      assert.equal((await add(i.key)).status, 403, role);
+    }
+    // While a recording runs: refused (the card would be in the video).
+    assert.equal((await request(t.view.port, "POST", `/${t.key}/record`, { body: { on: true } })).status, 200);
+    r = await add();
+    assert.equal(r.status, 409);
+    assert.match(JSON.parse(r.text).error, /^Stop the recording first/);
+    assert.equal(opened.length, 0);
+    t.saveAs(join(t.dir, "rec.webm"));
+    assert.equal((await request(t.view.port, "POST", `/${t.key}/record`, { body: { on: false } })).status, 200);
+    // Opened once, at the engine's payment methods page; again it is brought forward, not opened twice.
+    r = await add();
+    assert.equal(r.status, 200, r.text);
+    assert.equal(opened.length, 1);
+    assert.equal(opened[0].url, PAYMENT_SETTINGS);
+    assert.equal((await add()).status, 200);
+    assert.equal(opened.length, 1, "the same tab, brought forward");
+    assert.ok(opened[0].page.fronted >= 1);
+    opened[0].page.closed = true;
+    assert.equal((await add()).status, 200);
+    assert.equal(opened.length, 2, "a closed one is opened again");
+    card = null;
+    assert.equal((await add()).status, 409);
+  } finally { t.done(); }
+});

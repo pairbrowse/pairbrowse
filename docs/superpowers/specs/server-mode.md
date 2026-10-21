@@ -413,7 +413,7 @@ by the person. On no response: progress saved, exactly one reminder, safe stop.
     honored only when `safeStorageFor(...)` (`safe-storage.mjs:41`) returns a real key: the macOS
     Keychain (`safeStorage: "keychain"`) or the per-install key file of patch 594
     (`~/.pairbrowse/safe-storage-key`, checked by `ensureSafeStorageKey`), which today is the only key
-    available on Linux. Whether the key file counts on Linux is decision U3. Otherwise the launch
+    available on Linux. The key file counts on Linux (decision U3). Otherwise the launch
     keeps payment autofill off and status says "saved card refused: this browser has no key store for
     it". The open build is always refused.
   - Saving the card: the person adds it once in the engine's own payment settings page, opened by an
@@ -422,10 +422,17 @@ by the person. On no response: progress saved, exactly one reminder, safe stop.
   - Filling: only the person, during a hand-off. The engine's autofill list is browser UI and may not
     appear in screencast frames (measured by T-B18); the turn viewer therefore offers "Fill saved card"
     when a card-number field is focused in a scope tab of a saved-card profile, which sends ArrowDown
-    then Enter as the person's own input. CVC and 3-D Secure stay with the person.
+    then Enter as the person's own input. CVC and 3-D Secure stay with the person. (As built, step
+    45: the button shows for the whole hand-off of a saved-card session and the helper checks the
+    focused field at the tap; Enter is sent only from an empty card number field, autocomplete
+    `cc-number` or a card or payment frame's first field when the frame has none, since the list
+    doesn't open on a field holding text and the helper can't see it.)
   - Agents never trigger or read it: in a saved-card session, all agent results are masked as in B10
     for every tab (not only during a grant), pictures are covered, agent typing and key presses into a
-    card field (cc-* autocomplete, a valid card number, any field in a payment frame) are refused, and
+    card field (cc-* autocomplete, a valid card number, any field in a payment frame) are refused (as
+    built: key presses into any cc-* field, the name on the card too, and list keys (arrows, Page
+    Up/Down, Enter) into any text field of a form whose fields name a card by name or label without
+    a token; a card field named only by nearby text isn't detected; typing keeps B13's rule), and
     `pairbrowse_run` never touches card fields (as today). Saved card data never appears in snapshots,
     logs, notifications, audit lines or agent summaries.
 - **B13. Payment steps.** The existing guard (`scripts/rules/clicks.mjs` `paySignal`, the "Pay:" naming
@@ -1201,7 +1208,7 @@ macOS native (host capture), Linux native on Xvfb without a GPU (software), Linu
 | User agent and version | build | engine | D | D | D | `ua.build` | none |
 | Platform | build | engine | D | D | D | `gpu.vs-platform` | none |
 | Imported hardware (GPU, fonts list, audio, voices, codecs) | another device | none | U | U | U | `profile-import` "reports every hardware section unsupported" | none (by decision) |
-| Saved card | session storage | autofill pref | C (with a key store) | C if U3 accepts the key file | same | `browser.test.mjs` saved-card case | none |
+| Saved card | session storage | autofill pref | C (with a key store) | C (U3 accepted the key file) | same | `browser.test.mjs` saved-card case | none |
 | Sandbox | helper | `sandboxDecision` | always on | always on (server mode) | always on | `engine.test.mjs`, rule `sandbox.on` | none |
 
 Reproducibility per runtime: macOS reproduces only this Mac's graphics; Linux reproduces the host's
@@ -2537,6 +2544,77 @@ it depends on.
     `test/supervise.test.mjs`, `test/structure.test.mjs`.
 45. Saved card: profile field, key-store check, prefs, owner "Add a saved card", "Fill saved card",
     agent refusals and masking (B-AP4, B12). -> 37, 21
+   Landed as: key store (U3): `browser/safe-storage.mjs` `keyStoreOf(storage, platform)` reads
+   `safeStorageFor`'s answer as `"keychain"` (macOS, mock off, no file), `"key-file"` (macOS or
+   Linux, the checked key file) or `""` (the mock keychain's fixed password, Linux's fixed key,
+   Windows); `savedCardFor({ asked, native, storage, platform })` answers `{ asked, on, store, line }`
+   (the open build always refused; `line` "saved card refused: this browser has no key store for
+   it (<why>); payment autofill stays off", or "Saved card: on (encrypted with ...)").
+   `ensureSafeStorageKey` now makes the file atomically (a fresh `.tmp` name written 0600, then
+   `linkSync` to its name, which fails on anything there, so nothing is written over and no reader
+   sees half a password); its type, owner, mode and link checks run before every launch as before.
+   Mapping: `profiles/map.mjs` `toLaunch` no longer refuses `payments.savedCard`: on the native
+   build it is `applied` with `prefs: { savedCard: true }`, on the open build `not-applied` (warning),
+   never an error (differs from D11: off is the safe side, and only the launch knows the key store).
+   `sessions/profiles.mjs`: `forLaunch` answers `savedCard`; `setSavedCard(card)` keeps the launch's
+   answer on `st.profile` (logged as `launch: <line>`), `savedCard()` reads it (null with none
+   asked or none running), and `statusParts()` adds the line (a refusal as `warning: ...`).
+   `launch.mjs` reads `safeStorageFor` once before `prepareProfile`, decides, passes `savedCard` to
+   `prepareProfile` (`profilePreferences`: `credit_card_enabled` is `savedCard === true`, written at
+   every launch, so it goes off again) and the same `storage` to `launchOptions` (new option), so the
+   browser gets the key store the preference counted on. `context.savedCard()`.
+   Masking and refusals: `yourturn.mjs` gains the `savedCard()` dep (`daemon.mjs`: `context.savedCard()?.on`);
+   `masked(page)` is true for every page while it is on (serve/result.mjs, `reply` and
+   `pairbrowse_click_at` follow), and `yourTurn.savedCard()` feeds the key rule: `rules/cards.mjs`
+   `AUTOFILL_TOKENS` (the card tokens plus `cc-name`, `cc-given-name`, `cc-additional-name`,
+   `cc-family-name`, `cc-type`: the autofill list opens on the name on the card too, so B12's "card
+   field" here is wider than B13's) and `SIGNALS.savedCardKey`; `runner/cards.mjs` `cardFieldOf` and
+   `focusedCardField` take `tokens`; `refuse.mjs` `cardProblem` refuses any `browser_press_key` into such a
+   focused field (or a card or payment frame) in a saved-card session, and `listKey` (ArrowDown, ArrowUp,
+   PageDown, PageUp, Enter, whatever is held) into any text field of a document one of whose fields
+   names a card without a token (`CARD_NAME`: name, id, placeholder, aria-label or label, as
+   `name="cardnumber"`; `runner/cards.mjs` `focusedCardForm`, `SIGNALS.cardForm`), since the engine's
+   autofill knows card fields by those too; fast mode's `press` step the same through
+   `hooks.savedCard` (`serve/tools/run.mjs`). Not detected (added to `rules/cards.mjs`'s list): a card
+   field named only by nearby text or in words `CARD_NAME` doesn't know (the engine's recognition is
+   wider). Typing, filling and choosing keep B13's rule
+   (the name on the card stays typeable: no key picks the card without an arrow).
+   Owner "Add a saved card": `liveview/routes/tools.mjs` `GET saved-card.json` (`{ asked, on, store,
+   line }`) and `POST saved-card`, right `profile` (the owner's key or the pages' key); refused (409,
+   with the reason) when the card isn't on and while a recording runs (it records whatever is in
+   front); otherwise `tools.openTab(PAYMENT_SETTINGS)` (`ui/urls.js`: `chrome://settings/payments`,
+   `isPaymentSettings`) opens it as the person's own tab (`openForPerson`; no agent, guest or hand-off
+   reaches it, and `isBrowserPage` keeps it the browser's own page for agents), a second tap brings
+   the same tab forward, and the live view shows it: `cast.mjs` `showNow` lets through a hidden page
+   only when it is a person's own tab at the payment methods page, whose frames reach owner streams
+   only (guest frames and turn streams skip a person's tab). UI: `ui/panels.js` `savedCardPanel` (the
+   live view's Profile panel, a "Saved card" section shown only when the profile asks; its line, and
+   the button while it is on). Not added: a sessions page toggle (the CLI's `edit --settings` sets it).
+   "Fill saved card": the `turn` event gains `savedCard`; `liveview/grants.mjs` `fillCard(res, guest)`
+   (gate deps `savedCard`, `humanPost`, `focused`, `now`) behind `POST turn-fill-card` (right `turn`)
+   refuses with a sentence (`FILL_CARD_WORDS`) when no card is on, a repeat within 4 s (its Enter could
+   send the form), no scope tab on screen (audited `input-refused` `out-of-scope`), or `fillProblem`
+   rejects the focused field (`runner/cards.mjs` `focusedFillField`, bounded): Enter is sent only from
+   an empty card number field, autocomplete `cc-number` or, in a card or payment frame with no
+   `cc-number` field, the frame's first text field. A field holding a value (the list doesn't open
+   there), any other field of the form (a frame's postal code) or a page that doesn't answer is
+   refused, since the helper can't see whether the list opened and the Enter would reach the page;
+   else sends `ArrowDown`, `Enter` through
+   `humanPost` as the person's own input and logs "hand-off <id>: Fill saved card". The viewer
+   (`liveview-turn.js`) shows the button in its keys row only with `savedCard`, the button waiting for
+   the input queue to empty first. Differs from B12 as written: the button shows for the whole
+   hand-off and the helper checks the focus at the tap (no focus events reach the viewer), with the
+   sentence "Tap the card number field in the picture first". Matrix row: U3 accepted the key file,
+   so "Saved card" is C on Linux too. Tests: `test/safe-storage.test.mjs`, `test/browser.test.mjs`,
+   `test/profile-map.test.mjs`, `test/session-profiles.test.mjs`, `test/refusals.test.mjs`,
+   `test/yourturn.test.mjs`, `test/tools-routes.test.mjs`, `test/policy.test.mjs`,
+   `test/liveview-grants.test.mjs` (the turn event's keys; `cast.mjs` shows the payment methods page
+   only as a person's own tab, its frames to owner streams only), `test/supervise.test.mjs` (the
+   launch reads the Safe Storage once: `credit_card_enabled` is `savedCardFor`'s answer, the key-file
+   switch from the same storage, `setSavedCard` before the start). Security row
+   B-6 ("Saved payment cards") lands; the key-store row and the Tools routes row name it. Not here:
+   T-B18's measurement of the autofill list in screencast frames (step 49's opt-in runs) and a live
+   check that the engine's list opens on `ArrowDown` from `Input.dispatchKeyEvent`.
 46. Phase A integration file, CI `xauth`, Phase A opt-in tests on the harness (A13). -> 8, 39
 47. pn: 960, 961, 962 patches, locks, tail-patch tests, `ENGINE-AUDIT.md`; next engine build (E1 pn
     part, E10 F4, C1, E14). -> 9, 10
@@ -2562,7 +2640,7 @@ that exist at that commit (`test/security-table.test.mjs`).
 | B-3 | New | "Hand-off notifications send more than meant", with per-channel exposure: webhook (your endpoint gets kind, host, expiry, link); ntfy (the server and anyone subscribed to the topic; on public ntfy.sh without a token no link); Telegram (Telegram's servers and the chat's members; bot messages are not end-to-end encrypted); Discord (Discord and the channel's members); Slack (Slack, the workspace's retention and the channel's members). Never the agent's text, codes, passwords, card data or page content; credentials are reserved secrets | `test/notify-channels.test.mjs`, `test/redaction.test.mjs` |
 | B-4 | New | "An agent finishes a step meant for a person": hands, run, navigation and closing refused in a handed-off or held tab; in every session agents never type into card fields or type a card number (B13); the Pay click rule unchanged | `test/refusals.test.mjs`, `test/shared-rules.test.mjs` |
 | B-5 | New | "What the person types during a hand-off reaches agents, joiners or logs": agent results from scope tabs masked as a joiner's, pictures covered; field names only in notes; nothing typed in the activity log, journal, audit or messages; the turn viewer itself sees card fields uncovered | `test/yourturn.test.mjs` |
-| B-6 | New | "Saved payment cards": off by default, per profile; only with a real key store (U3), else refused; only the person fills, during a hand-off; agents masked in every tab of that session and refused in card fields; never in snapshots, logs, notifications or summaries | `test/browser.test.mjs`, `test/refusals.test.mjs`, `test/yourturn.test.mjs` |
+| B-6 | New | "Saved payment cards": off by default, per profile; only with a real key store (U3), else refused; only the person fills, during a hand-off; agents masked in every tab of that session and refused in card fields; never in snapshots, logs, notifications or summaries | `test/browser.test.mjs`, `test/refusals.test.mjs`, `test/yourturn.test.mjs` (landed with `test/safe-storage.test.mjs`, `test/tools-routes.test.mjs`, `test/session-profiles.test.mjs`, `test/profile-map.test.mjs`, `test/policy.test.mjs` too) |
 | B-7 | New | "The audit trail leaks or is lost": 0600, no keys, links, secret values or page content, rotates at 1 MB | `test/audit.test.mjs` |
 | B-8 | Change three rows | "Diagnostics leave the computer": adds hand-off messages to configured channels. "A page fakes the Your turn badge": the person enters codes or card details only in the site's own fields of the handed-off tab, never in a badge. Limits, invite links: a grant is a short-lived drive link for one tab | `test/hud.test.mjs`, `test/yourturn.test.mjs` |
 | C-1 | New | "A session's proxy leaks its credentials, or traffic goes around it": `secrets.env` only, reserved, masked; to the browser only through an owner-only file read once and answered only to that proxy; never argv or the driver; strict mode closes local resolution and non-proxied UDP; loopback never proxied; checks before any saved tab, also after recovery; no direct fallback; egress change pauses agents | `test/net-credentials.test.mjs`, `test/net-launch.test.mjs`, `test/net-verdict.test.mjs`, `test/net-probe.test.mjs`, `test/integration/proxy.test.mjs` |

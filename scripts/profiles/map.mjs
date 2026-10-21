@@ -224,7 +224,8 @@ export const fromConfig = (config, options) => readConfig(config, options).setti
 // derived, not-applied or, refusing, unsupported or mismatch with severity "error"), for
 // validation[build] (D10; the caller files them under its build). problem: null, or the sentence
 // that refuses the launch (D11), naming the profile and every field it can't apply; with a
-// problem, switches and engine keys are empty. network: the profile's network id for
+// problem, switches and engine keys are empty. prefs: { savedCard: true } when the profile asks for
+// a saved card (the launch writes it only with a real key store). network: the profile's network id for
 // net/config.mjs networkFor's profileNetwork; adBlocker: its choice (null: config.json's).
 // userArgs: config.json's browserArgs as the launch passes them (the graphics plan refuses a
 // renderer switch the profile's backend contradicts). The profile is never changed. Never throws.
@@ -312,7 +313,15 @@ export function toLaunch(profile, { browserKind, platform = process.platform, us
   else if (native) derived("persona.seed", "D", "a seed of the session's own");
   else add("persona.seed", "not-applied", "D", "the open build has no persona");
 
-  if (p.payments.savedCard) refuse("payments.savedCard", "C", "saved cards aren't available in this version");
+  // A saved card (B12): the preference the launch writes, honored only with a real key store,
+  // which only the launch knows (browser/safe-storage.mjs savedCardFor; it says so in the status
+  // and keeps payment autofill off otherwise). Never a refusal: off is its safe side (spec B12, an
+  // exception to D11). The open build never has one.
+  if (p.payments.savedCard) {
+    prefs.savedCard = true;
+    if (native) applied("payments.savedCard", "C", "payment autofill on when this launch has a real key store (the Keychain or this install's key file); only the person fills it, during a hand-off", true);
+    else add("payments.savedCard", "not-applied", "C", "the open build has no key store for saved cards: payment autofill stays off", { requested: true, severity: "warning" });
+  }
   if (p.network) applied("network", "C", "the session's proxy, unless config.json's network.sessions names one", p.network);
   else derived("network", "C", "config.json's network default, if any");
   if (p.adBlocker !== null) applied("adBlocker", "C", p.adBlocker ? "on" : "off", p.adBlocker);

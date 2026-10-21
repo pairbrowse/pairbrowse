@@ -391,3 +391,29 @@ test("browserArgs that pick another renderer refuse a software profile at launch
   const ok = parts(newStore(), { browser: "pairbrowse", pairbrowse: { graphics: "software" } }).profiles.forLaunch(session("sp-graphics-ok"), NATIVE);
   assert.ok(ok.switches.includes("--use-angle=swiftshader"));
 });
+
+test("a saved card (B12): forLaunch says the profile asks; the launch's answer is the status part, a refusal as a warning, and none once released", () => {
+  const store = newStore();
+  store.create({ ...BERLIN, name: "card", payments: { savedCard: true } });
+  const name = session("sp-card");
+  assignProfile(name, "card", { store });
+  const { profiles, lines } = parts(store);
+  assert.equal(profiles.forLaunch(name, NATIVE).savedCard, true);
+  assert.equal(profiles.savedCard(), null, "nothing until the launch decides");
+  profiles.setSavedCard({ asked: true, on: true, store: "key-file", line: "Saved card: on (encrypted with this install's key file); only you fill it, during a hand-off" });
+  assert.deepEqual(profiles.savedCard(), { asked: true, on: true, store: "key-file", line: "Saved card: on (encrypted with this install's key file); only you fill it, during a hand-off" });
+  assert.ok(profiles.statusParts().includes("Saved card: on (encrypted with this install's key file); only you fill it, during a hand-off"));
+  assert.ok(lines.some((l) => l.startsWith("launch: Saved card: on")), lines.join("\n"));
+  profiles.setSavedCard({ asked: true, on: false, store: "", line: "saved card refused: this browser has no key store for it (the open build); payment autofill stays off" });
+  assert.equal(profiles.savedCard().on, false);
+  assert.ok(profiles.statusParts().includes("warning: saved card refused: this browser has no key store for it (the open build); payment autofill stays off"));
+  profiles.release();
+  assert.equal(profiles.savedCard(), null);
+  // A profile that asks for none: nothing said, nothing on.
+  const plain = session("sp-nocard");
+  assignProfile(plain, "berlin-2", { store: (store.create({ ...BERLIN, name: "berlin-2" }), store) });
+  assert.equal(profiles.forLaunch(plain, NATIVE).savedCard, false);
+  profiles.setSavedCard({ asked: false, on: false, store: "", line: "" });
+  assert.equal(profiles.savedCard(), null);
+  assert.ok(!profiles.statusParts().some((l) => /saved card/i.test(l)));
+});

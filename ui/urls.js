@@ -46,6 +46,11 @@ export const isBrowserPage = (url) => /^(chrome:\/\/(pairbrowse(\.top-chrome)?|s
 // replays a person's input into it like that page; the browser's other pages stay out of it.
 export const isBrowserScreenPage = (url) => /^(chrome:\/\/pairbrowse\/screen|pairbrowse:\/\/screen)\/(?:[?#]|$)/i.test(String(url ?? "").trim());
 export const hiddenFromLiveView = (url) => isBrowserPage(url) && !isBrowserScreenPage(url);
+// The engine's payment methods page, where the person adds a saved card ("Add a saved card", spec
+// server-mode B12). It opens as the person's own tab (no agent, guest or hand-off viewer reaches
+// it); the owner's live view may show that one tab, though it is the browser's own page.
+export const PAYMENT_SETTINGS = "chrome://settings/payments";
+export const isPaymentSettings = (url) => /^chrome:\/\/settings\/payments(?:[/?#]|$)/i.test(String(url ?? "").trim());
 // One of the browser's tab pages by its name ("sessions"), under either spelling. ends: what may
 // follow the name (a regular expression's alternatives).
 export const isOwnTabPage = (name, url, ends = "\\/|#|\\?|$") => new RegExp(`^(pairbrowse:\\/\\/|chrome:\\/\\/pairbrowse\\/)${name}(${ends})`).test(url || "");

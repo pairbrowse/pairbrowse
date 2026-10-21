@@ -168,7 +168,7 @@ export async function startLiveView({ grants = null, covers = null, activityLog 
   const cast = createCast({ getContext, currentUrl, personTab: (p) => personTab(p), replayer, broadcast: (e, d) => broadcast(e, d), tabsInfo: () => tabsInfo(), viewers, watching: () => watching(), isClosed: () => closed, log, pinned: () => turnGate.pinned() });
   const { show, follow, stopIfIdle } = cast;
   // Hand-off grants' keys, landing page and stream (liveview/grants.mjs).
-  const turnGate = createTurnGate({ grants, sessionName: () => sessionInfo.name, idOf: (p) => idOf(p), getContext, cast, linkGuests, clients, viewers, inviteOrigin, invites, onChanged: () => collaborationChanged(), log });
+  const turnGate = createTurnGate({ grants, sessionName: () => sessionInfo.name, idOf: (p) => idOf(p), getContext, cast, linkGuests, clients, viewers, inviteOrigin, invites, onChanged: () => collaborationChanged(), log, savedCard: () => !!tools?.savedCard?.()?.on, humanPost: (...a) => humanPost(...a) }); // a saved card: Fill saved card (B12)
   const iconFor = createIcons();
   const kinds = new Map(); // event stream -> the browser page's kind (?page=), owner streams only
   const tabOrder = { sig: "", order: null }; // the tab strip's last report (POST tab-order); gone with this live view
@@ -553,7 +553,7 @@ export async function startLiveView({ grants = null, covers = null, activityLog 
   // Each route names the right it needs (invites.mjs); a route that isn't listed is refused.
   // needs(): the part of the helper a route works with; falsy, the route answers 404 (a string: 404
   // with that sentence), checked after the right, as each route did first thing.
-  const toolRoutes = createToolsRoutes({ tools, mask, recordState, idOf, bringTabForward, previewOf, viewers, clients, joinersNow, guests });
+  const toolRoutes = createToolsRoutes({ tools, mask, recordState, idOf, bringTabForward, previewOf, viewers, clients, joinersNow, guests, show: (p) => show(p) });
   const timelineRoutes = createTimelineRoutes({ timeline, mask, broadcast });
   // What the viewer's routes read, as each request comes (liveview/routes/viewer.mjs).
   const lv = {

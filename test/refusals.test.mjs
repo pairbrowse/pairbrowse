@@ -127,12 +127,12 @@ test("agents' hands, run, navigate and close are refused in a handed-off or held
 });
 
 // The browser tools' checks (createRefusals browserToolProblem) on a page stand-in.
-function checks({ page, values = {} } = {}) {
+function checks({ page, values = {}, savedCard = false } = {}) {
   const conn = { approvedArgs: new WeakMap(), approvedWhere: new WeakMap(), recentRisk: () => "", refNames: {}, remote: null, risks: new Map(), actingIn: page };
   const api = {
     cap: (s) => s, clickApprovals: null, context: { pageAt: async () => page, currentUrl: () => page.url() }, handOff: (r) => r, inUse: () => [], log: () => {},
     popups: { dialogAnswered() {} }, secretNames: () => Object.keys(values), secrets: { get: () => ({ values, domains: {}, problem: null }) },
-    serverPage: async () => page, serverUrl: async () => page.url(),
+    serverPage: async () => page, serverUrl: async () => page.url(), yourTurn: { savedCard: () => savedCard },
   };
   return createRefusals(conn, api).browserToolProblem;
 }
@@ -164,4 +164,63 @@ test("in any session, an agent's type, fill, choice, drop or key into a card fie
   const plain = checks({ page: cardPage({ fields: { e4: { autocomplete: "email" } }, focused: "e4" }) });
   assert.equal(await plain("browser_press_key", { key: "4" }), null);
   assert.ok(nextStep(CARD_RULE));
+});
+
+test("in a saved-card session agents cannot type or press keys in a card field, and results are masked in every tab", async () => {
+  const { createYourTurn } = await import("../scripts/daemon/yourturn.mjs");
+  const { press } = await import("../scripts/runner/steps/press.mjs");
+  const fields = { e1: { autocomplete: "cc-number" }, e2: { autocomplete: "cc-name" }, e3: { autocomplete: "cc-type" }, e4: { autocomplete: "email" },
+    f1e1: { frame: { origin: "https://js.pay.example", cardFields: true } } };
+  const at = (focused, savedCard) => checks({ page: cardPage({ fields, focused }), savedCard });
+  // Any key into a field the card's autofill opens on: the arrow and Enter that would pick the card.
+  for (const [focused, signal] of [["e1", SIGNALS.token("cc-number")], ["e2", SIGNALS.token("cc-name")], ["e3", SIGNALS.token("cc-type")], ["f1e1", SIGNALS.cardFrame]]) {
+    for (const key of ["ArrowDown", "Enter", "Tab", "a"]) {
+      const want = focused === "e1" || focused === "f1e1" ? null : cardRefusal(SIGNALS.savedCardKey(key, signal));
+      const got = await at(focused, true)("browser_press_key", { key });
+      if (want) assert.equal(got, want, `${key} in ${focused}`);
+      else assert.match(got, /^Refused \(.* in a session with a saved card\)\. Card details are the person's to enter/, `${key} in ${focused}`);
+      assert.ok(nextStep(got));
+    }
+  }
+  // Typing into a card field stays refused there too (B13, every session); the name on the card stays the agent's to type.
+  assert.equal(await at("e1", true)("browser_type", { target: "e1", text: "x" }), cardRefusal(SIGNALS.token("cc-number")));
+  assert.equal(await at("e2", true)("browser_type", { target: "e2", text: "Ada Lovelace" }), null);
+  // Keys elsewhere, and the same keys without a saved card, go on.
+  assert.equal(await at("e4", true)("browser_press_key", { key: "ArrowDown" }), null);
+  assert.equal(await at("e2", false)("browser_press_key", { key: "ArrowDown" }), null);
+  // Fast mode's press step keeps the same rule (hooks.savedCard).
+  const fails = [];
+  const step = (focused, savedCard, arg) => press({ page: cardPage({ fields, focused }), arg, i: 0, steps: [{ press: arg }], hooks: { savedCard: () => savedCard }, fail: (m) => { fails.push(m); return m; }, run: {} });
+  assert.equal(await step("e2", true, "ArrowDown"), cardRefusal(SIGNALS.savedCardKey("ArrowDown", SIGNALS.token("cc-name"))));
+  assert.equal(fails.length, 1);
+  // A card form the browser knows by name or label, no cc-* token (name="cardnumber"): the list keys
+  // into any of its text fields are refused, browser_press_key and the press step alike; other keys,
+  // other forms and the same form without a saved card go on.
+  const named = { n1: { name: "cardnumber", placeholder: "1234 1234 1234 1234" }, n2: { name: "exp-date" }, n3: { name: "billing-zip" }, n4: { name: "promo", type: "checkbox" } };
+  const labelled = { l1: { id: "x1", label: "Card number" }, l2: { id: "x2" } };
+  const plainForm = { p1: { name: "email", type: "email" }, p2: { name: "zip" } };
+  const inForm = (flds, focused, saved = true) => checks({ page: cardPage({ fields: flds, focused }), savedCard: saved });
+  for (const [flds, focused] of [[named, "n1"], [named, "n3"], [labelled, "l2"]]) {
+    for (const key of ["ArrowDown", "ArrowUp", "PageDown", "Enter", "Alt+ArrowDown"]) {
+      assert.equal(await inForm(flds, focused)("browser_press_key", { key }), cardRefusal(SIGNALS.savedCardKey(key, SIGNALS.cardForm)), `${key} in ${focused}`);
+    }
+    for (const key of ["Tab", "a", "Backspace"]) assert.equal(await inForm(flds, focused)("browser_press_key", { key }), null, `${key} in ${focused}`);
+    assert.equal(await inForm(flds, focused, false)("browser_press_key", { key: "ArrowDown" }), null, "no saved card");
+  }
+  assert.equal(await inForm(named, "n4")("browser_press_key", { key: "ArrowDown" }), null, "a checkbox: no autofill list");
+  assert.equal(await inForm(plainForm, "p2")("browser_press_key", { key: "ArrowDown" }), null, "no card on the form");
+  const formStep = (focused, arg) => press({ page: cardPage({ fields: named, focused }), arg, i: 0, steps: [{ press: arg }], hooks: { savedCard: () => true }, fail: (m) => m, run: {} });
+  assert.equal(await formStep("n1", "Enter"), cardRefusal(SIGNALS.savedCardKey("Enter", SIGNALS.cardForm)));
+  assert.equal(await formStep("n3", "ArrowDown"), cardRefusal(SIGNALS.savedCardKey("ArrowDown", SIGNALS.cardForm)));
+  // Masked in every tab while the session's browser has a saved card on, not only a handed-over one.
+  const grants = { inScope: () => false, held: () => false, onEnd: () => () => {}, open: () => [] };
+  let on = true;
+  const yt = createYourTurn({ config: { handoff: {} }, grants, notifier: null, sends: () => false, handoffs: { clear() {} }, journal: {}, hud: {}, sessionName: () => "default", savedCard: () => on });
+  const tab = (url) => ({ url: () => url, isClosed: () => false });
+  for (const url of ["https://news.example/", "https://shop.example/checkout"]) assert.equal(yt.masked(tab(url)), true, url);
+  assert.equal(yt.savedCard(), true);
+  assert.equal(yt.handedOff(tab("https://news.example/")), "", "masked, not handed over: the agent still works there");
+  on = false;
+  assert.equal(yt.masked(tab("https://news.example/")), false);
+  assert.equal(yt.savedCard(), false);
 });

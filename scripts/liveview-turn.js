@@ -4,7 +4,9 @@
 // step, its site, the time left, the connection, Done, the hand-off's tabs and "That tab isn't on
 // screen"), touch (a tap clicks, a drag scrolls, a hold stays pressed), zoom kept on the phone
 // (pinch, + and -: the page's own size never changes mid-step), the type box that opens the
-// phone's keyboard, and the one input queue. The helper checks every event again
+// phone's keyboard, the one input queue, and "Fill saved card" in a session with a saved card
+// (spec server-mode B12: the helper sends the person's own ArrowDown and Enter into the focused
+// card number field, so the browser's autofill picks the card). The helper checks every event again
 // (liveview/input.mjs readViewerInput); this only shapes what a person's hands do.
 import { $, el } from "./common.js";
 
@@ -74,7 +76,10 @@ export function startTurn({ base, img, stage, on, frame, reopen, end }) {
   level.setAttribute("aria-label", "Zoom back to the whole page");
   const zoomIn = el("button", { className: "mini", id: "zoom-in", type: "button", textContent: "+" });
   zoomIn.setAttribute("aria-label", "Zoom in");
-  const keys = el("footer", { className: "turnkeys", id: "turnkeys" }, type, zoomOut, level, zoomIn);
+  // A saved card (the turn event's savedCard): filled into the card number field the person tapped.
+  const fill = el("button", { className: "mini turn-fill", id: "turn-fill", type: "button", textContent: "Fill saved card", hidden: true });
+  fill.setAttribute("aria-label", "Fill saved card: tap the card number field first");
+  const keys = el("footer", { className: "turnkeys", id: "turnkeys" }, type, fill, zoomOut, level, zoomIn);
   const win = document.querySelector(".window");
   win.prepend(bar);
   win.append(keys);
@@ -104,6 +109,7 @@ export function startTurn({ base, img, stage, on, frame, reopen, end }) {
     tabs.replaceChildren(...scope.map((s) => el("option", { value: String(s.id), textContent: s.title || s.host || "Tab", selected: !!s.shown })));
     tabs.hidden = scope.length < 2;
     setAway(t.state === "off");
+    fill.hidden = t.savedCard !== true;
     if (live) { ready = true; send(); }
   }
   on("turn", onTurn);
@@ -122,6 +128,13 @@ export function startTurn({ base, img, stage, on, frame, reopen, end }) {
     // What was typed goes first: Done waits for the queue to empty.
     for (let i = 0; i < 50 && (out || pending.length) && !stopped; i++) await new Promise((r) => setTimeout(r, 100));
     if (await act("turn-done", {})) { stop(); end(); } else done.disabled = stopped;
+  });
+  // Fill saved card: what was typed goes first (the queue empties), then the helper's two keys.
+  fill.addEventListener("click", async () => {
+    fill.disabled = true;
+    for (let i = 0; i < 50 && (out || pending.length) && !stopped; i++) await new Promise((r) => setTimeout(r, 100));
+    if (!stopped) await act("turn-fill-card", {});
+    fill.disabled = stopped;
   });
   tabs.addEventListener("change", () => act("turn", { show: tabs.value }));
   back.addEventListener("click", () => { const first = info?.scope?.[0]; if (first) act("turn", { show: String(first.id) }); });
@@ -343,7 +356,7 @@ export function startTurn({ base, img, stage, on, frame, reopen, end }) {
     clearTimeout(retry);
     if (g) clearTimeout(g.timer);
     pending = []; out = null;
-    for (const c of [type, done, tabs, back]) c.disabled = true;
+    for (const c of [type, done, tabs, back, fill]) c.disabled = true;
     setAway(false);
   }
 

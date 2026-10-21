@@ -105,6 +105,9 @@ export function createContext({ personTabs = createPersonTabs(), config, log, ch
     profiles: () => profiles.list(),
     // The person's profile operations on the sessions page (sessions/profile-owner.mjs): owner-only routes.
     profileOps: profiles.owner,
+    // The running browser's saved card (spec server-mode B12): { asked, on, store, line }, or null
+    // when none runs or its profile asks for none. on: payment autofill is on (a real key store).
+    savedCard: () => profiles.savedCard(),
     // The open compatibility items a hand-off reports apart from the site's own verification
     // (daemon/yourturn.mjs, spec server-mode B14): the running profile's coherence items and the
     // session's network verdict and coherence items (rules/coherence.mjs), PairBrowse's to fix.

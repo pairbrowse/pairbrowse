@@ -1,21 +1,26 @@
 // The Tools tab's routes on the owner's port (the owner only): this session's downloads, the
 // recordings this helper saved, the hand-offs waiting for the person, and diagnostics. Files go by
-// id (daemon/toolstab.mjs), never a path. startLiveView (liveview.mjs) mounts them.
+// id (daemon/toolstab.mjs), never a path. Also the Profile panel's saved card (spec server-mode
+// B12): what the running browser's profile asked and got, and "Add a saved card", which opens the
+// engine's payment methods page as the person's own tab (no agent, guest or hand-off reaches it) and
+// shows it in the owner's live view. startLiveView (liveview.mjs) mounts them.
 import { pathToFileURL } from "node:url";
 import { ownTitle } from "../../daemon/tablabels.mjs";
 import { fileStill, openable, downloadMarked, openWay, confirmFor, isDocument } from "../../daemon/toolstab.mjs";
 import { within } from "../../util.mjs";
 import { readCapped, parseJson, json, plain, BODY_MAX } from "../http.mjs";
 import { hostOf } from "../tabs.mjs";
+import { PAYMENT_SETTINGS, isPaymentSettings } from "../../../ui/urls.js";
 
 const TOOL_ID = /^[0-9a-f]{12}$/; // a download, recording or hand-off (daemon/toolstab.mjs): never a path
 
 // tools: the helper's Tools tab (startLiveView's tools), or null. mask(text): as results are
 // masked. recordState(): the recorder's state. idOf(page): a tab's id. bringTabForward(page).
 // previewOf: person's tab -> its document preview's download id (filled here, read by the tab lists).
-// viewers, clients: the live view's open streams; joinersNow(), guests(): who is here.
+// viewers, clients: the live view's open streams; joinersNow(), guests(): who is here. show(page):
+// the live view's picture on that tab.
 // Returns the routes and what the Tools tab's events use (maskedDownload, handoffItem).
-export function createToolsRoutes({ tools, mask, recordState, idOf, bringTabForward, previewOf, viewers, clients, joinersNow, guests }) {
+export function createToolsRoutes({ tools, mask, recordState, idOf, bringTabForward, previewOf, viewers, clients, joinersNow, guests, show = async () => {} }) {
   // The Tools tab's routes: 404 without the helper's tools.
   function toolsOn() { return !!tools; }
   const FILE_CHANGED = "That file was moved, replaced or deleted since it was saved.";
@@ -77,7 +82,34 @@ export function createToolsRoutes({ tools, mask, recordState, idOf, bringTabForw
       joined: guests().map(({ label, role }) => ({ label, role })), errors: d.errors };
   }
 
+  // The saved card as the Profile panel shows it: { asked, on, store, line } (no card data: there
+  // is none here), { asked: false } when the running browser's profile asks for none.
+  const cardState = () => {
+    const c = tools?.savedCard?.() || null;
+    return c?.asked ? { asked: true, on: c.on === true, store: String(c.store || ""), line: String(c.line || "") } : { asked: false, on: false, store: "", line: "" };
+  };
+  let cardTab = null; // the payment methods tab "Add a saved card" opened, while it is open
+  async function addCard({ req, res }) {
+    if ((await readCapped(req, res, BODY_MAX.approve)) === null) return;
+    const c = cardState();
+    if (!c.on) return json(res, 409, { error: c.asked ? `Not now: ${c.line}. Use the native PairBrowse build with its key file (or the macOS Keychain), then start the session again.` : "This session's browser profile has no saved card. Turn it on in the profile (payments.savedCard), then start the session again." });
+    // A recording takes whatever is in front: the card would be in it.
+    if (recordState?.()?.recording) return json(res, 409, { error: "Stop the recording first: it would record the card as you type it." });
+    if (typeof tools.openTab !== "function") return plain(res, 404);
+    if (!(cardTab && !cardTab.isClosed() && isPaymentSettings(cardTab.url()))) {
+      const r = await tools.openTab(PAYMENT_SETTINGS, () => { cardTab = null; });
+      if (!r?.ok || !r.page) return json(res, 409, { error: "The payment methods page couldn't be opened. Try again, or open the browser's settings in its window." });
+      cardTab = r.page;
+    } else await within(3000, bringTabForward(cardTab));
+    await within(3000, Promise.resolve(show(cardTab)).catch(() => {}));
+    json(res, 200, { ok: true });
+  }
+
   const routes = [
+    // The Profile panel's saved card (the owner only, right "profile"): its state, and "Add a saved
+    // card" (B12). Request bodies are capped and otherwise ignored.
+    { method: "GET", path: "saved-card.json", right: "profile", needs: toolsOn, handler: ({ res }) => json(res, 200, cardState()) },
+    { method: "POST", path: "saved-card", right: "profile", needs: toolsOn, handler: addCard },
     // The Tools tab (the owner only): this session's downloads, the recordings this helper saved,
     // the hand-offs waiting for the person, and diagnostics. Files go by id (daemon/toolstab.mjs);
     // request bodies are capped and otherwise ignored (but a download's Open reads { confirm: true }),

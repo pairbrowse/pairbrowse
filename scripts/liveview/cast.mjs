@@ -2,7 +2,7 @@
 // and one sharp still once the page settles, following the tab Claude works in. Its state is one
 // explicit object (cast.state) the rest of the live view reads; only this module changes it.
 import { keepFocus } from "../focus.mjs";
-import { hiddenFromLiveView } from "../../ui/urls.js";
+import { hiddenFromLiveView, isPaymentSettings } from "../../ui/urls.js";
 import { FRAME_EVERY_MS } from "../../ui/limits.js";
 
 const SETTLE_MS = 180; // the page is still this long: send one sharp frame
@@ -72,7 +72,10 @@ export function createCast({ getContext, currentUrl, personTab, replayer, broadc
   let casting = null; // the CDP session whose frames are taken (set before its cast starts)
   const show = (page) => { state.switching++; return showQueue(() => showNow(page)).finally(() => { state.switching--; }); };
   async function showNow(page) {
-    if (isClosed() || state.shown?.page === page || hiddenFromLiveView(page.url())) return;
+    // Never the browser's own pages, but the payment methods page the person opened as their own
+    // tab ("Add a saved card"): a person's own tab reaches the owner's streams only (guest frames,
+    // hand-off viewers and their input never get it).
+    if (isClosed() || state.shown?.page === page || (hiddenFromLiveView(page.url()) && !(personTab(page) && isPaymentSettings(page.url())))) return;
     if (state.shown) {
       const old = state.shown.cdp;
       // Switching away from a person's own tab: its last picture goes with it.

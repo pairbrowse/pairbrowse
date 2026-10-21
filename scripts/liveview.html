@@ -82,6 +82,12 @@
           <span class="away-text"><span id="away-label">Away: send steps handed to you to your phone</span><small id="away-state" role="status" aria-live="polite"></small></span>
           <button class="away-switch" id="away-on" type="button" role="switch" aria-checked="false" aria-labelledby="away-label" aria-describedby="away-state" disabled><i aria-hidden="true"></i></button>
         </div>
+        <section class="card-row" id="card-row" aria-labelledby="card-h" hidden>
+          <h3 id="card-h">Saved card</h3>
+          <p class="note" id="card-note"></p>
+          <button class="primary" id="card-add" type="button" hidden>Add a saved card</button>
+          <p class="msg" id="card-msg" role="status" aria-live="polite"></p>
+        </section>
         <h3>Remembered details</h3>
         <p class="note">Used to fill forms. Claude adds what you tell it, and what gets filled in forms is kept here too. Passwords never are.</p>
         <div id="details"></div>

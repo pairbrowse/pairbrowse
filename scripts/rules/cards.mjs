@@ -16,9 +16,31 @@
 // on a card network counts like any other card.
 // Not detected: a contenteditable box, a closed shadow root, a card drawn on a canvas, a card number
 // split over unlabeled boxes, a field whose page doesn't answer in time.
+//
+// A saved card (spec server-mode B12): in a session whose browser has one, the browser's autofill
+// list opens on any of a card's fields, the name on the card too, and a key (an arrow, then Enter)
+// would pick the card. So there every key press an agent sends into a field with any cc-*
+// autocomplete token (AUTOFILL_TOKENS), or into a card or payment frame, is refused; and a key that
+// moves in or picks from the list (listKey: an arrow up or down, Page Up or Down, Enter) into any
+// text field of a form whose fields name a card without a cc-* token (CARD_NAME: by name, id,
+// placeholder, aria-label or label, as name="cardnumber"), since the browser's autofill knows card
+// fields by those too. Only the person fills the saved card, during a hand-off. The list itself is
+// the browser's own window, which no page click reaches. Not detected there: a card field the page
+// names only by nearby text (no label, name, id, placeholder or aria-label) or in words CARD_NAME
+// doesn't know (the browser's own field recognition is wider), besides the cases above.
 
 // The autocomplete tokens of a card field.
 export const CARD_TOKENS = ["cc-number", "cc-csc", "cc-exp", "cc-exp-month", "cc-exp-year"];
+// Every card token the browser's card autofill opens on (a saved-card session's key rule).
+export const AUTOFILL_TOKENS = [...CARD_TOKENS, "cc-name", "cc-given-name", "cc-additional-name", "cc-family-name", "cc-type"];
+
+// The names a card field goes by without a cc-* token (a saved-card session's list-key rule), as a
+// regular expression's source (it runs in the page, case-insensitive): the card number, the
+// security code and the expiry, in English and a few other languages.
+export const CARD_NAME = "card.?(?:number|num|no(?:[^a-z]|$)|nr)|cc.?(?:num|number|no(?:[^a-z]|$))|credit.?card|debit.?card|kartennummer|num[eé]ro.?de.?(?:la.?)?carte|n[uú]mero.?de.?(?:la.?)?tarjeta|numero.?(?:della.?)?carta|cvc|cvv|(?:^|[^a-z])csc(?:[^a-z]|$)|security.?code|card.?code|card.?verification|expir|exp.?(?:date|month|year|mm|yy)|mm.?\\/.?yy";
+// Whether a key moves in or picks from an open list (the browser's autofill list among them),
+// whatever is held with it: ArrowDown, ArrowUp, PageDown, PageUp, Enter.
+export const listKey = (key) => /^(?:ArrowDown|ArrowUp|PageDown|PageUp|Enter|NumpadEnter)$/i.test(String(key ?? "").split("+").at(-1));
 
 // [first digits from, to, lengths]: the card networks' number ranges.
 const NETWORKS = [
@@ -86,14 +108,17 @@ export const holdsCardNumber = (text) => cardNumbersIn(text).length > 0;
 export const cardToken = (autocomplete) => String(autocomplete ?? "").toLowerCase().split(/\s+/).find((t) => CARD_TOKENS.includes(t)) || "";
 
 // What each card field signal is called in a refusal.
-const TOKEN_WORDS = { "cc-number": "a card number field", "cc-csc": "a card security code field", "cc-exp": "a card expiry field", "cc-exp-month": "a card expiry field", "cc-exp-year": "a card expiry field" };
+const TOKEN_WORDS = { "cc-number": "a card number field", "cc-csc": "a card security code field", "cc-exp": "a card expiry field", "cc-exp-month": "a card expiry field", "cc-exp-year": "a card expiry field",
+  "cc-name": "a name on card field", "cc-given-name": "a name on card field", "cc-additional-name": "a name on card field", "cc-family-name": "a name on card field", "cc-type": "a card type field" };
 export const SIGNALS = {
   token: (t) => `${TOKEN_WORDS[t] || "a card field"} (autocomplete ${t})`,
   cardFrame: "a field inside a frame that holds card fields",
   payFrame: "a field inside another site's payment frame (allow=\"payment\")",
+  cardForm: "a field of a form whose fields name a card",
   number: "the text holds a card number",
   secret: (name) => `${name} holds a card number`,
   key: (kind, field) => `${kind === "paste" ? "a paste" : "a digit key"} into ${field}`,
+  savedCardKey: (key, field) => `${String(key).slice(0, 40)} into ${field} in a session with a saved card`,
 };
 
 // Whether a key press types into a field as a card's digits do, or pastes into it: a digit (with

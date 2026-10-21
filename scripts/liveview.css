@@ -455,6 +455,7 @@ body[data-role="turn"] .frame { transform-origin: 0 0; }
 .turnkeys .type-box { flex: 1; height: 44px; font-size: 1rem; }
 .turnkeys .mini { min-width: 44px; height: 44px; color: var(--ink-2); font-size: var(--fs-3); }
 .turnkeys .turn-level { font-variant-numeric: tabular-nums; }
+.turnkeys .turn-fill { padding-inline: 10px; color: var(--accent-ink); white-space: nowrap; }
 
 /* Network (ui/network.js) in the Profile drawer, the owner's only: proxies, the form, a test's
    result, each session's choice. */

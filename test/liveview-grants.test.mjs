@@ -73,7 +73,7 @@ function readStream(port, path, { host = `127.0.0.1:${port}`, origin } = {}) {
 
 // A live view with a grant table on clocks the test moves, an audit file, and card covers that
 // mark what they cover.
-async function setup({ urls = ["https://shop.example/pay", "https://other.example/"], agentAt = 1, hosts = [], inviteOrigin = null } = {}) {
+async function setup({ urls = ["https://shop.example/pay", "https://other.example/"], agentAt = 1, hosts = [], inviteOrigin = null, tools = null } = {}) {
   const tabs = fakeTabs(urls);
   const clock = { t: 1_800_000_000_000, m: 1_000 };
   const file = join(mkdtempSync(join(tmpdir(), "pb-lvgrants-")), "audit.jsonl");
@@ -82,7 +82,7 @@ async function setup({ urls = ["https://shop.example/pay", "https://other.exampl
   const invites = createInvites();
   let agentUrl = urls[agentAt];
   const covers = { want: () => {}, picture: async (_page, img) => `COVERED-${img}` };
-  const view = await startLiveView({ getContext: async () => tabs.ctx, currentUrl: async () => agentUrl, invites, grants, covers, hosts, inviteOrigin });
+  const view = await startLiveView({ getContext: async () => tabs.ctx, currentUrl: async () => agentUrl, invites, grants, covers, hosts, inviteOrigin, ...(tools ? { tools: typeof tools === "function" ? tools(tabs) : tools } : {}) });
   view.setSession({ name: "default", where: "Local" });
   const key = view.url.split("/").at(-2);
   const audited = () => { try { return readFileSync(file, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)); } catch { return []; } };
@@ -221,7 +221,8 @@ test("a second concurrent stream is 409; a reconnect after a drop works within t
     assert.equal(again.status, 200, "the same device comes back with the same key");
     await until(() => eventsIn(again.text(), "turn").length);
     const turn = eventsIn(again.text(), "turn")[0];
-    assert.deepEqual(Object.keys(turn).sort(), ["action", "expiresAt", "host", "id", "scope", "state"]);
+    assert.deepEqual(Object.keys(turn).sort(), ["action", "expiresAt", "host", "id", "savedCard", "scope", "state"]);
+    assert.equal(turn.savedCard, false, "no saved card: the viewer offers no Fill saved card");
     assert.equal(turn.host, "shop.example");
     assert.equal(turn.action, "payment");
     again.close();
@@ -404,4 +405,67 @@ test("after Done the picture goes back to the agent's tab although its address n
     assert.ok(await until(() => turn.ended()));
     assert.ok(await until(async () => (await shownUrl()) === "https://other.example/"), "the picture follows the agent again");
   } finally { s.view.close(); }
+});
+
+// "Add a saved card" (spec server-mode B12): the browser's payment methods page is the one browser
+// page the live view shows, and only as a person's own tab, to the owner's streams only.
+test("cast: a person's own tab at the payment methods page is shown; the same address in another tab, other settings pages and PairBrowse's own pages stay hidden", async () => {
+  const { createCast } = await import("../scripts/liveview/cast.mjs");
+  const ctx = { pages: () => [] };
+  ctx.newCDPSession = async (page) => Object.assign(new EventEmitter(), { page, send: async () => ({}), detach: async () => {} });
+  const tab = (url) => Object.assign(new EventEmitter(), { url: () => url, context: () => ctx, bringToFront: async () => {}, isClosed: () => false });
+  const person = new Set();
+  const mine = (url) => { const p = tab(url); person.add(p); return p; };
+  const cast = createCast({ getContext: async () => ctx, currentUrl: async () => "", personTab: (p) => person.has(p), replayer: { attach: async () => {}, startCast: async () => {}, resetFit() {} },
+    broadcast: () => {}, tabsInfo: async () => [], viewers: new Set(), watching: () => false, isClosed: () => false, log: () => {} });
+  const shows = async (page) => { await cast.show(page); return cast.state.shown?.page === page; };
+  assert.equal(await shows(tab("https://shop.example/")), true, "a web tab");
+  assert.equal(await shows(mine("chrome://settings/payments")), true, "the person's own payment methods tab");
+  assert.equal(await shows(mine("chrome://settings/payments/")), true);
+  for (const [why, page] of [
+    ["the same address in a tab that isn't the person's", tab("chrome://settings/payments")],
+    ["another settings page, the person's own", mine("chrome://settings/passwords")],
+    ["the settings start page", mine("chrome://settings/")],
+    ["an address that only starts the same", mine("chrome://settings/paymentsx")],
+    ["PairBrowse's own page", mine("pairbrowse://sessions/")],
+    ["PairBrowse's own page, the other spelling", mine("chrome://pairbrowse/sessions/")],
+  ]) assert.equal(await shows(page), false, why);
+  cast.close();
+});
+
+test("the payment methods tab's frames reach the owner's streams only: never an invite guest or a hand-off viewer", async () => {
+  const person = new Set();
+  let cardTab = null;
+  const s = await setup({ tools: (tabs) => ({
+    personTab: (p) => person.has(p),
+    savedCard: () => ({ asked: true, on: true, store: "key-file", line: "Saved card: on" }),
+    openTab: async (url) => { cardTab = tabs.open(url, null); person.add(cardTab); return { ok: true, page: cardTab }; },
+  }) });
+  const w = s.invites.create({ role: "watch", label: "W" });
+  const streams = [];
+  const frame = (page, img) => s.sessionOf(page).emit("Page.screencastFrame", { data: img, metadata: { deviceWidth: 800, deviceHeight: 600 }, sessionId: 1 });
+  try {
+    const owner = await readStream(s.port, `/${s.key}/events`);
+    const guest = await readStream(s.port, `/${w.key}/events`);
+    streams.push(owner, guest);
+    assert.ok(await until(() => s.sessionOf(s.pages[1])), "the agent's tab on screen first");
+    assert.equal((await request(s.port, "POST", `/${w.key}/saved-card`, { body: {} })).status, 403, "the owner's only");
+    assert.equal((await request(s.port, "POST", `/${s.key}/saved-card`, { body: {} })).status, 200);
+    assert.ok(cardTab && await until(() => s.sessionOf(cardTab)), "shown");
+    frame(cardTab, "CARD-1");
+    assert.ok(await until(() => eventsIn(owner.text(), "frame").some((f) => f.img === "CARD-1")), "the owner sees the page they add the card on");
+    await wait(50);
+    assert.equal(guest.text().includes("CARD-1"), false, "never an invite guest, covered or not");
+    // A hand-off viewer: its stream gets no frame of the person's tab either, though it is on screen.
+    const t = await s.taken(s.pages[0]);
+    const turn = await readStream(s.port, `/${t.viewKey}/events`);
+    streams.push(turn);
+    assert.ok(await until(() => eventsIn(turn.text(), "turn").length));
+    assert.equal((await request(s.port, "POST", `/${s.key}/saved-card`, { body: {} })).status, 200, "a second tap brings the same tab forward");
+    assert.ok(await until(() => s.sessionOf(cardTab) && !s.sessionOf(cardTab).detached));
+    frame(cardTab, "CARD-2");
+    await wait(80);
+    for (const x of [guest, turn]) assert.equal(/CARD-/.test(x.text()), false);
+    assert.equal(s.sessions.filter((c) => c.page === cardTab).some((c) => c.calls.some(([m]) => m === "Input.dispatchKeyEvent")), false, "no input reached it");
+  } finally { for (const x of streams) x.close(); s.view.close(); }
 });

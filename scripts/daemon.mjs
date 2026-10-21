@@ -541,7 +541,7 @@ const sharing = createSharing({
     // or with its app (liveview.mjs fileAction).
     tools: { downloads, recordings, handoffs, diagnostics, open: (p, how) => openFile(p, how),
       personTab: (p) => personTabs.has(p), engine: () => context.browserInUse(), platform: process.platform,
-      openTab: (url, onClose) => context.openForPerson(url, { onClose }), preview: (e, kind) => previews.make(e, kind) },
+      openTab: (url, onClose) => context.openForPerson(url, { onClose }), preview: (e, kind) => previews.make(e, kind), savedCard: () => context.savedCard() },
   },
 });
 // Sessions joined from here: their tabs, followed in this browser.
@@ -633,7 +633,7 @@ const outlines = createOutlines({ mask: output.mask });
 // Hand-offs to the person: the badge and the Tools tab as before, and their channels when hand-offs go there (daemon/yourturn.mjs).
 const yourTurn = createYourTurn({ config, grants, notifier, audit, handoffs, journal, hud, log, hostNote, agentBy, saveTabs: () => context.saveTabs(), sessionName: () => context.sessionName(),
   linkFor: (key) => sharing.handoffLink(key), sends: () => handoffSends(config, { server: context.isServer() }), actionsIn: (p) => presence.didIn(p), // what the person did there: names only (B15)
-  turnFile: (s) => sessionFile(s, "turn.json"), keptAlive: () => context.keepAlive(), successorOf: (p) => context.successorOf(p), pagesNow: () => context.openPages(), compatibility: () => context.compatibility() }); // a restart's hand-offs come back (B16); setup problems reported apart (B14)
+  turnFile: (s) => sessionFile(s, "turn.json"), keptAlive: () => context.keepAlive(), successorOf: (p) => context.successorOf(p), pagesNow: () => context.openPages(), compatibility: () => context.compatibility(), savedCard: () => !!context.savedCard()?.on }); // a restart's hand-offs come back (B16); setup problems reported apart (B14); a saved card masks every tab (B12)
 const timeline = createTimeline({ dir: () => timelineDir(context.sessionName()), enabled: () => config.timeline !== false, cap: () => config.timelineCap, mask: output.mask, step: () => journal.step(), onNote: (text) => hud.addActivity(`Note: ${text}`, HOST, null), log });
 const serve = createServe({
   onRunStatus: (...a) => yourTurn.onRunStatus(...a), yourTurn, // a fast-mode run's hand-off step; hand-offs (B10 masking)

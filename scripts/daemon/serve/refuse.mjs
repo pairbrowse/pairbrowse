@@ -12,8 +12,8 @@ import { APPROVAL_TOOLS, approvalAsk, decide } from "../../rules/decide.mjs";
 import { clickClass } from "../../rules/clicks.mjs";
 import { activatingKey, contextAt, enterButtonLabel, riskAt, riskReason } from "../../runner.mjs";
 import { hostAllowed, RESERVED_RULE } from "../../rules/secrets.mjs";
-import { cardKey, cardRefusal, holdsCardNumber, SIGNALS } from "../../rules/cards.mjs";
-import { cardFieldAt, focusedCardField } from "../../runner/cards.mjs";
+import { cardKey, cardRefusal, holdsCardNumber, listKey, SIGNALS, AUTOFILL_TOKENS } from "../../rules/cards.mjs";
+import { cardFieldAt, focusedCardField, focusedCardForm } from "../../runner/cards.mjs";
 import { pathsIn } from "../../upload.mjs";
 import { within } from "../../util.mjs";
 import { originOf, sameWhere } from "../approvals.mjs";
@@ -69,7 +69,7 @@ export function tabRefusal(name, args = {}, { here = null, pages = [], personTab
 }
 
 export function createRefusals(conn, api) {
-  const { cap, clickApprovals, context, handOff, inUse, log, popups, secretNames, secrets, serverPage, serverUrl } = api;
+  const { cap, clickApprovals, context, handOff, inUse, log, popups, secretNames, secrets, serverPage, serverUrl, yourTurn = null } = api;
   const { approvedArgs, approvedWhere, recentRisk, refNames, remote, risks } = conn;
 
   // The PairBrowse rules every call passes first. Returns a refusal, or null.
@@ -175,6 +175,11 @@ export function createRefusals(conn, api) {
   // whoever's agent: a card number typed, filled or dropped as text (a saved password's value
   // counts as itself), and typing, choosing, dropping text, a digit key or a paste into a card
   // field (scripts/rules/cards.mjs, read by runner/cards.mjs). The refusal names the signal.
+  // In a session whose browser has a saved card on (B12, yourturn.mjs savedCard), any key press into
+  // a field the card's autofill opens on (any cc-* token, a card or payment frame) is refused too,
+  // and an arrow, Page Up or Down or Enter into a text field of a form whose fields name a card
+  // without a token (the browser knows those by name and label): an arrow and Enter there would
+  // pick the card, which only the person does, during a hand-off.
   async function cardProblem(name, args) {
     const values = secrets.get().values || {};
     const saved = secretNames();
@@ -187,8 +192,9 @@ export function createRefusals(conn, api) {
       if (holdsCardNumber(s)) return cardRefusal(SIGNALS.number);
     }
     const key = name === "browser_press_key" ? cardKey(args.key) : "";
+    const cardOn = name === "browser_press_key" && !!yourTurn?.savedCard?.();
     const targets = name === "browser_select_option" ? [args.target] : put.map(([t]) => t);
-    if (!targets.length && !key) return null;
+    if (!targets.length && !key && !cardOn) return null;
     const page = conn.actingIn || await serverPage();
     if (!page) return null;
     for (const t of [...new Set(targets)]) {
@@ -198,6 +204,12 @@ export function createRefusals(conn, api) {
     if (key) {
       const signal = await focusedCardField(page);
       if (signal) return cardRefusal(SIGNALS.key(key, signal));
+    }
+    if (cardOn) {
+      const signal = await focusedCardField(page, { tokens: AUTOFILL_TOKENS });
+      if (signal) return cardRefusal(SIGNALS.savedCardKey(args.key, signal));
+      const form = listKey(args.key) ? await focusedCardForm(page) : "";
+      if (form) return cardRefusal(SIGNALS.savedCardKey(args.key, form));
     }
     return null;
   }

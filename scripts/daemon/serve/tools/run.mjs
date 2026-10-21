@@ -71,6 +71,8 @@ export function createRunTool(conn, api) {
       status: (text, kind) => { hud.setBadge(text, kind).catch(() => {}); try { onRunStatus(participant, text, kind, page, myLabel()); } catch {} },
       // The hand-off a handoff step's status made, when it went to the person's channels (yourturn.mjs ended).
       turnEnded: () => api.yourTurn?.ended?.(page, participant) || null,
+      // A saved card on in this browser (yourturn.mjs savedCard, B12): the press step's key rule.
+      savedCard: () => !!api.yourTurn?.savedCard?.(),
       activity: (text) => hud.addActivity(text, myLabel(), page),
       cursor: (el, act) => hud.cursorTo(page, el, act, myLabel()),
       remember: facts.seenInForm,

@@ -45,6 +45,17 @@ test("the live view keeps out the browser's own pages, a joiner's picture page e
   assert.equal(navigationProblem("chrome://pairbrowse/screen/#0a1b2c3d"), `${BROWSER_PAGE_RULE} Open a web page (http or https) instead.`);
 });
 
+test("the payment methods page (Add a saved card, B12) is still the browser's own page: hidden from the live view but as the person's own tab, never an agent's", async () => {
+  const { PAYMENT_SETTINGS, isPaymentSettings } = await import("../ui/urls.js");
+  for (const url of [PAYMENT_SETTINGS, "chrome://settings/payments/", "chrome://settings/payments?x=1", "CHROME://settings/payments#a"]) {
+    assert.equal(isPaymentSettings(url), true, url);
+    assert.equal(hiddenFromLiveView(url), true, url);
+    assert.equal(isBrowserPage(url), true, url);
+    assert.ok(navigationProblem(url).startsWith(BROWSER_PAGE_RULE), url);
+  }
+  for (const url of ["chrome://settings/paymentsx", "chrome://settings/", "https://pay.example/settings/payments", "chrome://pairbrowse/settings#payments"]) assert.equal(isPaymentSettings(url), false, url);
+});
+
 test("browser_tabs lists without the browser's own pages, every other tab keeping its number", () => {
   const input = "### Result\n- 0: [A](http://a/)\n- 1: (current) [Choose a session](chrome://pairbrowse/picker)\n- 2: [Strip](chrome://pairbrowse.top-chrome/strip)\n- 3: [B](https://b/)\n";
   const out = hideBrowserTabs(input);

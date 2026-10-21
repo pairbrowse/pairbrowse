@@ -296,3 +296,34 @@ export function awaySwitch(btn, note, base) {
   });
   return { draw };
 }
+
+// The Profile panel's saved card (spec server-mode B12), the owner's only: what the running
+// browser's profile asked for and got (GET saved-card.json: { asked, on, line }), and "Add a saved
+// card", which opens the browser's payment methods page as the person's own tab and shows it here
+// (POST saved-card). Agents never open it; a hand-off fills the saved card with "Fill saved card".
+// box: its section (hidden while the profile asks for no saved card); note, btn, msg: its line, its
+// button and its answer line; base(): the live view address. Real clicks only. Returns { load }.
+export const CARD_WORDS = {
+  on: "On for this session. Card details are saved encrypted on the machine the browser runs on; only you fill them, during a hand-off. Claude never sees or types them.",
+  opened: "The payment methods page is open: add the card there.",
+};
+export function savedCardPanel(box, note, btn, msg, base) {
+  const say = (text, kind = "") => { msg.textContent = text; msg.dataset.kind = kind; };
+  function draw(c) {
+    box.hidden = !(c && c.asked === true);
+    if (box.hidden) return;
+    note.textContent = c.on === true ? CARD_WORDS.on : String(c.line || "");
+    btn.hidden = c.on !== true;
+  }
+  const load = () => (base() ? fetch(base() + "saved-card.json", { signal: AbortSignal.timeout(8000) }).then((x) => (x.ok ? x.json() : null)).then(draw, () => {}) : Promise.resolve());
+  btn.addEventListener("click", async (ev) => {
+    if (!ev.isTrusted || btn.disabled || !base()) return;
+    btn.disabled = true;
+    say("");
+    const r = await postJson(base() + "saved-card", {}).then(async (x) => ({ ok: x.ok, body: await x.json().catch(() => null) }), () => null);
+    btn.disabled = false;
+    if (r?.ok) say(CARD_WORDS.opened);
+    else say(r?.body?.error ? String(r.body.error) : UNREACHABLE_RETRY, "error");
+  });
+  return { load };
+}

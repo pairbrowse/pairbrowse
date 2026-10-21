@@ -2,14 +2,19 @@
 import { strongSignal } from "../../rules/clicks.mjs";
 import { within } from "../../util.mjs";
 import { activatingKey, enterButtonLabel, riskAt, riskReason } from "../risk.mjs";
-import { cardKey, cardRefusal, SIGNALS } from "../../rules/cards.mjs";
-import { focusedCardField } from "../cards.mjs";
+import { cardKey, cardRefusal, listKey, SIGNALS, AUTOFILL_TOKENS } from "../../rules/cards.mjs";
+import { focusedCardField, focusedCardForm } from "../cards.mjs";
 
-export async function press({ page, arg, i, steps, fail, run }) {
+export async function press({ page, arg, i, steps, hooks, fail, run }) {
   // A card's digits or a paste into a card field: the person's to enter (spec server-mode B13).
   const typing = cardKey(arg);
   const card = typing ? await focusedCardField(page) : "";
   if (card) return fail(cardRefusal(SIGNALS.key(typing, card)));
+  // A saved card on (B12, hooks.savedCard): no key at all into a field its autofill opens on, and
+  // no list key into a text field of a form whose fields name a card without a cc-* token.
+  const saved = !!hooks?.savedCard?.();
+  const autofill = (saved ? await focusedCardField(page, { tokens: AUTOFILL_TOKENS }) : "") || (saved && listKey(arg) ? await focusedCardForm(page) : "");
+  if (autofill) return fail(cardRefusal(SIGNALS.savedCardKey(arg, autofill)));
   const key = activatingKey(arg);
   // Enter right after a fill goes to the field typed last, as a person's would: the run's own
   // Tab (leaving each field to check it kept its value) moved the focus on.

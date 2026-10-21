@@ -95,7 +95,7 @@
   byte for byte the last one says so in a line instead of carrying the image again.
 - `phishingProtection`: `true` (default) stops a top-level page on a site from Phishing.Database's list of active phishing domains (MIT licence; fetched every 6 hours, checked on this computer by host name, nothing about your browsing sent anywhere) and shows a warning with Go back and Continue anyway. `false` turns it off.
 - `adBlocker`: `true` (default) turns on uBlock Origin Lite (`ddkjiahejlhfcafbddmgiahcphecmpfh`), which the PairBrowse browser app ships (builds whose manifest declares `adBlocker`, macOS): PairBrowse names the app's copy in the session profile's `External Extensions` folder and the browser checks and installs it, enabled. You can turn it off or remove it in the browser's extensions page; a removal sticks. It can read and change the pages it filters, as any ad blocker, and updates from the Chrome Web Store (each check tells the store its id and version). `false` removes PairBrowse's entry, and the browser removes the extension at its next start.
-- `safeStorage`: on macOS, `"file"` (default) gives the PairBrowse browser (build 150.0.7871.114-3 and later) a random Safe Storage password of this install's own, the key to its cookies and saved data, in the owner-only file `~/.pairbrowse/safe-storage-key`: no Keychain prompt, ever. The first start with it logs every session out of its sites once. `"keychain"` uses the macOS Keychain instead (each new build signed without an Apple Team ID asks once). An older build keeps the driver's mock keychain (a fixed test password). Switching between `"file"` and `"keychain"`, or deleting the file, signs every session out again: the keys differ. On Linux, a native build declaring it uses the same key file (made and checked the same way) on top of `--password-store=basic`, so never a keyring prompt; `"keychain"` changes nothing there. Windows keeps the browser's own default.
+- `safeStorage`: on macOS, `"file"` (default) gives the PairBrowse browser (build 150.0.7871.114-3 and later) a random Safe Storage password of this install's own, the key to its cookies and saved data, in the owner-only file `~/.pairbrowse/safe-storage-key`: no Keychain prompt, ever. The first start with it logs every session out of its sites once. `"keychain"` uses the macOS Keychain instead (each new build signed without an Apple Team ID asks once). An older build keeps the driver's mock keychain (a fixed test password). Switching between `"file"` and `"keychain"`, or deleting the file, signs every session out again: the keys differ (a saved card is lost with them too). On Linux, a native build declaring it uses the same key file (made and checked the same way) on top of `--password-store=basic`, so never a keyring prompt; `"keychain"` changes nothing there. Windows keeps the browser's own default.
 - `timeline`: `false` keeps no timeline (default `true`). With it on, the pictures already sent to
   agents are also kept in the browser session's timeline folder under `~/.pairbrowse`, at most 200
   plus the ones you pinned (up to 50), deleted with the session. Nothing is captured for it; see
@@ -370,7 +370,22 @@ user's file, readable by others), the section says why and refuses a username or
   place of the `pairbrowse` block's (the `default` profile's are the block's own; the hardware
   keys still apply to every profile), its network id unless `network.sessions` names one, and
   its ad blocker choice over `adBlocker`. A setting the browser in use can't apply stops the
-  start, naming it. The session's browser folder is bound to its profile at its first start
+  start, naming it, except a saved card (below), whose safe side is off.
+
+  A saved card (`payments.savedCard`, `false` by default; a store profile's only, set with
+  `node scripts/profiles/cli.mjs edit <profile> --settings '{"payments":{"savedCard":true}}'`)
+  turns the browser's payment autofill on for that profile's sessions, and nothing else (addresses
+  and password saving stay off), only on the native build with a real key store for the card's
+  encryption: the macOS Keychain (`safeStorage: "keychain"`) or this install's key file
+  `~/.pairbrowse/safe-storage-key` (`"file"`, macOS and Linux). Otherwise (the open build, an
+  older build with the browser's fixed key, a key file that fails its check, Windows) autofill
+  stays off and `pairbrowse_status` says "saved card refused: this browser has no key store for
+  it" with the reason. The key file keeps the card safe in a copied profile folder, not from
+  programs running as you. Add the card with "Add a saved card" in your live view's Profile panel
+  (it opens the browser's payment methods page as your own tab); it is filled only by you, during a
+  hand-off, with the hand-off viewer's "Fill saved card" (tap the card number field first, while it is empty). While
+  it is on, every agent result from every tab is masked as a joiner's agent's is, and agents can't
+  press keys in a card's fields, nor arrows or Enter in a form whose fields name a card. The session's browser folder is bound to its profile at its first start
   (`pairbrowse-binding.json`): a start on any other profile is refused until the session is
   reassigned, which also drops the persona kept for the old profile (the native build saves a
   session's persona under its profile's id). A profile records the engine it first ran on: a

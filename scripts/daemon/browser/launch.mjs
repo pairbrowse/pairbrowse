@@ -10,6 +10,7 @@ import { profileDir, createSession, sweepTemporary } from "../../sessions.mjs";
 import { within } from "../../util.mjs";
 import { setQuietTabs } from "../../focus.mjs";
 import { shippedCrx } from "../../browser/adblock.mjs";
+import { safeStorageFor, savedCardFor } from "../../browser/safe-storage.mjs";
 import { MEASURING, nativeManifest } from "../../native-engine.mjs";
 import { NATIVE } from "../../native-pack.mjs";
 import { OPEN_ACCEPT_MS } from "../../opener.mjs";
@@ -230,9 +231,15 @@ export function createLaunch(st, deps, api) {
       step("graphics");
       // The profile settings PairBrowse needs (blank start tab, pinned and enabled side panel,
       // colors; see prepareProfile in browser.mjs), written before each launch. The ad blocker: the
-      // profile's choice, else config.json's.
+      // profile's choice, else config.json's. A saved card (spec server-mode B12): payment autofill
+      // on only when the profile asks and this launch's Safe Storage is a real key store (the
+      // Keychain or the per-install key file, checked now; browser/safe-storage.mjs), read once
+      // here and handed to launchOptions, so the browser gets the key store the preference counted on.
       const adBlockerOn = chosen.adBlocker ?? config.adBlocker !== false;
-      const firstRun = prepareProfile(profile(), undefined, { browserPages: st.ownPages, layout: config.layout, adBlocker: st.shell.adBlocker && adBlockerOn, adBlockerCrx: shippedCrx(st.shell.adBlockerCrx, next.executablePath) });
+      const storage = safeStorageFor(config, st.shell, paths.safeStorageKey);
+      const card = savedCardFor({ asked: chosen.savedCard === true, native, storage });
+      api.profiles.setSavedCard?.(card);
+      const firstRun = prepareProfile(profile(), undefined, { browserPages: st.ownPages, layout: config.layout, adBlocker: st.shell.adBlocker && adBlockerOn, adBlockerCrx: shippedCrx(st.shell.adBlockerCrx, next.executablePath), savedCard: card.on });
       step("prepare");
       // A side panel worker from another build (an update): the browser would keep running its
       // cached copy, so it's loaded anew from disk (resetPanelWorker in browser.mjs).
@@ -253,6 +260,7 @@ export function createLaunch(st, deps, api) {
         // with the profile's switches after browserArgs (its window in place of the fixed size).
         ...launchOptions(config, {
           shell: st.shell, firstRun, screen, profileArgs: chosen.switches,
+          storage, // the Safe Storage the saved card was decided on
           env: { ...process.env, ...(screen?.env || {}) },
           executablePath: next.executablePath || await ensureBrowser(browserType(), log),
           helper: helper && keyFile ? { origin: helper.origin, keyFile, ...(captureKeyFile ? { captureKeyFile } : {}) } : null,

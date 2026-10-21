@@ -28,6 +28,8 @@
 //
 // While a grant is open on a tab, and while it is held, masked(page) is true: every agent's
 // results from it are masked as a joiner's agent's are and its pictures covered (B10, serve/result.mjs).
+// In a session whose browser has a saved card on (B12, savedCard()), that holds for every tab, not
+// only during a hand-off: agents never read or see what autofill put in a page.
 // Nothing typed by the person passes through here: messages and audit lines carry words from
 // fixed lists, host notes and the goal log fixed sentences.
 //
@@ -95,9 +97,10 @@ const entryOf = (e) => (e && typeof e === "object" && /^[0-9a-f]{8}$/.test(e.id)
 // turn.json (sessionFile), or null to keep nothing (B16). keptAlive(): whether the browser comes
 // back by itself after a close (server.keepAlive). successorOf(page): the tab a closed one came back
 // as. pagesNow(): the open tabs. actionsIn(page): what people did in a tab, names only (presence didIn).
+// savedCard(): whether the running browser has a saved card on (context.savedCard, B12).
 export function createYourTurn({ config, grants, notifier, sends, handoffs, journal, saveTabs = async () => ({}), hostNote = () => {}, audit = null, hud, sessionName, linkFor = async () => null,
   agentBy = (p, color = "") => ({ label: "Agent", color }), log = () => {}, turnMs = () => testMs("TURN_MS", 0), timers = { set: setTimeout, clear: clearTimeout }, now = Date.now,
-  turnFile = () => null, keptAlive = () => false, successorOf = () => null, pagesNow = async () => [], actionsIn = () => "", compatibility = () => [] }) {
+  turnFile = () => null, keptAlive = () => false, successorOf = () => null, pagesNow = async () => [], actionsIn = () => "", compatibility = () => [], savedCard = () => false }) {
   const turns = new Map(); // grant id -> { id, key, participant, page, action, host, session, expiresAt, sent, timer, reminded }
   // B16: grant id -> { entry (turn.json's), session, page, participant, waiting }: waiting, the
   // restart that ended it ("browser-restarted", "helper-stopped") while it may come back.
@@ -378,8 +381,12 @@ export function createYourTurn({ config, grants, notifier, sends, handoffs, jour
       const own = participant ? [...turns.values()].find((t) => t.key === `status:${participant}` || t.key === `run:${participant}`) : null;
       return own ? grants.ended(own.page) : page ? grants.ended(page) : null;
     },
-    // Whether agents' results from page are masked and its pictures covered (B10).
-    masked: (page) => !!page && (grants.inScope(page) || grants.held(page)),
+    // Whether agents' results from page are masked and its pictures covered (B10); in a saved-card
+    // session every tab's are (B12).
+    masked: (page) => !!page && (savedCard() === true || grants.inScope(page) || grants.held(page)),
+    // Whether the running browser has a saved card on (B12): agents' key presses into a card's
+    // autofill fields are refused then (serve/refuse.mjs, fast mode's press step).
+    savedCard: () => savedCard() === true,
     // The session's tabs are back after a launch (B16): each hand-off a restart cut short gets one
     // replacement grant on the tab that came back, with the same deadline, or its ended message.
     // After a helper restart the session's turn.json is read once.

@@ -41,7 +41,8 @@ test("CONNECT with Basic and SOCKS5 read ip and loc; SOCKS5 sends address type 3
   noCredential(wrong);
   assert.ok(!wrong.problem.includes("not-the-one"));
 
-  // SOCKS5: the check host as a name (type 3), an address as type 1; no credentials ever (U4).
+  // SOCKS5: the check host as a name (type 3), an address as type 1; without auth only "no
+  // authentication" is offered.
   const socks = keep(await socks5Proxy({ upstream: trace.port }));
   assert.deepEqual(await probeEgress({ proxy: via("socks5", socks.port), checkUrl: CHECK, extraCa: pki.ca }), { ok: true, ip: "203.0.113.10", loc: "US" });
   assert.deepEqual(socks.log.at(-1), { methods: [0], atyp: 3, host: "trace.test", port: 443 });
@@ -49,12 +50,28 @@ test("CONNECT with Basic and SOCKS5 read ip and loc; SOCKS5 sends address type 3
   const socksPlain = keep(await socks5Proxy({ upstream: plain.port }));
   assert.deepEqual(await probeEgress({ proxy: via("socks5", socksPlain.port), checkUrl: "http://192.0.2.1:8080/t" }), { ok: true, ip: "2001:db8::5", loc: "DE" });
   assert.deepEqual(socksPlain.log.at(-1), { methods: [0], atyp: 1, host: "192.0.2.1", port: 8080 });
-  const before = socks.log.length;
-  const refused = await probeEgress({ proxy: via("socks5", socks.port), checkUrl: CHECK, auth: { username: USER, password: PASS } });
-  assert.equal(refused.ok, false);
-  assert.match(refused.problem, /SOCKS5 proxy with a username and password isn't supported yet/);
-  assert.equal(socks.log.length, before, "nothing is sent to the proxy");
-  noCredential(refused);
+  // With auth the greeting offers both methods; the credentials go only when the proxy picks
+  // username/password (RFC 1929), and a proxy taking "no authentication" never sees them.
+  const open = await probeEgress({ proxy: via("socks5", socks.port), checkUrl: CHECK, auth: { username: USER, password: PASS }, extraCa: pki.ca });
+  assert.deepEqual(open, { ok: true, ip: "203.0.113.10", loc: "US" });
+  assert.deepEqual(socks.log.at(-1), { methods: [0, 2], atyp: 3, host: "trace.test", port: 443 });
+  const strict = keep(await socks5Proxy({ upstream: trace.port, auth: { username: USER, password: PASS } }));
+  assert.deepEqual(await probeEgress({ proxy: via("socks5", strict.port), checkUrl: CHECK, auth: { username: USER, password: PASS }, extraCa: pki.ca }), { ok: true, ip: "203.0.113.10", loc: "US" });
+  assert.deepEqual(strict.log.at(-1), { methods: [0, 2], atyp: 3, host: "trace.test", port: 443, username: USER, authorized: true });
+  // The wrong password, and none at all: refused in words, the credential nowhere.
+  const wrongSocks = await probeEgress({ proxy: via("socks5", strict.port), checkUrl: CHECK, auth: { username: USER, password: "not-the-one" }, extraCa: pki.ca });
+  assert.deepEqual([wrongSocks.ok, wrongSocks.step], [false, "socks5"]);
+  assert.match(wrongSocks.problem, /^proxy 127\.0\.0\.1:\d+: refused the username and password$/);
+  noCredential(wrongSocks);
+  assert.ok(!wrongSocks.problem.includes("not-the-one"));
+  const noneSocks = await probeEgress({ proxy: via("socks5", strict.port), checkUrl: CHECK, extraCa: pki.ca });
+  assert.match(noneSocks.problem, /asks for a username and password; set "auth": true/);
+  assert.deepEqual(strict.log.at(-1).methods, [0]);
+  for (const bad of [{ username: "", password: PASS }, { username: USER, password: "x".repeat(256) }]) {
+    const r = await probeEgress({ proxy: via("socks5", strict.port), checkUrl: CHECK, auth: bad, extraCa: pki.ca });
+    assert.match(r.problem, /must each be 1 to 255 bytes/);
+    noCredential(r);
+  }
 });
 
 test("https: proxy works and an untrusted certificate is refused", { skip: noOpenssl }, async () => {
@@ -105,7 +122,8 @@ test("hung or malformed proxies end within bound without the credential", async 
   const denied = keep(await garbageProxy("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n"));
   assert.match((await probeEgress({ proxy: via("http", denied.port), checkUrl: CHECK, timeoutMs: 2000 })).problem, /refused the tunnel \(status 403\)/);
   const wantsAuth = keep(await garbageProxy(Buffer.from([5, 0xff]).toString("latin1")));
-  assert.match((await probeEgress({ proxy: via("socks5", wantsAuth.port), checkUrl: CHECK, timeoutMs: 2000 })).problem, /wants a username and password/);
+  assert.match((await probeEgress({ proxy: via("socks5", wantsAuth.port), checkUrl: CHECK, timeoutMs: 2000 })).problem, /asks for a username and password; set "auth": true/);
+  assert.match((await probeEgress({ proxy: via("socks5", wantsAuth.port), checkUrl: CHECK, auth, timeoutMs: 2000 })).problem, /takes neither "no authentication" nor a username and password/);
 });
 
 test("the answer: status, redirects, chunked and cut bodies, no ip line; direct probes", async () => {

@@ -10,14 +10,12 @@
 // edited entry or the block with a problem (checkNetwork) is refused whole, nothing written.
 //
 // Pure; Node's standard library only.
-import { checkNetwork, parseServer, sessionShown, NETWORK_ID, SCHEMES, SOCKS5_AUTH } from "./config.mjs";
+import { checkNetwork, parseServer, sessionShown, NETWORK_ID, SCHEMES } from "./config.mjs";
 import { proxySecretNames } from "./credentials.mjs";
 import { RESERVED_MIN } from "../rules/secrets.mjs";
 
 // The proxy types a person picks from (the schemes config.json takes).
 export const PROXY_TYPES = SCHEMES;
-// The U4 refusal as Settings says it.
-export const SOCKS5_AUTH_REFUSAL = `${SOCKS5_AUTH[0].toUpperCase()}${SOCKS5_AUTH.slice(1)}.`;
 // A session's choice: the default (no entry in network.sessions), direct (null) or a proxy (its id).
 export const CHOICES = ["default", "direct", "proxy"];
 // Session names as sessions.mjs validName takes them; clean sessions are never kept in the map.
@@ -114,7 +112,6 @@ export function readProxyForm(op, { needId = true } = {}) {
   const u = cred(op.username, "username"), p = cred(op.password, "password");
   if (u.error || p.error) return { error: u.error || p.error };
   if (!auth && (u.value || p.value)) return { error: "Turn on \"Needs a username and password\" to save them, or leave them empty." };
-  if (auth && parsed.scheme === "socks5") return { error: SOCKS5_AUTH_REFUSAL };
   return { id: id ?? null, server: parsed.server, scheme: parsed.scheme, host: parsed.host, port: parsed.port, auth, username: u.value, password: p.value };
 }
 

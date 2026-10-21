@@ -97,10 +97,11 @@ test("wrong values in a proxy entry are refused with the key and stop only the s
   assert.deepEqual(checkNetwork({ proxies: { ["a".repeat(34)]: { server: "http://h.example:1" } } }).warnings, []);
 });
 
-test("SOCKS5 with auth refused (U4); without, it passes", () => {
+test("SOCKS5 with auth passes like HTTP (its username and password go through the native build's auth file, RFC 1929); without, too", () => {
   const r = checkNetwork({ proxies: { s: { server: "socks5://203.0.113.10:1080", auth: true }, t: { server: "socks5://203.0.113.10:1080" } } });
-  assert.match(r.proxyProblems.s, /SOCKS5 proxy with a user name and password isn't supported yet; use an HTTP or HTTPS proxy/);
-  assert.ok(r.network.proxies.t);
+  assert.deepEqual(r.proxyProblems, {});
+  assert.equal(r.network.proxies.s.auth, true);
+  assert.equal(r.network.proxies.t.auth, false);
 });
 
 test("strict mode allows only loopback bypasses; with strict false a host or range may be bypassed", () => {

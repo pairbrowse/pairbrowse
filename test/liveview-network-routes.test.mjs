@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { startLiveView, createInvites, roleMay } from "../scripts/liveview.mjs";
 import { secretStore, loadSecrets } from "../scripts/rules/secrets.mjs";
 import { createNetworkSettings, readConfigFile, localeOf, TEST_NOTE } from "../scripts/liveview/network.mjs";
-import { networkChange, networkSummary, readProxyForm, SOCKS5_AUTH_REFUSAL } from "../scripts/net/settings.mjs";
+import { networkChange, networkSummary, readProxyForm } from "../scripts/net/settings.mjs";
 import { networkFor, launchPart } from "../scripts/net/config.mjs";
 import { CATALOG } from "../scripts/tools/catalog.mjs";
 import { navigationProblem } from "../scripts/rules/policy.mjs";
@@ -151,20 +151,16 @@ test("the password goes to secrets.env and never back out in an answer, event or
   } finally { events.close(); v.close(); }
 });
 
-test("a SOCKS5 proxy with a username is refused with the U4 sentence; without one it is added", async () => {
+test("a SOCKS5 proxy with a username is added like an HTTP one, its credentials saved; without one too", async () => {
   const s = setup();
   const { v, key } = await view(s.network);
   try {
-    const r = await request(v.port, "POST", `/${key}/network`, { body: { op: "add", id: "socks-a", type: "socks5", host: "198.51.100.4", auth: true, username: USERNAME, password: PASSWORD } });
-    assert.equal(r.status, 409);
-    assert.equal(JSON.parse(r.text).error, SOCKS5_AUTH_REFUSAL);
-    assert.match(SOCKS5_AUTH_REFUSAL, /^A SOCKS5 proxy with a user name and password isn't supported yet/);
-    assert.equal(loadSecrets(s.secretsFile).values.PAIRBROWSE_PROXY_SOCKS_A_PASSWORD, undefined, "no secret saved");
-    assert.deepEqual(s.config(), {}, "config.json untouched");
-    // A test of the same is refused before anything is sent.
-    const t = await request(v.port, "POST", `/${key}/network`, { body: { op: "test", type: "socks5", host: "198.51.100.4", auth: true, username: USERNAME, password: PASSWORD } });
-    assert.equal(t.status, 409);
-    assert.equal(JSON.parse(t.text).error, SOCKS5_AUTH_REFUSAL);
+    const r = await request(v.port, "POST", `/${key}/network`, { body: { op: "add", id: "socks-b", type: "socks5", host: "198.51.100.5", auth: true, username: USERNAME, password: PASSWORD } });
+    assert.equal(r.status, 200, r.text);
+    assert.equal(s.config().network.proxies["socks-b"].server, "socks5://198.51.100.5:1080");
+    assert.equal(s.config().network.proxies["socks-b"].auth, true);
+    assert.equal(loadSecrets(s.secretsFile).values.PAIRBROWSE_PROXY_SOCKS_B_PASSWORD, PASSWORD, "the secret saved");
+    assert.ok(!r.text.includes(PASSWORD), "never shown");
     const ok = await request(v.port, "POST", `/${key}/network`, { body: { op: "add", id: "socks-a", type: "socks5", host: "198.51.100.4", auth: false } });
     assert.equal(ok.status, 200, ok.text);
     assert.equal(s.config().network.proxies["socks-a"].server, "socks5://198.51.100.4:1080");

@@ -7,8 +7,9 @@
 // is looked up on this computer. Then TLS to the check host inside the tunnel, one GET, the answer
 // read. Every step is bounded by one deadline; a step that doesn't finish in time ends the probe
 // as a failure, never a pass. Errors name the proxy's host:port (or the check host) and the step,
-// never a credential; nothing here logs. A SOCKS5 proxy with a username and password isn't
-// supported (decision U4), so credentials are never sent to one.
+// never a credential; nothing here logs. A SOCKS5 proxy with a username and password gets them
+// as RFC 1929 username/password authentication, offered beside "no authentication" and sent only
+// when the proxy chooses it (as the native browser does, engine patch 962).
 //
 // Node's standard library only.
 import { connect as netConnect, isIP } from "node:net";
@@ -90,8 +91,9 @@ const SOCKS_REPLY = ["", "failed", "doesn't allow the connection", "can't reach 
   "had the connection refused", "timed out reaching the check host", "doesn't take CONNECT", "doesn't take that address type"];
 
 // probeEgress({ proxy, checkUrl, auth, timeoutMs }): proxy the checked entry (net/config.mjs: {
-// scheme, host, port }) or null for this computer's own exit; auth { username, password } for an
-// http: or https: proxy with auth (sent as Basic in the CONNECT request only); extraCa: more
+// scheme, host, port }) or null for this computer's own exit; auth { username, password } for a
+// proxy with auth (sent as Basic in the CONNECT request only, or in the SOCKS5 username/password
+// step only when the proxy chooses that method); extraCa: more
 // trusted certificates (tests: their own authority). { ok: true, ip, loc } or { ok: false, step,
 // problem, timedOut }. Never throws.
 export async function probeEgress({ proxy = null, checkUrl = CHECK_URL, auth = null, timeoutMs = CHECK_MS, extraCa = null } = {}) {
@@ -131,10 +133,9 @@ export async function probeEgress({ proxy = null, checkUrl = CHECK_URL, auth = n
     let socket;
     if (proxy) {
       label = `proxy ${proxy.host}:${proxy.port}`;
-      if (proxy.scheme === "socks5" && auth) throw new ProbeError("a SOCKS5 proxy with a username and password isn't supported yet");
       const proxyHost = String(proxy.host).replace(/^\[|\]$/g, "");
       socket = await bounded("connect", open({ host: proxyHost, port: proxy.port, ...(proxy.scheme === "https" ? { servername: isIP(proxyHost) ? undefined : proxyHost } : {}) }, proxy.scheme === "https"));
-      if (proxy.scheme === "socks5") await bounded("socks5", socks5(socket, host, port));
+      if (proxy.scheme === "socks5") await bounded("socks5", socks5(socket, host, port, auth));
       else await bounded("tunnel", connectTunnel(socket, authority, auth));
       label = `check address ${target.hostname}`;
       if (target.protocol === "https:") socket = await bounded("tls", open({ socket, host, servername }, true));
@@ -206,13 +207,25 @@ const statusOf = (head) => {
   return Number(m[1]);
 };
 
-// A SOCKS5 CONNECT to host:port without authentication (RFC 1928): a name goes as address type 3
-// (the proxy looks it up), an IPv4 or IPv6 address as type 1 or 4.
-async function socks5(socket, host, port) {
-  socket.write(Buffer.from([5, 1, 0]));
+// A SOCKS5 CONNECT to host:port (RFC 1928): a name goes as address type 3 (the proxy looks it up),
+// an IPv4 or IPv6 address as type 1 or 4. With auth the greeting offers "no authentication" and
+// username/password (RFC 1929), and the credentials go only when the proxy chooses the latter
+// (each 1 to 255 bytes of UTF-8); without auth only "no authentication" is offered.
+async function socks5(socket, host, port, auth = null) {
+  const user = auth ? Buffer.from(String(auth.username), "utf8") : null;
+  const pass = auth ? Buffer.from(String(auth.password), "utf8") : null;
+  if (auth && (!user.length || user.length > 255 || !pass.length || pass.length > 255)) throw new ProbeError("the username and password must each be 1 to 255 bytes for SOCKS5");
+  socket.write(auth ? Buffer.from([5, 2, 0, 2]) : Buffer.from([5, 1, 0]));
   const hello = await readFrom(socket, (buf) => (buf.length >= 2 ? buf : null), 2);
   if (hello[0] !== 5) throw new ProbeError("answered something that isn't SOCKS5");
-  if (hello[1] === 0xff || hello[1] !== 0) throw new ProbeError("wants a username and password, which PairBrowse doesn't send to a SOCKS5 proxy yet");
+  if (hello[1] === 2 && auth) {
+    socket.write(Buffer.concat([Buffer.from([1, user.length]), user, Buffer.from([pass.length]), pass]));
+    const status = await readFrom(socket, (buf) => (buf.length >= 2 ? buf : null), 2);
+    if (status[0] !== 1) throw new ProbeError("answered something that isn't SOCKS5 username/password authentication");
+    if (status[1] !== 0) throw new ProbeError("refused the username and password");
+  } else if (hello[1] !== 0) {
+    throw new ProbeError(auth ? "takes neither \"no authentication\" nor a username and password" : "asks for a username and password; set \"auth\": true and its secrets in secrets.env");
+  }
   let address;
   if (isIP(host) === 4) address = Buffer.from([1, ...host.split(".").map(Number)]);
   else if (isIP(host) === 6) address = Buffer.from([4, ...parseV6(host).flatMap((w) => [w >> 8, w & 0xff])]);

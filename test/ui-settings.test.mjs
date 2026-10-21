@@ -766,20 +766,12 @@ both({ fixtures: { ...fixtures, network: NET, networkTest: TEST }, viewport: VIE
   assert.match(res, /time zone Europe\/Berlin is used in DE, but this proxy's exit is in US/);
   assert.match(res, /checked when a session using this proxy starts/);
 
-  // Add a SOCKS5 proxy with a username: refused with the U4 sentence, nothing added.
+  // Add a SOCKS5 proxy without a username: added, and the list follows (one with a username is
+  // taken like an HTTP proxy's: its credentials go to the native browser's auth file, RFC 1929).
   await page.click("#net-add");
   await page.fill("#net-id", "socks-a");
   await page.selectOption("#net-type", "socks5");
   await page.fill("#net-host", "198.51.100.4");
-  await page.check("#net-auth");
-  await page.fill("#net-user", "user-a");
-  await page.fill("#net-pass", "pass-a");
-  await page.click("#net-save");
-  await until("refused", () => /SOCKS5 proxy with a user name and password isn't supported yet/.test(document.getElementById("net-msg").textContent));
-  assert.equal(await inPage(() => document.querySelectorAll("#net-list li").length), 1);
-  assert.equal(await inPage(() => document.getElementById("net-pass").value), "");
-  // Without one it is added, and the list follows.
-  await page.uncheck("#net-auth");
   await page.click("#net-save");
   await posted(helper, page, "the add", "network", { op: "add", id: "socks-a", type: "socks5", host: "198.51.100.4", port: null, auth: false });
   await until("two rows", () => document.querySelectorAll("#net-list li").length === 2);

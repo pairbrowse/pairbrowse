@@ -277,7 +277,6 @@ function pickAnswer(body, fx, push) {
 }
 
 // POST network as the helper answers it, in outline (fx: the fixtures; push: the stream).
-const SOCKS5_AUTH = "A SOCKS5 proxy with a user name and password isn't supported yet; use an HTTP or HTTPS proxy for it, or a SOCKS5 proxy without one.";
 function networkAnswer(body, fx, push) {
   if (fx.network === null) return { status: 404 };
   if (body?.op === "test") return { status: 200, body: fx.networkTest };
@@ -286,7 +285,6 @@ function networkAnswer(body, fx, push) {
   const has = (id) => n.proxies.some((p) => p.id === id);
   let text;
   if (body?.op === "add" || body?.op === "edit") {
-    if (body.type === "socks5" && body.auth) return refuse(SOCKS5_AUTH);
     if (body.op === "add" && has(body.id)) return refuse(`A proxy named "${body.id}" is there already: edit it, or choose another name.`);
     const old = n.proxies.find((p) => p.id === body.id) || { username: false, password: false };
     const p = { id: body.id, type: body.type, host: body.host, port: body.port ?? null, auth: !!body.auth,

@@ -104,9 +104,11 @@ export async function httpProxy({ upstream, auth = null, tls = null } = {}) {
   return { port, log, close: tracked(server) };
 }
 
-// A SOCKS5 proxy without authentication to upstream. log: [{ methods, atyp, host, port }];
-// a client offering only username and password gets "no acceptable method" (0xff).
-export async function socks5Proxy({ upstream } = {}) {
+// A SOCKS5 proxy to upstream. Without auth it takes "no authentication" only (a client offering
+// only username and password gets "no acceptable method", 0xff); with auth { username, password }
+// it requires RFC 1929 username/password (method 2; the wrong ones get status 1 and the
+// connection closed). log: [{ methods, atyp, host, port }] (with auth also { username, authorized }).
+export async function socks5Proxy({ upstream, auth = null } = {}) {
   const log = [];
   const server = createNet((socket) => {
     socket.on("error", () => {});
@@ -117,10 +119,28 @@ export async function socks5Proxy({ upstream } = {}) {
         if (buf.length < 2 || buf.length < 2 + buf[1]) return;
         const methods = [...buf.subarray(2, 2 + buf[1])];
         buf = buf.subarray(2 + buf[1]);
-        entry = { methods, atyp: null, host: null, port: null };
+        entry = { methods, atyp: null, host: null, port: null, ...(auth ? { username: null, authorized: false } : {}) };
         log.push(entry);
-        if (!methods.includes(0)) return socket.end(Buffer.from([5, 0xff]));
-        socket.write(Buffer.from([5, 0]));
+        if (auth) {
+          if (!methods.includes(2)) return socket.end(Buffer.from([5, 0xff]));
+          socket.write(Buffer.from([5, 2]));
+          stage = "auth";
+        } else {
+          if (!methods.includes(0)) return socket.end(Buffer.from([5, 0xff]));
+          socket.write(Buffer.from([5, 0]));
+          stage = "request";
+        }
+      }
+      if (stage === "auth") {
+        if (buf.length < 2 || buf.length < 2 + buf[1] + 1) return;
+        const ulen = buf[1], plen = buf[2 + ulen];
+        if (buf.length < 3 + ulen + plen) return;
+        const username = buf.subarray(2, 2 + ulen).toString("utf8"), password = buf.subarray(3 + ulen, 3 + ulen + plen).toString("utf8");
+        buf = buf.subarray(3 + ulen + plen);
+        entry.username = username;
+        entry.authorized = buf[-1] === undefined && username === auth.username && password === auth.password;
+        if (!entry.authorized) return socket.end(Buffer.from([1, 1]));
+        socket.write(Buffer.from([1, 0]));
         stage = "request";
       }
       if (stage === "request") {

@@ -29,9 +29,6 @@ export const RECHECK_MAX = 1440;
 export const NETWORK_DEFAULTS = { proxies: {}, default: null, sessions: {}, strict: true, checkUrl: CHECK_URL, recheckMinutes: 10 };
 // A proxy entry's fields besides server, and their defaults.
 export const PROXY_DEFAULTS = { auth: false, bypass: [], expectEgress: null, onEgressChange: "pause" };
-// Why a SOCKS5 proxy with a username and password is refused (decision U4), as a clause; Settings
-// says it too (net/settings.mjs).
-export const SOCKS5_AUTH = "a SOCKS5 proxy with a user name and password isn't supported yet; use an HTTP or HTTPS proxy for it, or a SOCKS5 proxy without one";
 // The loopback names a strict session may bypass (the helper always passes them itself, C5).
 export const LOOPBACK_BYPASS = ["localhost", "127.0.0.1", "[::1]", "::1"];
 const MAX_PROXIES = 64;
@@ -141,9 +138,6 @@ function checkProxy(id, given, strict) {
     return { problem: wrong(`${key}.expectEgress`, 'a list of addresses, ranges ("203.0.113.0/24") or countries ("country:US"), or null', e.expectEgress) };
   }
   if (!ON_EGRESS_CHANGE.includes(e.onEgressChange)) return { problem: wrong(`${key}.onEgressChange`, '"pause", "notify" or "ignore"', e.onEgressChange) };
-  if (parsed.scheme === "socks5" && e.auth) {
-    return { problem: `${key}: ${SOCKS5_AUTH}` };
-  }
   const outside = e.bypass.filter((b) => !isLoopbackBypass(b));
   if (strict && outside.length) {
     return { problem: `${key}.bypass has ${quoteList(outside)}, which strict mode doesn't allow (only this computer's own addresses go around the proxy); remove them, or set network.strict to false` };

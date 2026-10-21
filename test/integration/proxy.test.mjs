@@ -19,9 +19,9 @@ import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { session } from "../helpers/live.mjs";
 import { text, until } from "../helpers/util.mjs";
-import { helperHome, startHelper } from "../helpers/daemon.mjs";
+import { helperHome, startHelper, nativeExe } from "../helpers/daemon.mjs";
 import { httpProxy, socks5Proxy, traceServer, stunResponder, closedPort } from "../helpers/proxies.mjs";
-import { readNetLog, resolvedHosts, dnsLeaks } from "../helpers/netlog.mjs";
+import { readNetLog, parseNetLog as parseNetLogText, resolvedHosts, dnsLeaks } from "../helpers/netlog.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const skip = (!runtime || process.platform === "win32") && "set PAIRBROWSE_TEST_RUNTIME";
@@ -420,6 +420,106 @@ test("the browser killed in a proxied session with its proxy down: the check run
       assert.equal(s.saved.asked.length, asked, "no saved tab opened after the crash");
     } finally { b.sock.destroy(); }
     assert.match(s.log(), /failed its check/);
+  } finally {
+    await h.stop();
+    rmSync(s.home, { recursive: true, force: true });
+  }
+});
+
+// Proxies with a username and password (C1, decision 9; engine patch 962): on the native build
+// (its manifest's proxyAuthFile, helpers/daemon.mjs nativeExe) a session on an http: or socks5:
+// proxy that needs them starts, its page loads through the proxy, which saw the right credentials
+// (Basic in the CONNECT or absolute-form request; RFC 1929 username/password on SOCKS5), and the
+// credentials reach no process's command line (ps), no line of daemon.log and not the browser's
+// NetLog; the auth file the helper wrote is gone once the browser is up. On the open build such a
+// session is refused by name and nothing starts.
+
+const AUTH_USER = `proxy-user-${randomBytes(3).toString("hex")}`, AUTH_PASS = `proxy-pass-${randomBytes(6).toString("hex")}`;
+const AUTH_BASE64 = Buffer.from(`${AUTH_USER}:${AUTH_PASS}`).toString("base64");
+const credentialIn = (text) => [AUTH_PASS, AUTH_BASE64].filter((v) => String(text).includes(v));
+const commandLines = () => execFileSync("ps", ["-axo", "command="], { encoding: "utf8" });
+
+async function authHome(scheme) {
+  const { names, html } = leakPage();
+  const site = await siteServer(html);
+  const direct = await traceServer({ ip: OWN, loc: "DE" });
+  const stun = await stunResponder({ mapped: OWN });
+  const auth = { username: AUTH_USER, password: AUTH_PASS };
+  const proxy = scheme === "socks5" ? await socks5Proxy({ upstream: site.port, auth }) : await httpProxy({ upstream: site.port, auth });
+  stubs.push(site, direct, stun, proxy);
+  const network = { proxies: { stub: { server: `${scheme}://127.0.0.1:${proxy.port}`, auth: true } }, default: "stub" };
+  const home = helperHome(runtime, { prefix: "pb-proxyauth-", config: { sessionPicker: false, network } });
+  writeFileSync(join(home, "secrets.env"), `PAIRBROWSE_PROXY_STUB_USERNAME=${AUTH_USER}\nPAIRBROWSE_PROXY_STUB_PASSWORD=${AUTH_PASS}\n`, { mode: 0o600 });
+  const env = {
+    PAIRBROWSE_TEST_NETLOG: "1",
+    PAIRBROWSE_TEST_NET_CHECK: JSON.stringify({ checkUrl: `http://trace-${randomBytes(3).toString("hex")}.test/cdn-cgi/trace`, directUrl: `http://127.0.0.1:${direct.port}/cdn-cgi/trace`, stun: `stun:127.0.0.1:${stun.port}`, ms: 15_000 }),
+  };
+  const log = () => { try { return readFileSync(join(home, "daemon.log"), "utf8"); } catch { return ""; } };
+  return { names, site, proxy, home, env, log };
+}
+
+for (const scheme of ["http", "socks5"]) {
+  test(`native build: a ${scheme}: proxy with a username and password: the page loads, the proxy saw them, nothing else did`, { skip: skip || (!nativeExe && "set PAIRBROWSE_TEST_EXECUTABLE and PAIRBROWSE_TEST_ENGINE"), timeout: 240_000 }, async () => {
+    const s = await authHome(scheme);
+    const h = await startHelper(s.home, { env: s.env });
+    try {
+      try {
+        const a = await session(h.socketPath, "u");
+        try {
+          const nav = await a.tool("browser_navigate", { url: `http://${s.names.page}/` }, 120_000);
+          assert.ok(!nav.result?.isError, `the page opens through the proxy with its credentials: ${text(nav).slice(0, 400)}\n${s.log().slice(-2000)}`);
+          assert.ok(s.site.asked.includes(`${s.names.page}/`), `the page came through the proxy: ${JSON.stringify(s.site.asked)}`);
+          const ok = s.proxy.log.filter((l) => l.authorized);
+          assert.ok(ok.length > 0, `the proxy saw the credentials: ${JSON.stringify(s.proxy.log.slice(0, 5))}`);
+          if (scheme === "socks5") {
+            assert.ok(ok.some((l) => l.username === AUTH_USER && l.atyp === 3 && l.host === s.names.page), "username/password authentication, then the name");
+            // The browser's greetings offer both methods (RFC 1929 beside "no authentication"). The
+            // driver's own SOCKS client in the helper process (the live view's favicon fetch through
+            // the context's request API) offers "no authentication" alone, carries no credential and
+            // is refused by the proxy (0xff): it never signs in and never reaches a host.
+            const own = s.proxy.log.filter((l) => !l.methods.includes(2));
+            assert.ok(s.proxy.log.some((l) => l.methods.includes(0) && l.methods.includes(2)), "the browser's greeting offered both methods");
+            assert.ok(own.every((l) => !l.authorized && l.host === null), `a greeting without username/password never signs in or reaches a host: ${JSON.stringify(own)}`);
+          } else {
+            assert.ok(ok.some((l) => l.target === `http://${s.names.page}/`), "Basic on the page's request");
+          }
+          // While the browser runs: no process's command line carries a credential, and the auth
+          // file is already gone.
+          assert.deepEqual(credentialIn(commandLines()), [], "no credential on any command line");
+          const runDir = join(s.home, "run");
+          assert.deepEqual((existsSync(runDir) ? readdirSync(runDir) : []).filter((f) => f.startsWith("proxy-auth-")), [], "the auth file is deleted once the browser is up");
+          assert.match(s.log(), /network "stub" \(default, strict, auth file\)/);
+        } finally {
+          a.sock.destroy();
+        }
+      } finally {
+        await h.stop();
+      }
+      assert.deepEqual(credentialIn(s.log()), [], "no credential in daemon.log");
+      const file = join(s.home, "netlog.json");
+      assert.ok(existsSync(file), "the browser wrote its NetLog");
+      const raw = readFileSync(file, "utf8");
+      assert.deepEqual(credentialIn(raw), [], "no credential in the NetLog");
+      assert.ok(resolvedHosts(parseNetLogText(raw)).length > 0, "the NetLog is the browser's (resolver events)");
+    } finally {
+      rmSync(s.home, { recursive: true, force: true });
+    }
+  });
+}
+
+test("open build: a proxy with a username and password is refused by name, nothing starts", { skip: skip || (nativeExe && "runs on the open build"), timeout: 240_000 }, async () => {
+  const s = await authHome("http");
+  const h = await startHelper(s.home, { env: s.env });
+  try {
+    const a = await session(h.socketPath, "o");
+    try {
+      const r = await a.tool("browser_snapshot", {}, 120_000);
+      assert.match(text(r), /needs a username and password, and this browser can't take them from its own file/, text(r).slice(0, 600));
+      assert.equal(browserPid(h.daemon.pid), 0, "no browser started");
+      assert.deepEqual(s.proxy.log, [], "nothing reached the proxy");
+      assert.deepEqual(credentialIn(commandLines()), []);
+    } finally { a.sock.destroy(); }
+    assert.deepEqual(credentialIn(s.log()), []);
   } finally {
     await h.stop();
     rmSync(s.home, { recursive: true, force: true });

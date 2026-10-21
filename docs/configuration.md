@@ -242,7 +242,7 @@
   `node scripts/net/credentials.mjs set <id>`, which asks for both with echo off, or reads them
   from stdin's first two lines, never from its arguments; `remove <id>` deletes them and `list`
   names the proxies that have them). SOCKS4, PAC files, `direct://` and an address with a
-  path are refused, and so is a SOCKS5 proxy with `auth` (not supported yet). `bypass` lists
+  path are refused. `bypass` lists
   hosts (`*.example.com`), addresses or ranges that go around the proxy; with `strict` `true`
   (the default) only `localhost`, `127.0.0.1`, `[::1]` and `::1` may. `expectEgress` lists the
   addresses, ranges or countries (`country:US`) the proxy's exit should be in (`null`: none), and
@@ -267,10 +267,12 @@
   proxy, the browser also looks names up itself (the leak test reads pages' names and its own
   background services' in the browser's network log), though the pages still load through the
   proxy. A SOCKS5 session gets the same name rule even with `strict` `false`. A proxy with `auth`
-  needs both secrets in `secrets.env` (4 characters or more each) and a PairBrowse build that
-  reads them from an owner-only file the helper writes for that launch and deletes once the
-  browser is up: no build does yet and PairBrowse as an extension never will, so such a session doesn't start
-  for now, with an error saying why. A session whose network can't be used doesn't start (its
+  needs both secrets in `secrets.env` (4 characters or more each) and a native PairBrowse build
+  that reads them from an owner-only file the helper writes for that launch and deletes once the
+  browser is up (its build manifest says `proxyAuthFile`; the browser answers only that proxy's own
+  challenge with them, never a site's, and signs in to a SOCKS5 proxy with username/password
+  authentication). PairBrowse as an extension never will, so such a session doesn't start
+  there, with an error saying why. A session whose network can't be used doesn't start (its
   error says why); it never starts direct instead. Before any saved tab loads, at every start (a
   recovery after a crash included), the proxy's exit is checked: the helper reads `checkUrl`
   through the proxy, the browser reads it too and gathers WebRTC candidates, and without
@@ -316,8 +318,8 @@
 Settings reads `secrets.env` as it is each time, so names you add there by hand show as saved at
 once and a save from Settings keeps them; while `secrets.env` can't be used (a link, another
 user's file, readable by others), the section says why and refuses a username or password. A
-  SOCKS5 proxy with a username is refused (as above), and a proxy that is still the default or a
-  session's choice can't be removed until you choose another for them. While this block has a
+  proxy that is still the default or a session's choice can't be removed until you choose another
+  for them. While this block has a
   problem that keeps every session from starting, or `config.json` can't be parsed, Settings
   shows the reason and changes nothing. **Test** reads `checkUrl` through the proxy as the form has
   it (nothing is saved) and, without `expectEgress`, this computer's own exit to compare, and shows

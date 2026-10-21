@@ -35,7 +35,7 @@ export const DETAILS = {
   "stream-refused": ["second-stream", "other-origin", "other-session", "expired"],
   "input-refused": ["out-of-scope", "not-allowed", "expired"],
   "request-refused": ["other-origin"],
-  ended: ["done", "cleared", "agent", "tab-closed", "session-switched", "revoked", "expired", "browser-restarted", "helper-stopped"],
+  ended: ["done", "window", "cleared", "agent", "tab-closed", "session-switched", "revoked", "expired", "browser-restarted", "helper-stopped"],
 };
 const FIELDS = new Set(["kind", "grant", "session", "tab", "detail"]);
 const GRANT_ID = /^[0-9a-f]{8}$/;

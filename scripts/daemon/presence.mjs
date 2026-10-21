@@ -404,6 +404,13 @@ export function createPresence({ host, readEvents, pages, paused, onUsed, onStal
     byPerson: (t) => !byAgent(t, 300) && !byReplay(t),
     personIn, actingIn, recentPerson, humanIn, agentPointed, personWithin, elsewhere, sharedPerson, feedAfter, busyStart, agentActing, userDid, watchUser, helperGoes, waitForUser, userNote, didIn,
     waiting: (page) => waitingIn.get(page), loadedAt: (page) => loadedAt.get(page) || 0,
+    // When a person last clicked or typed in this tab (no agent's input, no joiner's), 0 for never:
+    // a hand-off done in the window (yourturn.mjs) is one the person acted in before its page moved on.
+    actedAt: (page) => (page && actedAt.get(page)?.t) || 0,
+    // The owner's own live view (the desktop app's pane) clicked or typed in this tab: the person at
+    // the computer, known at once, before the page's own record of it is read (or lost with a page
+    // that moves on at that input).
+    ownerActed: (page) => actedIn(page, host),
     // When a person last used the browser by hand, in any tab (any input: clicks, keys, the
     // pointer, scrolling; here or, in a joined session, in the other browser), 0 for never.
     lastPersonAt: () => lastPersonAt,

@@ -472,8 +472,11 @@ by the person. On no response: progress saved, exactly one reminder, safe stop.
   with hand-offs that go to the channels, in the status result for an agent's "you" and in a host
   note for PairBrowse's own check and a fast-mode run's hand-off step; a desktop without Away stays
   as today, decision 8.)
-- **B15. Resume.** Grant end reasons: `done`, `cleared`, `agent`, `tab-closed`, `session-switched`,
-  `revoked`, `expired`, `browser-restarted`, `helper-stopped`. On every end but `expired`, one host note
+- **B15. Resume.** Grant end reasons: `done`, `window`, `cleared`, `agent`, `tab-closed`, `session-switched`,
+  `revoked`, `expired`, `browser-restarted`, `helper-stopped`. `window` (desktop check, 2026-10-21,
+  decision 8): before anyone took the link over, the person clicked or typed in the tab by hand
+  (presence `actedAt`; the owner's live view counts at once) and the tab loaded its next page; the
+  phone gets the ended message. On every end but `expired`, one host note
   names the person's actions (field names only) and says to take a snapshot; `browser_wait_for` wakes
   early (its race in `wait-for.mjs` gains `turns.ended(page)`); the fast-mode `handoff` step
   (`scripts/runner/steps/handoff.mjs`) waits for the grant; refusals lift. Done is a hint; the agent

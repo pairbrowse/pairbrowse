@@ -16,7 +16,7 @@ export const NETWORK_CHANGES = ["changed", "failed"];
 // The step kinds (pairbrowse_status step, and handoffKind for a detected challenge).
 export const ACTIONS = ["login", "captcha", "2fa", "payment", "other"];
 // Why a grant ended (B15).
-export const END_REASONS = ["done", "cleared", "agent", "tab-closed", "session-switched", "revoked", "expired", "browser-restarted", "helper-stopped"];
+export const END_REASONS = ["done", "window", "cleared", "agent", "tab-closed", "session-switched", "revoked", "expired", "browser-restarted", "helper-stopped"];
 export const TITLE = "PairBrowse needs you";
 export const ENDED_TITLE = "PairBrowse: hand-off ended";
 export const NETWORK_TITLES = { changed: "PairBrowse: proxy exit changed", failed: "PairBrowse: proxy check failed" };
@@ -30,6 +30,7 @@ const SENTENCES = {
 };
 const ENDINGS = {
   done: "the step is done.",
+  window: "the step was done in the PairBrowse window.",
   cleared: "the check cleared.",
   agent: "the agent went on.",
   "tab-closed": "the tab closed.",

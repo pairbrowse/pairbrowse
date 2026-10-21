@@ -10,7 +10,8 @@
 // check's page; one message to the channels (the step's kind, the site's host, the expiry, the
 // link: never the agent's words); exactly one reminder (with the link while it is unused); and its
 // end. The agent's next status ends it ("agent"), a check that clears ends PairBrowse's own
-// ("cleared"). At its expiry (B11), in order: the goal log's pending lines written, the session's
+// ("cleared"), and the step done in the window before anyone took the link over ends it too
+// ("window", watchWindow). At its expiry (B11), in order: the goal log's pending lines written, the session's
 // tabs saved, "Not done in time" in the goal log's Your turn, one ended message, the badge and the
 // Tools tab's entry say "Timed out", one host note for the agent, and the tab is held (agents keep
 // out, daemon/serve/refuse.mjs tabRefusal) until a new "you", a person's own input in it, or the
@@ -42,7 +43,7 @@
 // never mints a grant or sends a message by itself and is never handed to the person to work
 // around; a site's verification is handed over once and never retried here.
 import { rmSync } from "node:fs";
-import { readJson, within, writeJsonAtomic } from "../util.mjs";
+import { readJson, sleep, within, writeJsonAtomic } from "../util.mjs";
 import { handoffTimes } from "../config-schema.mjs";
 import { CHALLENGE_TURN } from "../popups.mjs";
 import { testMs } from "../testenv.mjs";
@@ -60,7 +61,7 @@ const WAIT = "Don't act in this tab; wait with browser_wait_for.";
 const MINUTE_MS = 60_000;
 // What ended a hand-off, as the agent's note says it (B15).
 const ENDED_BY = {
-  done: "the person pressed Done", cleared: "the check on the page cleared", agent: "your next status ended it",
+  done: "the person pressed Done", window: "the person did it in the PairBrowse window", cleared: "the check on the page cleared", agent: "your next status ended it",
   "tab-closed": "its tab closed", "session-switched": "the browser session changed", revoked: "it was called off",
   "browser-restarted": "the browser restarted", "helper-stopped": "PairBrowse stopped",
 };
@@ -68,6 +69,9 @@ const ENDED_BY = {
 const KEEP = new Set(["browser-restarted", "helper-stopped"]);
 // A replacement needs at least this long left before the deadline.
 const REISSUE_MIN_MS = 5000;
+// A step done in the window: how long the person's own input there may take to be read after the
+// page moved on (presence reads it from the page), in tries of WINDOW_READ_MS.
+const WINDOW_READ_MS = 200, WINDOW_READ_TRIES = 15;
 const KEY_SHAPE = /^(?:check|status:.{1,200}|run:.{1,200})$/;
 
 // The site's host as a message carries it ("" for a page without one).
@@ -99,9 +103,11 @@ const entryOf = (e) => (e && typeof e === "object" && /^[0-9a-f]{8}$/.test(e.id)
 // back by itself after a close (server.keepAlive). successorOf(page): the tab a closed one came back
 // as. pagesNow(): the open tabs. actionsIn(page): what people did in a tab, names only (presence didIn).
 // savedCard(): whether the running browser has a saved card on (context.savedCard, B12).
+// personActedAt(page): when a person last clicked or typed in a tab by hand, no agent's or joiner's
+// input (presence actedAt), 0 for never: a step done in the window (watchWindow).
 export function createYourTurn({ config, grants, notifier, sends, handoffs, journal, saveTabs = async () => ({}), hostNote = () => {}, audit = null, hud, sessionName, linkFor = async () => null,
   agentBy = (p, color = "") => ({ label: "Agent", color }), log = () => {}, turnMs = () => testMs("TURN_MS", 0), timers = { set: setTimeout, clear: clearTimeout }, now = Date.now,
-  turnFile = () => null, keptAlive = () => false, successorOf = () => null, pagesNow = async () => [], actionsIn = () => "", compatibility = () => [], savedCard = () => false }) {
+  turnFile = () => null, keptAlive = () => false, successorOf = () => null, pagesNow = async () => [], actionsIn = () => "", compatibility = () => [], savedCard = () => false, personActedAt = () => 0 }) {
   const turns = new Map(); // grant id -> { id, key, participant, page, action, host, session, expiresAt, sent, timer, reminded }
   // B16: grant id -> { entry (turn.json's), session, page, participant, waiting }: waiting, the
   // restart that ended it ("browser-restarted", "helper-stopped") while it may come back.
@@ -209,8 +215,9 @@ export function createYourTurn({ config, grants, notifier, sends, handoffs, jour
       log(`hand-off: no grant (${e?.message || e})`);
       return { line: "The hand-off link couldn't be made (daemon.log says why): tell the user directly. They can do the step in the PairBrowse window." };
     }
-    const t = { id: g.id, key, participant, page, action, host: hostOf(page), session, expiresAt: g.expiresAt, sent: [], timer: null, reminded: !!reminded };
+    const t = { id: g.id, key, participant, page, action, host: hostOf(page), session, expiresAt: g.expiresAt, sent: [], timer: null, reminded: !!reminded, since: Date.now(), unwatch: null };
     turns.set(t.id, t);
+    watchWindow(t);
     keep(t);
     if (!t.reminded) {
       t.timer = timers.set(() => { remind(t).catch((e) => log(`hand-off reminder: ${e?.message || e}`)); }, Math.max(0, Math.min(remindMs(), g.expiresAt - now() - 1000)));
@@ -226,6 +233,27 @@ export function createYourTurn({ config, grants, notifier, sends, handoffs, jour
     });
     const r = await within(REPORT_MS, sending);
     return { id: t.id, line: sentLine(t, r) };
+  }
+
+  // Done in the window (decision 8: the step stays the window's too, and whichever the person uses
+  // first completes it): while nobody took the link over, the person acted in the tab by hand
+  // (personActedAt: clicks and typing, never an agent's or a joiner's) and the tab then loaded its
+  // next page, as the window's own "Claude continues when the page moves on" says. The grant ends
+  // "window": the waiting agent goes on and the phone hears the link is over. After Take over the
+  // person's taps move pages as part of the step, so only Done (or the agent) ends it.
+  function watchWindow(t) {
+    const page = t.page;
+    const taken = () => !grants.redeemKey(t.id);
+    const acted = () => (Number(personActedAt(page)) || 0) >= t.since;
+    const onLoad = () => {
+      if (!turns.has(t.id) || taken()) return;
+      (async () => {
+        for (let i = 0; i < WINDOW_READ_TRIES && !acted() && turns.has(t.id); i++) await sleep(WINDOW_READ_MS);
+        if (acted() && turns.has(t.id) && !taken()) grants.end(t.id, "window");
+      })().catch((e) => log(`hand-off ${t.id}: ${e?.message || e}`));
+    };
+    try { page.on("domcontentloaded", onLoad); } catch { return; }
+    t.unwatch = () => { try { page.off("domcontentloaded", onLoad); } catch {} };
   }
 
   // What pairbrowse_status says of the message: where it went, the hand-off and until when. Never the link.
@@ -290,6 +318,7 @@ export function createYourTurn({ config, grants, notifier, sends, handoffs, jour
     const t = turns.get(view.id);
     if (!t) return;
     turns.delete(t.id);
+    t.unwatch?.();
     if (t.timer) { try { timers.clear(t.timer); } catch {} t.timer = null; }
     const k = kept.get(t.id);
     if (k && KEEP.has(reason)) { k.entry.url = urlOf(t.page) || k.entry.url; k.waiting = reason; } else kept.delete(t.id);

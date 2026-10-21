@@ -492,7 +492,7 @@ const sharing = createSharing({
     // it would close their copy too).
     onJoinerActivity: (page, text, who, from) => { context.touch(page); hud.addActivity(text, who, page, from); },
     extraOrigins: panel.origins, getContext: () => context.getContext(), currentUrl: () => context.currentUrl(), profile: facts.profile, tabMeta,
-    onHumanInput: (page, who, changes = true) => { presence.humanIn(page, who || HOST); if (changes) bumpRevision(page); },
+    onHumanInput: (page, who, changes = true) => { presence.humanIn(page, who || HOST); if (changes) { bumpRevision(page); if (!who) presence.ownerActed(page); } },
     onReplay: (who) => presence.replayStart(who), // the live view's input never answers a join prompt; an invite viewer's is theirs
     shared: {
       host: HOST, readForm: forms.read, arrange: (pages) => tabOrder.arrange(pages), order: (pages) => tabOrder.strip(pages), showPointers: hud.showPointers,
@@ -633,7 +633,7 @@ const outlines = createOutlines({ mask: output.mask });
 // Hand-offs to the person: the badge and the Tools tab as before, and their channels when hand-offs go there (daemon/yourturn.mjs).
 const yourTurn = createYourTurn({ config, grants, notifier, audit, handoffs, journal, hud, log, hostNote, agentBy, saveTabs: () => context.saveTabs(), sessionName: () => context.sessionName(),
   linkFor: (key) => sharing.handoffLink(key), sends: () => handoffSends(config, { server: context.isServer() }), actionsIn: (p) => presence.didIn(p), // what the person did there: names only (B15)
-  turnFile: (s) => sessionFile(s, "turn.json"), keptAlive: () => context.keepAlive(), successorOf: (p) => context.successorOf(p), pagesNow: () => context.openPages(), compatibility: () => context.compatibility(), savedCard: () => !!context.savedCard()?.on }); // a restart's hand-offs come back (B16); setup problems reported apart (B14); a saved card masks every tab (B12)
+  turnFile: (s) => sessionFile(s, "turn.json"), keptAlive: () => context.keepAlive(), successorOf: (p) => context.successorOf(p), pagesNow: () => context.openPages(), compatibility: () => context.compatibility(), savedCard: () => !!context.savedCard()?.on, personActedAt: (p) => presence.actedAt(p) }); // a restart's hand-offs come back (B16); setup problems reported apart (B14); a saved card masks every tab (B12); a step done in the window ends its hand-off (decision 8)
 const timeline = createTimeline({ dir: () => timelineDir(context.sessionName()), enabled: () => config.timeline !== false, cap: () => config.timelineCap, mask: output.mask, step: () => journal.step(), onNote: (text) => hud.addActivity(`Note: ${text}`, HOST, null), log });
 const serve = createServe({
   onRunStatus: (...a) => yourTurn.onRunStatus(...a), yourTurn, // a fast-mode run's hand-off step; hand-offs (B10 masking)

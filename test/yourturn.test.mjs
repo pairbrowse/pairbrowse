@@ -170,6 +170,39 @@ test("the agent's next status ends its hand-off (agent); a cleared check ends Pa
   assert.equal(s.sent.length, n);
 });
 
+test("done in the window (decision 8): the person acted in the tab and it loaded its next page before anyone took the link: the hand-off ends (window); a page that moved by itself, or after Take over, doesn't", async () => {
+  let acted = 0;
+  const s = setup({ extra: { personActedAt: () => acted } });
+  const page = pageAt("https://shop.example/login");
+  s.hud.page = page;
+  // The page moving on by itself (a redirect, a reload) while nobody acted: the hand-off stays.
+  await s.yt.onStatus("p1", { kind: "you", text: "Sign in", step: "login" }, page);
+  const [g] = s.grants.open();
+  const waiting = s.yt.ended(page, "p1");
+  page.emit("domcontentloaded");
+  await new Promise((r) => setTimeout(r, 3400));
+  assert.equal(s.grants.open().length, 1, "no person's input: still open");
+  // The person signs in in the window: their click, then the next page.
+  acted = Date.now();
+  page.emit("domcontentloaded");
+  assert.deepEqual(await waiting, { id: g.id, reason: "window" }, "the waiting agent wakes");
+  assert.equal(s.grants.open().length, 0);
+  await tick();
+  assert.deepEqual({ event: s.sent.at(-1).event, id: s.sent.at(-1).id, reason: s.sent.at(-1).reason }, { event: "pairbrowse.ended", id: g.id, reason: "window" }, "the phone hears its link is over");
+  assert.match(s.notes.at(-1), /the person did it in the PairBrowse window/);
+  assert.equal(page.listenerCount("domcontentloaded"), 1, "its watch ends with it (left: the mask's wait for the next page)");
+  // After Take over on the phone, the person's taps move pages as part of the step: only Done ends it.
+  await s.yt.onStatus("p1", { kind: "claude", text: "Back" }, page);
+  await s.yt.onStatus("p1", { kind: "you", text: "Sign in", step: "login" }, page);
+  const [h] = s.grants.open();
+  assert.ok(s.grants.redeem(s.grants.redeemKey(h.id), { session: "default" }));
+  acted = Date.now() + 1000;
+  page.emit("domcontentloaded");
+  await new Promise((r) => setTimeout(r, 300));
+  assert.equal(s.grants.open().length, 1, "taken over: still open");
+  s.grants.end(h.id, "done");
+});
+
 test("exactly one reminder: the link again while unused, else 'opened already'", async () => {
   const s = setup();
   const page = pageAt("https://bank.example/verify");

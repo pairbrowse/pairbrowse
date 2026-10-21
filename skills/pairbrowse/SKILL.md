@@ -161,8 +161,9 @@ says where; the side panel's Record button does the same. A recording ends with 
    down: leaving the tab alone is up to you. Don't set another status meanwhile: your next
    `pairbrowse_status` ends the hand-off.
 4. Wait without ending your turn: `browser_wait_for`. With a hand-off sent to the phone, call it
-   with nothing else: it returns as soon as the hand-off ends and says why (otherwise after about
-   two minutes: call it again); with `text` or `textGone` it also returns when the hand-off ends.
+   with nothing else: it returns as soon as the hand-off ends and says why, also when the user did
+   the step in the window (otherwise after about two minutes: call it again); with `text` or
+   `textGone` it also returns when the hand-off ends.
    In the window only, use `textGone` (challenge text) or `text` (what the next page shows), with
    `time` (up to 120 s) between looks, for about 10 minutes. A fast-mode `handoff` step waits the
    same way.

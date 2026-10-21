@@ -2895,6 +2895,10 @@ binding for implementation; where a phase section above says otherwise, this sec
     binary under `BINARY-LICENSE.md` with commercial use through Pro; the open build stays open source.
     The README gets one short license section stating each, with links; the open build's licence is a
     fact there, never presented as a reason to choose it.
+    Confirmed (user, 2026-10-21): option 1, the extension mode stays as the fallback for Windows and for
+    people who do not want the native browser. User-facing text calls it "PairBrowse as an extension"
+    (the same plugin and `ui/` pages, loaded into another browser) rather than "open build"; the config
+    value `"pairbrowse-open"` stays as it is.
 
 Implementation conditions (from the user):
 - Keep the five phases and every agreed requirement: profile import and export, per-profile isolation,

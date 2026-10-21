@@ -2954,6 +2954,24 @@ binding for implementation; where a phase section above says otherwise, this sec
     compared with an everyday browser of the same version). A managed Turnstile that asks for a click
     is a person's check: PairBrowse records whether it appears and hands it over, never clicks it
     itself. Plus a Patchright against plain Playwright row on our native build.
+    Decided by the first measurement (2026-10-22, baseline in the native repo's plans): canvas
+    noise on a host without a GPU, measured on and off on the same Linux host, changed one verdict
+    (BrowserScan's canvas check, lost with noise on) and gained nothing measured, so
+    `pairbrowse.graphicsNoise` defaults to false; sessions on one such host then share the software
+    renderer's canvas reading, as sessions on one GPU host share theirs (D-AP2), and `true` gives
+    each persona its own again. On macOS the plan now sets no noise over this Mac's own pixels
+    (`fingerprintNoise: false`), as on a Linux GPU host: noise there made the canvas differ from an
+    everyday browser's on the same Mac. The software WebGPU switch (`--enable-unsafe-webgpu`) stays
+    off the `browserArgs` allowlist: it turns the browser's WebGPU blocklist off, a security check
+    the allowlist never relaxes, and the run with it (setup d) could not be made; WebGPU on a host
+    without a GPU waits for the engine to offer an adapter under the identity without it (an
+    engine gap, measured again then). Also from it: humanized typing defaults to an everyday
+    typist's rhythm (`typingPace` 1: about 150 ms between keys, one key in five overlapping) and
+    moves to the profile's own speed (`motion` `"combined"`); the live view's tab icons cost no
+    request outside the browser; a server's UTC clock is named at launch and `docs/server.md` sets
+    the exit's zone. WebRTC's default deny for a session without a proxy (no candidates, where an
+    everyday browser shows a hidden local and a public address) stays until the person decides
+    whether to relax it: the deny is a stated security property (`docs/security.md`).
 
 12. **Server mode needs the native PairBrowse browser (user, 2026-10-21).** The open build with the side
     panel extension stays supported on a desktop and is kept aligned with the native build wherever it

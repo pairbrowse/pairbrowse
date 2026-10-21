@@ -15,7 +15,8 @@ const BADGE_MS = 4000; // pairbrowse_status waits this long at most for the badg
 // only) or a request to turn it off refused (engine.mjs SANDBOX). update: a newer PairBrowse
 // installed that this helper waits to move to (handoff.mjs pendingLine), said last. more: the
 // other parts' own, in order, after these (context.statusParts: the virtual screen, a crash loop,
-// the session's network).
+// the browser profile and its graphics, the session's network; a joiner's agent gets the graphics
+// without the renderer).
 export function statusLine(selected = SELECTED, configWarnings = CONFIG_WARNINGS, sandbox = SANDBOX, update = "", more = []) {
   const parts = ["ok"];
   if (selected.instance) parts.push(`PairBrowse instance "${selected.instance}" (${selected.home})`);
@@ -52,7 +53,7 @@ export function createStatusTool(conn, api) {
       if (args.kind === "done" || args.kind === "clear") await within(BADGE_MS, Promise.resolve(hud.hideCursor(hud.sparkPage(participant))).catch(() => {}));
       journal.status(args.kind, args.text); // a hand-off goes to the goal log's yourTurn
       const sent = await turn;
-      return { text: [statusLine(SELECTED, CONFIG_WARNINGS, SANDBOX, updateNote(), [...(context.statusParts?.() || [])]), sent].filter(Boolean).join("\n") };
+      return { text: [statusLine(SELECTED, CONFIG_WARNINGS, SANDBOX, updateNote(), [...(context.statusParts?.({ remote: !!conn.remote }) || [])]), sent].filter(Boolean).join("\n") };
     },
   };
 }

@@ -232,12 +232,12 @@ test("a switch, shutdown, the helper's own reset or failed launch never counts; 
   assert.ok(get.indexOf("api.crashLoop()") < get.indexOf("st.contextPromise = launch()"), "refused before a launch starts");
   const context = src("context.mjs");
   assert.match(context, /const \{ stopScreenNow, crashLoop, statusParts: screenParts, keepAlive, keepAliveStart, isServer \} = Object\.assign\(api, createSupervisor\(st, deps, api\)\);/);
-  // The supervisor's parts first, then the profile's (sessions/profiles.mjs), then the session's network (daemon/network.mjs, net-refuse.test.mjs).
-  assert.match(context, /^\s+crashLoop, statusParts: \(\) => \[\.\.\.screenParts\(\), \.\.\.profiles\.statusParts\(\), \.\.\.\(network\?\.statusParts\(st\.session\) \|\| \[\]\)\],$/m);
+  // The supervisor's parts first, then the profile's (sessions/profiles.mjs) and its graphics (browser/graphics.mjs), then the session's network (daemon/network.mjs, net-refuse.test.mjs).
+  assert.match(context, /^\s+crashLoop, statusParts: \(\{ remote = false \} = \{\}\) => \[\.\.\.screenParts\(\), \.\.\.profiles\.statusParts\(\), \.\.\.graphicsStatus\(\{ remote \}\), \.\.\.\(network\?\.statusParts\(st\.session\) \|\| \[\]\)\],$/m);
   assert.match(context, /^\s+keepAlive, keepAliveStart,$/m);
   const status = src("serve/tools/status.mjs");
   assert.match(status, /if \(!context\.crashLoop\?\.\(\) && !context\.networkRefusal\?\.\(\)\) await context\.getContext\(\)/);
-  assert.match(status, /statusLine\(SELECTED, CONFIG_WARNINGS, SANDBOX, updateNote\(\), \[\.\.\.\(context\.statusParts\?\.\(\) \|\| \[\]\)\]\)/);
+  assert.match(status, /statusLine\(SELECTED, CONFIG_WARNINGS, SANDBOX, updateNote\(\), \[\.\.\.\(context\.statusParts\?\.\(\{ remote: !!conn\.remote \}\) \|\| \[\]\)\]\)/);
 });
 
 test("isServer answers serverMode for the launch's sandbox rule", () => {

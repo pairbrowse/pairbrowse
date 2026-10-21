@@ -167,7 +167,11 @@ test("a second install at the same time is refused, a stale lock is taken over",
   writeFileSync(lock, String(process.pid)); // this process is alive
   await assert.rejects(installNative(fakeArchive("150.0.0.4"), { check: async () => ["ok"], register: false }), /another PairBrowse install is running/);
   writeFileSync(lock, "999999"); // no such process
-  await installNative(fakeArchive("150.0.0.4"), { check: async () => ["ok"], register: false });
+  // The self-check's graphics measurement is handed out (step 44: the helper keeps it with the default profile).
+  const measured = { runtimeKey: "k" };
+  let given = null;
+  await installNative(fakeArchive("150.0.0.4"), { check: async (exec, o) => { o.onGraphics(measured); return ["ok"]; }, register: false, onGraphics: (m) => { given = m; } });
+  assert.equal(given, measured);
   assert.equal(installedVersion(), "150.0.0.4");
   assert.equal(existsSync(lock), false, "lock released");
 });

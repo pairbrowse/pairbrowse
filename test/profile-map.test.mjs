@@ -171,13 +171,13 @@ test("an explicit field the open build can't apply refuses", () => {
     assert.ok(out.results.some((r) => r.field === field && r.severity === "error" && r.status === "unsupported"));
     assert.ok(!out.problem.includes("pinned-1"));
   }
-  // On either build: a scheme or motion setting no switch can force, a requirement not checked
-  // yet, a saved card, and a profile made for the other browser.
+  // On either build: a scheme or motion setting no switch can force, a GPU or a graphics
+  // requirement on the open build, a saved card, and a profile made for the other browser.
   for (const [changes, field, options] of [
     [{ display: { colorScheme: "light", reducedMotion: true } }, "display.colorScheme", NATIVE],
     [{ display: { colorScheme: null, reducedMotion: false } }, "display.reducedMotion", OPEN],
-    [{ graphics: { backend: "gpu", require: null } }, "graphics.backend", NATIVE],
-    [{ graphics: { backend: "auto", require: { webgl: 2, webgpu: false, platforms: [] } } }, "graphics.require", NATIVE],
+    [{ graphics: { backend: "gpu", require: null } }, "graphics.backend", OPEN],
+    [{ graphics: { backend: "auto", require: { webgl: 2, webgpu: false, platforms: [] } } }, "graphics.require", OPEN],
     [{ payments: { savedCard: true } }, "payments.savedCard", NATIVE],
     [{ browser: { kind: "pairbrowse" } }, "browser.kind", OPEN],
   ]) {
@@ -185,6 +185,15 @@ test("an explicit field the open build can't apply refuses", () => {
     const out = toLaunch(base, options);
     assert.ok(out.problem, field);
     assert.ok(out.results.some((r) => r.field === field && r.severity === "error"), field);
+  }
+  // On the native build a GPU and a requirement map (no switch): the launch checks them against
+  // the measurement and the browser's own read (daemon/browser/graphics.mjs, step 44).
+  for (const graphics of [{ backend: "gpu", require: null }, { backend: "auto", require: { webgl: 2, webgpu: true, platforms: ["linux"] } }]) {
+    const out = toLaunch(record({ ...LAUNCHABLE, graphics }), NATIVE);
+    assert.equal(out.problem, null, out.problem);
+    assert.ok(!out.switches.some((a) => /gpu|angle|use-gl/.test(a)), "nothing forced");
+    const field = graphics.require ? "graphics.require" : "graphics.backend";
+    assert.ok(out.results.some((r) => r.field === field && r.status === "applied" && r.severity === "info"), field);
   }
   // The fixture as it is (a light scheme, reduced motion off) names both fields in one refusal.
   assert.match(toLaunch(record(), NATIVE).problem, /display\.colorScheme .*; display\.reducedMotion /);

@@ -112,7 +112,7 @@ export const defaultFixtures = () => ({
   handoffs: { items: [] },
   downloads: { items: [] },
   recordings: { recording: { on: false, since: 0 }, items: [] },
-  diagnostics: { helper: { version: "0.15.45", node: "22.11.0", uptime: 7500 }, browser: { engine: "pairbrowse", version: "142.0.7444.59", build: "3" },
+  diagnostics: { helper: { version: "0.15.45", node: "22.11.0", uptime: 7500 }, browser: { engine: "pairbrowse", version: "142.0.7444.59", build: "3", graphics: { kind: "hardware", status: "failed" } },
     connections: { agents: 1, viewers: 0, joiners: 0, streams: 2 }, joined: [], errors: [] },
   report: { text: "PairBrowse diagnostics\nhelper 0.15.45\n" },
   // GET config.json as liveview/settings.mjs answers it (null: 404, a helper without the route),

@@ -323,11 +323,29 @@ user's file, readable by others), the section says why and refuses a username or
   is the profile's time zone, or a proxy in that zone's country, and the next start checks again
   at once). A profile is validated only by a measurement of the build's engine pack on this
   computer's runtime (its graphics, driver and display); a measurement taken with another engine
-  pack, or without a known engine pack, leaves it `unverified` again. A start compares only the
-  engine pack for now: whether the runtime has changed since the measurement is checked at start
-  in a later version, once the browser's own graphics read is taken then. Until PairBrowse
-  measures a build (a later version), every profile is `unverified`, so `true` refuses every
-  start; the open build's starts are never validated.
+  pack, or without a known engine pack, leaves it `unverified` again. A start checks the engine
+  pack before the browser starts and this computer's runtime once it runs (the browser's own read
+  of its graphics backend gives the runtime's key): a profile that isn't `validated` for both, or
+  whose checks found an error, is refused and its browser closed before any tab loads. The
+  measurement comes from the first start per runtime (below), `validate`, or the install check
+  for `default`; until one passes every error check (WebGPU's limits fail on every build until an
+  engine fix ships), `true` refuses the start; the open build's starts are never validated.
+
+  Graphics are measured once per runtime: the first start of a profile on a build, engine pack and
+  screen kind it wasn't measured on measures them first, in a throwaway browser of its own
+  (hidden on a Mac, on Linux on the same screen; the helper log says "measuring graphics once for
+  this browser version", and the live view's status line says the browser opens after that; a
+  minute or two, never a tab of your browser; an agent asking meanwhile is told so and retries).
+  The throwaway browser has no proxy and never uses `geoip`: its time zone and languages are the
+  profile's, else this computer's, so nothing goes around a session's proxy. The measurement is
+  kept with the profile for that build; when the browser's own read then shows another runtime (a
+  new GPU driver, another display, other graphics switches), it counts for nothing and the next
+  start measures again (a read that fails drops nothing). A probe that fails, or one whose
+  measurement the browser then doesn't match, leaves the start `unverified` and isn't repeated
+  until the helper restarts.
+  `pairbrowse_status` adds `Graphics: <kind> (<renderer>), requested <backend>, <status> on
+  <build>` (a joiner's agent gets it without the renderer); diagnostics and reports carry only the
+  kind and the status, never the GPU.
 
   The `default` browser profile is read from this file, never written into it: `browser` (and
   its older names) gives the browser it is for; the screened `browserArgs` give its languages
@@ -357,7 +375,8 @@ user's file, readable by others), the section says why and refuses a username or
   reassigned, which also drops the persona kept for the old profile (the native build saves a
   session's persona under its profile's id). A profile records the engine it first ran on: a
   build of another major refuses to start it until you check it on the build installed now
-  (`validate` below, or Check on the sessions page), which holds it to that build; `default`,
+  (`validate` below, or Check on the sessions page), which holds it to that build (`validate`
+  also measures its graphics; Check doesn't, the next start does); `default`,
   whose settings are `config.json`'s, is held to the new build by its first start there (the log
   says so), so an engine update never stops your browser. Another build of the same major starts a
   profile `unverified`. A profile whose seed is pinned
@@ -380,7 +399,10 @@ user's file, readable by others), the section says why and refuses a username or
   `assign <session> <profile>` (from its next start; never the session open in a browser),
   `import <file> [--dry-run] [--source ...] [--license ...]` (one file, at most 1 MiB; only
   languages, time zone, screen and a seed are taken), `export <profile> [<file>] [--with-history]
-  [--include-identity]`, `validate [<profile>]`, and `migrate [--report | --dismiss | --undo]`
+  [--include-identity]`, `validate [<profile>]` (holds each to the build installed now, then
+  measures its graphics in a throwaway browser of its own, on a private virtual screen where
+  this machine needs one, and keeps the verdict with it: `validated`, `failed` naming the
+  checks, or a non-zero exit when it couldn't measure), and `migrate [--report | --dismiss | --undo]`
   (`migrate` runs under the same lock as the helper's first start, so the home moves once;
   `--undo`, with no helper running, exports every stored profile to `profile-exports/` first,
   then puts each session's files back as they were and removes `browser-profiles/` and
@@ -400,14 +422,16 @@ user's file, readable by others), the section says why and refuses a username or
   `"auto"` (default) renders as this computer does (on a Linux server's virtual screen that is
   already software); `"software"` forces the engine's own software renderer
   (`--use-angle=swiftshader`), on Linux only (on macOS, and on the open build, a session with it
-  is refused, naming it); `"gpu"` asks for a hardware GPU, which the start refuses until
-  PairBrowse checks the browser's own read of its backend at launch (a later version), and at once
-  with `--disable-gpu` or a software renderer in `browserArgs`. Graphics are always this
+  is refused, naming it); `"gpu"` asks for a hardware GPU: the start is refused when the
+  measurement or the browser's own read of its backend says software, or can't say which
+  renderer it uses ("could not confirm"), and at once with `--disable-gpu` or a software renderer
+  in `browserArgs` (on the open build it is refused, as `graphics.require` is). Graphics are always this
   computer's own: on a Mac the captured values of this Mac; on Linux the browser reports the real
   backend's WebGL and WebGPU strings and limits, adds no fingerprint noise over its real pixels,
   and on PairBrowse's virtual screen reports that screen (`virtualScreen`'s size and depth,
-  pixel ratio 1 or your `--force-device-scale-factor`) unless `screenWidth` and
-  `screenHeight` or the profile set one. `disableGpuFingerprint` and `fingerprintNoise` set to
+  pixel ratio 1 or your `--force-device-scale-factor`); a screen `screenWidth` and
+  `screenHeight` or the profile set to another size refuses the start, naming both sizes
+  (set `virtualScreen` to the size you want instead). `disableGpuFingerprint` and `fingerprintNoise` set to
   anything else, and `gpuVendor`, `gpuRenderer` and `gpuStringSpoof`, aren't applied on Linux
   (the helper log says so); on the virtual screen neither is another screen key set without
   `screenWidth` and `screenHeight` (a `devicePixelRatio` or `colorDepth` alone gives way to the

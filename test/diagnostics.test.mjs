@@ -87,7 +87,7 @@ test("the report names joined people by role count only, and is scrubbed", async
     const read = await d.read();
     assert.equal(read.helper.version, "1.2.3");
     assert.equal(read.agents, 2);
-    assert.deepEqual(read.browser, { engine: "pairbrowse", version: "142.0.1", build: "b7" });
+    assert.deepEqual(read.browser, { engine: "pairbrowse", version: "142.0.1", build: "b7", graphics: null }, "no graphics read while no browser runs");
     assert.equal(read.errors[0].text, "error at a.example for [path]");
     const text = d.reportText({ ...read, connections: { agents: 2, viewers: 1, joiners: 1, streams: 3 }, joined: [{ label: "Zelda Q (Claude Code)", role: "drive" }, { label: "Yuri", role: "watch" }] });
     assert.match(text, /Joined: 1 drive, 1 watch/);

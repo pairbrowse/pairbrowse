@@ -15,6 +15,9 @@ import { NATIVE } from "../../native-pack.mjs";
 import { OPEN_ACCEPT_MS } from "../../opener.mjs";
 import { isBrowserPage, BROWSER_PICKER, extensionUrl } from "../../../ui/urls.js";
 import { pruneStaleContexts } from "../exec-contexts.mjs";
+import { createGraphics, MEASURING_BUSY } from "./graphics.mjs";
+import { probeLauncher } from "../../native/check.mjs";
+import { screenGeometry } from "../../display.mjs";
 import { paths } from "../../paths.mjs";
 import { testOn } from "../../testenv.mjs";
 
@@ -107,7 +110,13 @@ export function createLaunch(st, deps, api) {
   };
   const said = new Set(); // lines about the choice, logged once per helper run
   const once = (line) => { if (!said.has(line)) { said.add(line); log(line); } };
+  // Calls waiting on a launch, told to retry once it installs the browser or measures its graphics
+  // (getContext below): neither holds an agent's call silently for minutes.
   const installWaiters = new Set();
+  const tellWaiters = () => { for (const fn of installWaiters) fn(); };
+  // The launch's graphics, section 3.2 steps 4 and 7 (browser/graphics.mjs); a probe that starts
+  // tells the waiting calls (st.probing).
+  const graphics = createGraphics(st, deps, { ...api, onProbing: tellWaiters });
 
   const profile = () => engineProfile(st.engine || config, profileDir(st.session));
 
@@ -135,11 +144,11 @@ export function createLaunch(st, deps, api) {
         if (st.installing || !/^(downloading|unpacking)/.test(m)) return;
         st.installing = true;
         notify("Installing the PairBrowse browser. It takes a minute or two, once.");
-        for (const fn of installWaiters) fn();
+        tellWaiters();
       };
-      let native = null;
+      let native = null, checked = null;
       try {
-        native = nativeLayout() ? await ensureNativeBuild(installLog, { asset, config }) : null;
+        native = nativeLayout() ? await ensureNativeBuild(installLog, { asset, config, onGraphics: (m) => { checked = m; }, profileArgs: api.profiles.selfCheckArgs?.() ?? [] }) : null;
       } catch (e) {
         if (st.installing) notify("The PairBrowse browser couldn't be installed. Ask Claude what happened.");
         throw new Error(`The PairBrowse browser couldn't be installed: ${e.message} ${optOut}`);
@@ -149,6 +158,13 @@ export function createLaunch(st, deps, api) {
       }
       if (!native) throw new Error(`There's no PairBrowse browser build for ${process.platform} ${process.arch} yet. ${optOut}`);
       executablePath = native;
+      // An install's self-check measured the new build's graphics with config.json's settings: kept
+      // as the default profile's evidence for it (sessions/profiles.mjs fileSelfCheck).
+      if (checked) {
+        let build = null;
+        try { build = nativeManifest(native).version; } catch {}
+        api.profiles.fileSelfCheck(checked, { build, pack: NATIVE.engine.sha256, virtualScreen: checked.runtime?.display === "xvfb" ? screenGeometry(config) : null });
+      }
     } else if (spec.binary !== "native") {
       // A recorded open build or path of your own: the log says why nothing is installed, once.
       const why = spec.set && !spec.problem ? notChosen(config, !!asset) : null;
@@ -195,31 +211,38 @@ export function createLaunch(st, deps, api) {
     const native = next.browserEngine === "pairbrowse";
     const chosen = api.profiles.forLaunch(st.session, { browserKind: native ? "pairbrowse" : "pairbrowse-open", build: native ? nativeManifest(next.executablePath).version : null, pack: NATIVE.engine.sha256 });
     step("profile");
-    // The profile settings PairBrowse needs (blank start tab, pinned and enabled side panel,
-    // colors; see prepareProfile in browser.mjs), written before each launch. The ad blocker: the
-    // profile's choice, else config.json's.
-    const adBlockerOn = chosen.adBlocker ?? config.adBlocker !== false;
-    const firstRun = prepareProfile(profile(), undefined, { browserPages: st.ownPages, layout: config.layout, adBlocker: st.shell.adBlocker && adBlockerOn, adBlockerCrx: shippedCrx(st.shell.adBlockerCrx, next.executablePath) });
-    step("prepare");
-    // A side panel worker from another build (an update): the browser would keep running its
-    // cached copy, so it's loaded anew from disk (resetPanelWorker in browser.mjs).
-    if (!st.ownPages) try { if (resetPanelWorker(profile())) log("side panel: its worker changed since the last start; the browser loads it anew"); } catch (e) { log(`side panel: ${e?.message || e}`); }
-    // The PairBrowse browser (scripts/browser.mjs), or another browser on the same engine from config.
-    let keyFile = null, captureKeyFile = null;
-    if (helper) try { keyFile = st.helperKeyPath = writeHelperKeyFile(helper.key); } catch (e) { log(`the browser's own pages have no helper address (key file: ${e?.code || "refused"})`); }
-    // A capture page that reads its own key gets a new one now (and the helper requires it); a
-    // file that can't be written leaves the capture page without one (it is refused: fail closed).
-    const ck = helper?.newCaptureKey?.(!!(keyFile && st.capture && st.shell.captureKeyed)) || null;
-    if (ck) try { captureKeyFile = st.captureKeyPath = writeHelperKeyFile(ck, undefined, CAPTURE_KEY_PREFIX); } catch (e) { log(`the capture page has no key (key file: ${e?.code || "refused"})`); }
     const launchLog = measuringLog({ log, status, notify });
-    let ctx, net = null;
+    let ctx, net = null, launchSwitches, keyFile = null, captureKeyFile = null, graphicsPlan;
     try {
       // The session's network (daemon/network.mjs, spec server-mode section 3.2 step 3): its proxy,
-      // strict switches and auth file, or the refusal this launch stops with (never direct instead).
-      // Inside the try, so the finally drops its auth file whatever stops the launch.
+      // strict switches and auth file, or the refusal this launch stops with (never direct instead),
+      // before the graphics step's probe, so a refusal never waits for it. Inside the try, so the
+      // finally drops its auth file whatever stops the launch.
       // The profile's network id counts unless config.json's network.sessions names one (C4).
       // locale: what its pages read, judged against the exit's country at the check (C13).
       net = network ? network.forLaunch(st.session, { profileNetwork: chosen.network, shell: st.shell, native, locale: chosen.locale }) : null;
+      // The graphics this start can have (browser/graphics.mjs, spec server-mode section 3.2 step 4):
+      // the measurement kept for this build, or one made now in a probe browser of its own (the first
+      // start per runtime; no proxy and never geoip, native/check.mjs probeEngine), and every static
+      // compatibility error refusing the start by name.
+      graphicsPlan = await graphics.before({ chosen, native, build: chosen.build, pack: NATIVE.engine.sha256, screen, session: st.session,
+        probeLaunch: native ? probeLauncher({ chromium: browserType(), engine: { ...next, browserProfile: { ...chosen.engine, geoip: false } }, config, shell: st.shell, screen, env: process.env, executablePath: next.executablePath, profileArgs: chosen.switches, server: api.isServer(), log }) : null });
+      step("graphics");
+      // The profile settings PairBrowse needs (blank start tab, pinned and enabled side panel,
+      // colors; see prepareProfile in browser.mjs), written before each launch. The ad blocker: the
+      // profile's choice, else config.json's.
+      const adBlockerOn = chosen.adBlocker ?? config.adBlocker !== false;
+      const firstRun = prepareProfile(profile(), undefined, { browserPages: st.ownPages, layout: config.layout, adBlocker: st.shell.adBlocker && adBlockerOn, adBlockerCrx: shippedCrx(st.shell.adBlockerCrx, next.executablePath) });
+      step("prepare");
+      // A side panel worker from another build (an update): the browser would keep running its
+      // cached copy, so it's loaded anew from disk (resetPanelWorker in browser.mjs).
+      if (!st.ownPages) try { if (resetPanelWorker(profile())) log("side panel: its worker changed since the last start; the browser loads it anew"); } catch (e) { log(`side panel: ${e?.message || e}`); }
+      // The PairBrowse browser (scripts/browser.mjs), or another browser on the same engine from config.
+      if (helper) try { keyFile = st.helperKeyPath = writeHelperKeyFile(helper.key); } catch (e) { log(`the browser's own pages have no helper address (key file: ${e?.code || "refused"})`); }
+      // A capture page that reads its own key gets a new one now (and the helper requires it); a
+      // file that can't be written leaves the capture page without one (it is refused: fail closed).
+      const ck = helper?.newCaptureKey?.(!!(keyFile && st.capture && st.shell.captureKeyed)) || null;
+      if (ck) try { captureKeyFile = st.captureKeyPath = writeHelperKeyFile(ck, undefined, CAPTURE_KEY_PREFIX); } catch (e) { log(`the capture page has no key (key file: ${e?.code || "refused"})`); }
       const options = {
         // The helper's own shutdown closes the browser (daemon.mjs shutdown -> close below).
         // Playwright's signal handlers would start a close of their own on the same SIGTERM, and
@@ -235,6 +258,7 @@ export function createLaunch(st, deps, api) {
           helper: helper && keyFile ? { origin: helper.origin, keyFile, ...(captureKeyFile ? { captureKeyFile } : {}) } : null,
         }),
       };
+      launchSwitches = options.args || [];
       // The native build's engine layer: the profile's keys, geoip and the id its persona is saved
       // under; and the virtual screen, which on Linux is the screen pages read (spec E7).
       ctx = await launchEngine(browserType(), { ...next, browserProfile: chosen.engine, virtualDisplay: screen?.geometry ?? null }, profile(), withNetLog(net ? net.apply(options) : options), launchLog, undefined, { server: api.isServer() }); // in server mode the sandbox is required (spec server-mode A10)
@@ -257,6 +281,17 @@ export function createLaunch(st, deps, api) {
       throw new Error(checked.refusal);
     }
     if (net?.proxy) step("network check");
+    // The browser process's own graphics read (browser/graphics.mjs, section 3.2 step 7): a GPU
+    // asked for over software, a backend other than the measured one, or (requireValidatedProfiles)
+    // a profile not validated for this runtime closes the browser before any tab loads; the
+    // verdict is kept with the profile. Not a crash for the guard either (no close handler yet).
+    const drawn = await graphics.after(ctx, graphicsPlan, { chosen, switches: launchSwitches, session: st.session });
+    if (!drawn.ok) {
+      await within(5000, ctx.close().catch(() => {}));
+      dropHelperKey(keyFile, captureKeyFile);
+      throw new Error(drawn.refusal);
+    }
+    step("graphics read");
     // The running browser's network from now (network.strict(), C11), and its exit's rechecks
     // (daemon/network.mjs, C8): they end with this browser's close, tied on at the moment they
     // start, so a crash before the close handler below is on never leaves them running.
@@ -291,7 +326,7 @@ export function createLaunch(st, deps, api) {
       // Closed while asking: the next browser asks again.
       if (st.pick.state === "showing") { st.pick.state = "pending"; st.pick.page = null; }
       // Only the browser in use: an older one closing late never drops the next one (nor its profile).
-      if (st.contextPromise === mine) { st.contextPromise = null; api.profiles.release(); }
+      if (st.contextPromise === mine) { st.contextPromise = null; api.profiles.release(); graphics.release(); }
       hud.clearSparks();
       if (!st.switching) onClosed(); // switching sessions: the next one opens right away
     });
@@ -314,12 +349,13 @@ export function createLaunch(st, deps, api) {
       st.contextPromise = launch().catch((e) => {
         st.contextPromise = null;
         api.profiles.release(); // a launch that stopped started no browser on its profile
+        graphics.release();
         throw e;
       }).finally(() => { st.launching = false; installWaiters.clear(); });
     }
     if (!st.launching) return st.contextPromise;
-    const busy = () => new Error("PairBrowse is installing its browser (the first start or a new version: a minute or two). Tell the user, then retry the last action in a minute.");
-    if (st.installing) return Promise.reject(busy());
+    const busy = () => new Error(st.probing ? MEASURING_BUSY : "PairBrowse is installing its browser (the first start or a new version: a minute or two). Tell the user, then retry the last action in a minute.");
+    if (st.installing || st.probing) return Promise.reject(busy());
     return Promise.race([st.contextPromise, new Promise((_, reject) => installWaiters.add(() => reject(busy())))]);
   }
 
@@ -423,5 +459,7 @@ export function createLaunch(st, deps, api) {
   // This launch's shell, or the next one's while no browser runs (what it will be once it runs).
   const nextShell = () => (st.contextPromise && st.chosen ? st.shell : predict());
 
-  return { browserType, dropHelperKey, pickerUrl, choiceConfig, profile, getContext, watchClose, ready, reset, openByHand, close, predict, nextShell };
+  // graphicsStatus({ remote }): pairbrowse_status's Graphics part; graphicsSummary(): diagnostics'.
+  return { browserType, dropHelperKey, pickerUrl, choiceConfig, profile, getContext, watchClose, ready, reset, openByHand, close, predict, nextShell,
+    graphicsStatus: graphics.statusParts, graphicsSummary: graphics.summary };
 }

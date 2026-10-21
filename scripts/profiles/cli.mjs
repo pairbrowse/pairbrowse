@@ -14,10 +14,11 @@ import { pathToFileURL } from "node:url";
 import { paths, loadConfig } from "../paths.mjs";
 import { assignProfile, assignedTo, profileInUse, isTemporary } from "../sessions.mjs";
 import { createProfileStore } from "./store.mjs";
-import { fromConfig } from "./map.mjs";
+import { fromConfig, toLaunch, ENGINE_KEYS } from "./map.mjs";
+import { launchableBrowserArgs, browserArgsOf } from "../browser-args.mjs";
 import { importFile } from "./import.mjs";
 import { exportToFile } from "./export.mjs";
-import { validateProfile, installedBuild, cliCommand } from "./validate.mjs";
+import { validateProfile, installedBuild, cliCommand, measuredEntry } from "./validate.mjs";
 import { migrateLocked, migrationReport, notCarried, undoMigration, dismissMigration, readMigration, helperRunning } from "./migrate.mjs";
 import { DEFAULT_PROFILE } from "./schema.mjs";
 
@@ -31,7 +32,8 @@ export const USAGE = `Usage: node scripts/profiles/cli.mjs <command>
   assign <session> <profile>             the session starts on the profile from its next start
   import <file> [--dry-run] [--source <where from>] [--license <SPDX id|own-capture|unknown>] [--terms <text>] [--name <name>]
   export <profile> [<file>] [--with-history] [--include-identity] [--overwrite]
-  validate [<profile>]                   check it (every active one) on the native build installed now
+  validate [<profile>]                   check it (every active one) on the native build installed now,
+                                         measuring its graphics in a browser of its own
   migrate [--report | --undo | --dismiss]
                                          move this home to browser profiles (the helper does it at its
                                          first start), show what it reads, undo it, or hide its notes
@@ -63,8 +65,10 @@ const settingsOf = (text) => {
 
 // Runs one command (argv: what follows the script's path). Prints to out and err; resolves the
 // exit code (0 done, 1 refused or failed, 2 usage). Tests pass store, config, native (a native
-// build is pinned here), build ({ build, pack } or { problem }) and running (a helper on this home).
-export async function runProfilesCli(argv, { out = process.stdout, err = process.stderr, store, config, native, build, running = helperRunning, now = Date.now, platform = process.platform } = {}) {
+// build is pinned here), build ({ build, pack, exec } or { problem }), running (a helper on this
+// home) and measure (validate's graphics measurement, native/check.mjs measureGraphics's place:
+// (exec, { config, engineLayer, profileArgs, log }) -> { measured, line, virtualScreen }).
+export async function runProfilesCli(argv, { out = process.stdout, err = process.stderr, store, config, native, build, running = helperRunning, now = Date.now, platform = process.platform, measure } = {}) {
   const say = (s) => out.write(`${s}\n`);
   const fail = (s, code = 1) => { err.write(`${s}\n`); return code; };
   const [command, ...rest] = argv;
@@ -161,12 +165,31 @@ export async function runProfilesCli(argv, { out = process.stdout, err = process
       if (build.problem) return fail(build.problem);
       const refs = rest.length ? rest : store.list().filter((r) => !r.problem && r.status === "active").map((r) => r.id);
       if (!refs.length) refs.push(DEFAULT_PROFILE);
+      measure ??= (await import("../native/check.mjs")).measureGraphics;
       let code = 0;
       for (const ref of refs) {
+        let r;
         try {
-          const r = validateProfile(store, ref, { build: build.build, pack: build.pack, configSettings: configSettings(), platform, now });
-          say(`${r.name}: applies on build ${r.build}${r.from && r.from.build !== r.build ? ` (was held to ${r.from.build})` : ""}; unverified until PairBrowse measures this build.`);
-        } catch (e) { code = 1; err.write(`${e?.message || e}\n`); }
+          r = validateProfile(store, ref, { build: build.build, pack: build.pack, configSettings: configSettings(), platform, now });
+          say(`${r.name}: applies on build ${r.build}${r.from && r.from.build !== r.build ? ` (was held to ${r.from.build})` : ""}; measuring its graphics.`);
+        } catch (e) { code = 1; err.write(`${e?.message || e}\n`); continue; }
+        // E4: the build measured for this profile in a probe browser of its own (its switches and
+        // engine keys, this computer's screen), and the verdict kept as its evidence (E6, E8).
+        try {
+          const record = use(r.id);
+          const userArgs = launchableBrowserArgs(browserArgsOf(config), platform);
+          const mapped = toLaunch(record, { browserKind: "pairbrowse", platform, userArgs });
+          // Never geoip: the probe has no proxy, so its region lookup would send this computer's
+          // own address out (native/check.mjs probeEngine turns it off as well).
+          const engineLayer = { id: record.id, kind: record.kind, geoip: false, graphics: record.graphics.backend, engineKeys: Object.fromEntries(Object.entries(mapped.engineKeys).filter(([k]) => ENGINE_KEYS.includes(k))) };
+          const got = await measure(build.exec, { config, engineLayer, profileArgs: mapped.switches, log: () => {} });
+          if (!got?.measured) { code = 1; err.write(`${r.name}: ${got?.line || "graphics: not measured"}; it stays unverified.\n`); continue; }
+          const entry = measuredEntry(record, { build: build.build, pack: build.pack, measured: got.measured, runtimeKey: got.measured.runtimeKey, platform,
+            virtualScreen: got.virtualScreen, switches: [...userArgs, ...mapped.switches], results: mapped.results, now });
+          if (entry.graphics) store.recordValidation(record.id, { build: build.build, entry });
+          const errors = entry.items.filter((i) => i.severity === "error" && i.status !== "matched" && i.status !== "applied" && i.status !== "derived");
+          say(`${r.name}: ${entry.status} on build ${build.build} (${got.line})${errors.length ? `: ${errors.slice(0, 6).map((i) => `${i.field} (${i.status}${i.reason ? `: ${i.reason}` : ""})`).join("; ")}${errors.length > 6 ? `; ${errors.length - 6} more (show ${r.name})` : ""}` : ""}.`);
+        } catch (e) { code = 1; err.write(`${r.name}: graphics not measured (${e?.message || e}); it stays unverified.\n`); }
       }
       return code;
     }

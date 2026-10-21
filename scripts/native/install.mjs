@@ -244,10 +244,12 @@ async function unpackChecked(archive, staging, layout, log) {
 // linuxwin.py). Returns the installed executable. check: the launch check (tests pass a stand-in);
 // register: tell the desktop about the new app (macOS: Launch Services; Linux: its desktop entry
 // and icons, native/desktop.mjs, under dataHome when given); layout: this platform's (tests pass
-// another one).
+// another one). onGraphics(measured): the self-check's graphics measurement (native/check.mjs
+// graphicsCheck), handed out for the helper to keep with the default profile; profileArgs: the
+// default profile's switches its graphics probe starts with (the helper's launch passes them too).
 // config: the settings (default: config.json); with "browser" set to "pairbrowse-open" or a path, it
 // installs nothing and returns null.
-export async function installNative(archive, { sha256, log = () => {}, check = selfCheck, register = true, layout = nativeLayout(), config = loadConfig(), dataHome } = {}) {
+export async function installNative(archive, { sha256, log = () => {}, check = selfCheck, register = true, layout = nativeLayout(), config = loadConfig(), dataHome, onGraphics, profileArgs } = {}) {
   const skip = notChosen(config, !!layout);
   if (skip) { log(skip); return null; }
   archive = resolve(archive);
@@ -274,7 +276,7 @@ export async function installNative(archive, { sha256, log = () => {}, check = s
       try { prepareProfile(engineProfile(using, profileDir(currentSession())), undefined, { browserPages: shellFrom(manifest).ownPages, layout: using.layout }); } catch {}
 
       log("checking the new browser");
-      const passed = await check(d.exec, { config: using, log });
+      const passed = await check(d.exec, { config: using, log, ...(onGraphics ? { onGraphics } : {}), ...(profileArgs ? { profileArgs } : {}) });
       // Passed: from here on the new app stays, whatever happens to the bookkeeping below.
       writeRecord(d, { version: manifest.version, sha256: got, archive: basename(archive), installedAt: new Date().toISOString(), checks: passed, branding: BRANDING, ownPages: declaresOwnPages(manifest) });
       rmSync(d.pending, { force: true });
@@ -344,7 +346,7 @@ async function rebrandInstalled(d, record, log) {
 // The pinned native build for this platform and chip, installed (and checked) when the installed
 // one isn't it. Returns its executable, or null when there's no pinned build. Whenever the pinned
 // build can't be had or doesn't pass, a working installed app (of any version) is kept.
-async function ensureNativeBrowser(log, { pinned, asset, config }) {
+async function ensureNativeBrowser(log, { pinned, asset, config, onGraphics, profileArgs }) {
   const layout = nativeLayout();
   const d = nativeDirs();
   if (existsSync(d.pending)) {
@@ -365,7 +367,7 @@ async function ensureNativeBrowser(log, { pinned, asset, config }) {
   try { installed = nativeManifest(d.exec).version; } catch {}
   try {
     const archive = await pinned(asset, log);
-    const exec = await installNative(archive, { sha256: asset.sha256, log, config: settings });
+    const exec = await installNative(archive, { sha256: asset.sha256, log, config: settings, onGraphics, profileArgs });
     rmSync(archive, { force: true }); // installed and checked: the download isn't needed any more
     return exec;
   } catch (e) {
@@ -380,11 +382,12 @@ async function ensureNativeBrowser(log, { pinned, asset, config }) {
 // pinned / engine / asset: how the archive and engine pack are fetched, and which build is pinned
 // (tests pass stand-ins). config: the settings (default: config.json, read after an earlier
 // install cut short is undone); with "browser" set to "pairbrowse-open" or a path, null and nothing done.
-export async function ensureNative(log = () => {}, { pinned = pinnedArchive, engine = ensureEngine, asset = pinnedAsset(), config = undefined } = {}) {
+// onGraphics(measured), profileArgs: an install's self-check measurement and its probe's switches (installNative).
+export async function ensureNative(log = () => {}, { pinned = pinnedArchive, engine = ensureEngine, asset = pinnedAsset(), config = undefined, onGraphics, profileArgs } = {}) {
   // One install at a time in the shared installs' home: an instance waits for another's install
   // of the same build instead of failing on its lock (install-lock.mjs).
   return withInstallLock(async () => {
-    const exec = await ensureNativeBrowser(log, { pinned, asset, config });
+    const exec = await ensureNativeBrowser(log, { pinned, asset, config, onGraphics, profileArgs });
     if (exec) await engine(log);
     return exec;
   }, { say: log });

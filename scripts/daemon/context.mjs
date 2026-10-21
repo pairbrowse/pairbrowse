@@ -52,7 +52,7 @@ export function createContext({ personTabs = createPersonTabs(), config, log, ch
   // The browser profile each launch starts on: assignment, binding, engine, mapping (sessions/profiles.mjs).
   const profiles = api.profiles = createProfiles(st, deps);
   // Launching the browser and getContext() (browser/launch.mjs).
-  const { dropHelperKey, choiceConfig, profile, getContext, watchClose, ready, reset, openByHand, close, nextShell } = Object.assign(api, createLaunch(st, deps, api));
+  const { dropHelperKey, choiceConfig, profile, getContext, watchClose, ready, reset, openByHand, close, nextShell, graphicsStatus, graphicsSummary } = Object.assign(api, createLaunch(st, deps, api));
   // Downloads: kept in the Downloads folder, and Playwright's temporary ones forgotten (browser/downloads.mjs).
   Object.assign(api, createDownloads({ personTabs, config, hostNote, log, onDownload, profile }));
   // The tabs: finding them, the cap, what watches each page, saved tabs coming back (browser/tabs.mjs).
@@ -95,8 +95,12 @@ export function createContext({ personTabs = createPersonTabs(), config, log, ch
     // The crash-loop guard's refusal while it holds, else null; and what pairbrowse_status adds
     // about the browser's surroundings (browser/supervise.mjs) and the session's network
     // (daemon/network.mjs: its last check, or a failed one that holds).
-    // The running browser's profile ("Profile: <name> (rev <n>, <status> on <build>)") comes before them.
-    crashLoop, statusParts: () => [...screenParts(), ...profiles.statusParts(), ...(network?.statusParts(st.session) || [])],
+    // The running browser's profile ("Profile: <name> (rev <n>, <status> on <build>)") and its
+    // graphics ("Graphics: <kind> (<renderer>), requested <backend>, <status> on <build>"; remote: a
+    // joiner's agent asks, which gets no renderer) come before them.
+    crashLoop, statusParts: ({ remote = false } = {}) => [...screenParts(), ...profiles.statusParts(), ...graphicsStatus({ remote }), ...(network?.statusParts(st.session) || [])],
+    // The running browser's graphics for diagnostics: { kind, status } (never the renderer or IDs), or null.
+    graphics: graphicsSummary,
     // The browser profiles there are (the store's list): what an agent may pick from (spec D14).
     profiles: () => profiles.list(),
     // The person's profile operations on the sessions page (sessions/profile-owner.mjs): owner-only routes.

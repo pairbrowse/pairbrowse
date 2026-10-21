@@ -412,11 +412,14 @@ export function createProfileStore({ dir = paths.browserProfiles, now = Date.now
     // What a launch on the native build found (D10, E8; daemon/sessions/profiles.mjs): engine, the
     // { major, build } it first ran on, set once (null before); entry, the launch's own
     // validation[build] ({ status: "unverified", at, pack, items }). Evidence, not settings: no new
-    // revision, no history entry. An entry with measured evidence (validated or failed) is left as
-    // it is, and one whose status, pack and items are the same isn't written again (its at stays the
-    // first launch's). A record of an older schema is left for its next change (writeNext keeps its
+    // revision, no history entry. An entry with measured evidence (validated or failed, or any
+    // holding a measurement) is left as it is, and one whose status, pack and items are the same
+    // isn't written again (its at stays the first launch's). replaceMeasured: the measured entry is
+    // of another runtime (its graphics, driver, display or switches changed: daemon/browser/
+    // graphics.mjs), so this launch's entry, without a measurement, replaces it and the next start
+    // measures again. A record of an older schema is left for its next change (writeNext keeps its
     // file). Returns whether anything was written.
-    recordLaunch(id, { engine = null, build, entry = null } = {}) {
+    recordLaunch(id, { engine = null, build, entry = null, replaceMeasured = false } = {}) {
       return locked(() => {
         const read = readRaw(id);
         if (!read) throw fail("PROFILE_UNKNOWN", `There is no browser profile "${shown(id)}".`);
@@ -427,7 +430,9 @@ export function createProfileStore({ dir = paths.browserProfiles, now = Date.now
         if (engine && !before.engine) next.engine = { major: engine.major, build: engine.build };
         const prior = before.validation?.[build];
         const same = (a, b) => sameValue({ status: a.status, pack: a.pack, items: a.items }, { status: b.status, pack: b.pack, items: b.items });
-        if (entry && typeof build === "string" && (!prior || (prior.status === "unverified" && !same(prior, entry)))) next.validation = { ...before.validation, [build]: structuredClone(entry) };
+        const measured = !!prior && (prior.status !== "unverified" || plainObject(prior.graphics));
+        const replace = !!entry && (!prior || (measured ? replaceMeasured && !plainObject(entry.graphics) : !same(prior, entry)));
+        if (entry && typeof build === "string" && replace) next.validation = { ...before.validation, [build]: structuredClone(entry) };
         if (sameValue(next, before)) return false;
         if (r.kind === "config") {
           const problems = stubProblems(next);

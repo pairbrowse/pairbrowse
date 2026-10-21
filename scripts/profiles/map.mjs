@@ -290,16 +290,19 @@ export function toLaunch(profile, { browserKind, platform = process.platform, us
   else derived("display.reducedMotion", "C", "this computer's");
 
   // Graphics (E2, native/graphics.mjs graphicsPlan): software is the engine's own software renderer
-  // on Linux (refused on macOS and on the open build, never partly applied); a GPU or a requirement
-  // is checked against what the browser reports after it starts, which this version doesn't do yet
-  // (section 3.2 step 7), so it refuses. The plan's engine keys (Linux: the real backend's strings
-  // and screen) are the launch's own, never the profile's (native-engine.mjs).
+  // on Linux (refused on macOS and on the open build, never partly applied); a GPU (native only:
+  // the plan refuses it on the open build) and a requirement (native only) are checked against
+  // the measurement before the start and the browser's own read after it (daemon/browser/
+  // graphics.mjs, section 3.2 steps 4 and 7), which refuse it there. The plan's engine keys (Linux:
+  // the real backend's strings and screen) are the launch's own, never the profile's
+  // (native-engine.mjs).
   const { backend, require: requirement } = p.graphics;
-  const plan = backend === "gpu" ? null : graphicsPlan({ requested: backend, platform, browserKind, userArgs, name: p.name });
-  if (plan?.refusals.length) for (const r of plan.refusals) refuse("graphics.backend", "M", r.message.replace(/\.$/, ""));
-  else if (backend === "software") { switches.push(...plan.switches); applied("graphics.backend", "M", `a software renderer (${plan.switches.join(" ")}); the backend in use is measured, not assumed`, "software"); } else if (backend === "gpu") refuse("graphics.backend", "M", "a GPU requirement isn't checked by this version yet");
+  const plan = graphicsPlan({ requested: backend, platform, browserKind, userArgs, name: p.name });
+  if (plan.refusals.length) for (const r of plan.refusals) refuse("graphics.backend", "M", r.message.replace(/\.$/, ""));
+  else if (backend === "software") { switches.push(...plan.switches); applied("graphics.backend", "M", `a software renderer (${plan.switches.join(" ")}); the backend in use is measured, not assumed`, "software"); } else if (backend === "gpu") applied("graphics.backend", "M", "a GPU: checked against the measured backend before the start and the browser's own read after it", "gpu");
   else derived("graphics.backend", "M", "this computer's, measured");
-  if (requirement) refuse("graphics.require", "M", "graphics requirements aren't checked by this version yet");
+  if (requirement && !native) refuse("graphics.require", "M", "only the native PairBrowse build checks graphics requirements");
+  else if (requirement) applied("graphics.require", "M", "checked against the measurement before each start", requirement);
 
   // Persona (D3, D9): a pinned seed, the host's own values, or a seed per session.
   const { seed } = p.persona;

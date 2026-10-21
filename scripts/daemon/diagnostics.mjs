@@ -92,17 +92,27 @@ export function pinnedBrowserVersion({ engine, nativeRecord = null, ungoogled = 
   return null;
 }
 
-// version: the helper's version. browser(): { engine, version, build } (never a path). agents():
+// The running browser's graphics as a report may carry them (spec server-mode E-3): the backend's
+// kind and the profile's status on this build, never the renderer, the GPU's name or its IDs.
+export function graphicsSummary(g) {
+  if (!g || typeof g !== "object") return null;
+  return { kind: ["hardware", "software"].includes(g.kind) ? g.kind : "unverified", status: ["validated", "failed"].includes(g.status) ? g.status : "unverified" };
+}
+
+// version: the helper's version. browser(): { engine, version, build } (never a path). graphics():
+// the running browser's { kind, status } or null (graphicsSummary keeps only those). agents():
 // agents connected now. read() gives the parts the helper knows; the live view adds connections.
-export function createDiagnostics({ version = "", browser = async () => ({ engine: null, version: null, build: null }), agents = () => 0, logFile = paths.daemonLog, home = homedir(), mask = (t) => t } = {}) {
+export function createDiagnostics({ version = "", browser = async () => ({ engine: null, version: null, build: null }), graphics = () => null, agents = () => 0, logFile = paths.daemonLog, home = homedir(), mask = (t) => t } = {}) {
   const clean = (t) => scrub(t, { home, mask });
   return {
     async read() {
       let b = { engine: null, version: null, build: null };
       try { b = { ...b, ...(await browser()) }; } catch {}
+      let g = null;
+      try { g = graphicsSummary(graphics()); } catch {}
       return {
         helper: { version: String(version || ""), node: process.versions.node, uptime: Math.round(process.uptime()) },
-        browser: { engine: b.engine ?? null, version: b.version ?? null, build: b.build ?? null },
+        browser: { engine: b.engine ?? null, version: b.version ?? null, build: b.build ?? null, graphics: g },
         agents: Number(agents()) || 0,
         errors: await lastErrors({ file: logFile, home, mask }),
       };
@@ -118,6 +128,7 @@ export function createDiagnostics({ version = "", browser = async () => ({ engin
         `Helper: ${diag.helper?.version || "?"} (Node ${diag.helper?.node || "?"}, up ${diag.helper?.uptime ?? "?"} s)`,
         `OS: ${platform()} ${arch()} ${release()}`,
         `Browser: ${diag.browser?.engine || "none"} ${diag.browser?.version || "?"}${diag.browser?.build ? ` (build ${diag.browser.build})` : ""}`,
+        ((g) => (g ? `Graphics: ${g.kind}, ${g.status}` : "Graphics: not read"))(graphicsSummary(diag.browser?.graphics)),
         `Connections: ${c.agents ?? 0} agents, ${c.viewers ?? 0} viewers, ${c.joiners ?? 0} joiners, ${c.streams ?? 0} streams`,
         `Joined: ${roles.drive} drive, ${roles.watch} watch`,
         (diag.errors || []).length ? "Errors:" : "Errors: none",

@@ -1102,7 +1102,7 @@ describe("diagnostics", () => pageTest("right", opts({ diagnostics: DIAG }, { na
   await page.click("#sec-diag .disclose");
   await until("the helper line", () => document.getElementById("diag").checkVisibility() && document.getElementById("diag-helper").textContent !== "");
   assert.equal(await inPage(text, "diag-helper"), "0.15.45 · Node 22.11.0 · up 2 h 5 min");
-  assert.equal(await inPage(text, "diag-browser"), "PairBrowse browser 142.0.7444.59 (build 3)");
+  assert.equal(await inPage(text, "diag-browser"), "PairBrowse browser 142.0.7444.59 (build 3) · graphics hardware, failed", "the graphics' kind and status, never the GPU");
   assert.equal(await inPage(text, "diag-conn"), "1 agent · 2 viewers · 1 joiner · 3 streams");
   assert.equal(await inPage(text, "diag-joined"), "Sam (drive)");
   const errs = await inPage(() => [...document.querySelectorAll("#diag-errors li")].map((li) => [li.querySelector("strong").textContent, li.querySelector("time").dateTime !== "", li.textContent]));

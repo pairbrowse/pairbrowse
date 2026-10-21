@@ -114,10 +114,29 @@ test("self-check graphics step names a software backend as such", async () => {
   assert.equal(graphicsStep(software), "graphics: software, WebGL 2, WebGPU unavailable");
   const src = readFileSync(join(root, "scripts", "native", "check.mjs"), "utf8");
   const run = src.slice(src.indexOf("const result = await withTimeout(work"));
-  assert.match(run, /probeOptions\(launchOptions\(config, \{ shell, screen, env: \{ \.\.\.env, \.\.\.\(screen\?\.env \|\| \{\}\) \}/, "launched as the check's, on its screen, hidden on macOS");
-  assert.match(run, /\{ server: serverMode\(config, env\) \}/, "the same sandbox rule");
+  // probeLauncher: started as the helper starts the build, on the given screen, hidden on macOS.
+  const launcher = src.slice(src.indexOf("export function probeLauncher("), src.indexOf("export async function measureGraphics("));
+  assert.match(launcher, /probeOptions\(launchOptions\(config, \{ shell, screen, env: \{ \.\.\.env, \.\.\.\(screen\?\.env \|\| \{\}\) \}, executablePath, blankStart: true, profileArgs \}\)\)/, "launched as the check's, on its screen, hidden on macOS");
+  assert.match(launcher, /launchEngine\(chromium, \{ \.\.\.probeEngine\(engine\), virtualDisplay: screen\?\.geometry \?\? null \}, directory, options, log, undefined, \{ server \}\)/, "never geoip");
+  assert.match(run, /probeLauncher\(\{ chromium, engine, config, shell, screen, env, executablePath: exec, profileArgs, server: serverMode\(config, env\), log \}\)/, "the check's screen, the default profile's switches and the same sandbox rule");
   assert.match(run, /display: screen \? "xvfb" : "native"/);
   assert.ok(run.indexOf("graphicsCheck(") < run.indexOf("await screen?.stop()"), "the probe runs before the check's screen stops");
+});
+
+// A probe never looks up a region (geoip): it has no proxy, so the lookup would send this
+// computer's own address out. Off in config.json's block and in the profile's engine layer; the
+// rest of the engine config is the launch's.
+test("a graphics probe's engine config has geoip off in both places", async () => {
+  const { probeEngine } = await import("../scripts/native/check.mjs");
+  const engine = { browserEngine: "pairbrowse", executablePath: "/x", pairbrowse: { geoip: true, timezone: "Europe/Berlin" }, browserProfile: { id: "p-1", kind: "store", geoip: true, engineKeys: { acceptLanguage: "de-DE" } } };
+  const out = probeEngine(engine);
+  assert.equal(out.pairbrowse.geoip, false);
+  assert.equal(out.browserProfile.geoip, false);
+  assert.equal(out.pairbrowse.timezone, "Europe/Berlin");
+  assert.deepEqual(out.browserProfile.engineKeys, { acceptLanguage: "de-DE" });
+  assert.equal(engine.pairbrowse.geoip, true, "the launch's own config isn't changed");
+  assert.equal(engine.browserProfile.geoip, true);
+  assert.deepEqual(probeEngine({ browserEngine: "pairbrowse" }), { browserEngine: "pairbrowse" }, "nothing added where nothing was set");
 });
 
 // graphicsCheck itself, with the real probeLaunch over a stand-in browser.

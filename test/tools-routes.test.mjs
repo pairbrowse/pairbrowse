@@ -438,7 +438,7 @@ test("diagnostics: the contract's fields, errors scrubbed, the report by role co
       assert.deepEqual(Object.keys(d).sort(), ["browser", "connections", "errors", "helper", "joined"]);
       assert.deepEqual(Object.keys(d.helper).sort(), ["node", "uptime", "version"]);
       assert.equal(d.helper.version, "9.9.9");
-      assert.deepEqual(d.browser, { engine: "chromium", version: "142.0.0.0", build: null });
+      assert.deepEqual(d.browser, { engine: "chromium", version: "142.0.0.0", build: null, graphics: null });
       assert.deepEqual(Object.keys(d.connections).sort(), ["agents", "joiners", "streams", "viewers"]);
       assert.equal(d.connections.agents, 1);
       assert.equal(d.connections.streams, 1);

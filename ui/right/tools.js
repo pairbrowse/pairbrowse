@@ -463,6 +463,9 @@ export function toolsPanel({ base, shown, onRecording = () => {} }) {
     if (b && (str(b.engine) || str(b.version))) {
       browser = [ENGINE[b.engine] || "Browser", str(b.version)].filter(Boolean).join(" ");
       if (str(b.build)) browser += ` (build ${str(b.build)})`;
+      // Its graphics: the backend's kind and the profile's status, never the GPU (spec E-3).
+      const g = b.graphics && typeof b.graphics === "object" ? b.graphics : null;
+      if (g && str(g.kind) && str(g.status)) browser += ` · graphics ${str(g.kind)}, ${str(g.status)}`;
     }
     const c = d.connections && typeof d.connections === "object" ? d.connections : null;
     const conn = c ? [["agents", "agent"], ["viewers", "viewer"], ["joiners", "joiner"], ["streams", "stream"]]

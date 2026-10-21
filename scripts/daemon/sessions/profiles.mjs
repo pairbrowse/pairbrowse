@@ -29,12 +29,17 @@
 // coherence(): the running profile's open coherence items (rules/coherence.mjs, E13): its screen
 // and window as sites see them (screen.believable, also kept in the launch's evidence), and the
 // mismatches its measured validation on this pack found (gpu.*); a hand-off reports them (B14).
+// fileValidation(entry): what the running browser's graphics checks found (daemon/browser/
+// graphics.mjs, section 3.2 step 7), kept as its build's evidence; its status and coherence items
+// follow. fileSelfCheck(measured): an install self-check's measurement (native/check.mjs), filed
+// with the config-backed default, whose settings the self-check's browser started with;
+// selfCheckArgs(): the default's mapped switches that self-check's graphics probe starts with.
 import { readAssignment, readBinding, writeBinding, validName, assignedTo } from "../../sessions.mjs";
 import { createProfileStore } from "../../profiles/store.mjs";
 import { launchableBrowserArgs, browserArgsOf } from "../../browser-args.mjs";
 import { fromConfig, toLaunch, ENGINE_KEYS, PICKS_THIS_COMPUTER, THIS_COMPUTER_NOTE } from "../../profiles/map.mjs";
-import { PROFILE_ID } from "../../profiles/schema.mjs";
-import { cliCommand } from "../../profiles/validate.mjs";
+import { PROFILE_ID, DEFAULT_PROFILE } from "../../profiles/schema.mjs";
+import { cliCommand, requestOf, measuredEntry } from "../../profiles/validate.mjs";
 import { entryStatus } from "../../native/validate.mjs";
 import { takeIdentity } from "../../profiles/lock.mjs";
 import { ensureMigrated, readMigration, migrationNote } from "../../profiles/migrate.mjs";
@@ -52,6 +57,14 @@ export const unknownLicense = (name) => `browser profile "${shown(name)}" was im
 // Short words for a profile's coherence item in a hand-off's report (rules/coherence.mjs setupLines).
 const COHERENCE_WORDS = { "gpu.vs-platform": "pages read a GPU this system never has", "gpu.software-as-hardware": "pages read a hardware GPU over software rendering",
   "screen.believable": "a screen or window size no real system has" };
+
+// The open coherence items of a profile for a hand-off's report: its screen's (believable, every
+// launch's) and the measured mismatches of entry (a validation entry counted for this pack, or
+// null), at most 20.
+function coherenceOf(believable, entry, name) {
+  const measured = (entry?.items || []).filter((i) => COHERENCE_RULES[i?.rule] && i.status === "mismatch" && i.rule !== "screen.believable");
+  return [...believable, ...measured].slice(0, 20).map((i) => ({ id: i.rule, severity: i.severity, text: String(i.reason || ""), words: `${COHERENCE_WORDS[i.rule] || i.rule} (browser profile "${shown(name)}")` }));
+}
 
 // The time zone and languages pages read on a launch of record (mapped: its toLaunch parts):
 // { timezone, languages, geoip: { timezone, languages } }. The native build sends the profile's own
@@ -175,12 +188,18 @@ export function createProfiles(st, deps = {}) {
     log(`launch: ${who} on ${named}, revision ${record.revision}, ${status}${engine ? ` on ${engine.build}` : native ? "" : " (open build)"}`);
     // The open coherence items: the screen's, and the measured ones of this pack (status validated
     // or failed: entryStatus counts a measurement only for its own pack).
-    const measuredItems = status === "unverified" ? [] : (prior?.items || []).filter((i) => COHERENCE_RULES[i?.rule] && i.status === "mismatch" && i.rule !== "screen.believable");
-    const coherence = [...believable, ...measuredItems].slice(0, 20).map((i) => ({ id: i.rule, severity: i.severity, text: String(i.reason || ""), words: `${COHERENCE_WORDS[i.rule] || i.rule} (browser profile "${shown(record.name)}")` }));
-    st.profile = { session, id: record.id, name: record.name, kind: record.kind, revision: record.revision, status, build: engine?.build || null, browserKind, warnings, notes, identity, coherence };
+    const coherence = coherenceOf(believable, status === "unverified" ? null : prior, record.name);
+    st.profile = { session, id: record.id, name: record.name, kind: record.kind, revision: record.revision, status, build: engine?.build || null, browserKind, warnings, notes, identity, coherence, believable };
+    // The measurement kept for this build and engine pack (validation[build].graphics), which the
+    // launch's graphics step reads before it starts the browser (section 3.2 step 4): its runtime
+    // key is compared once the browser answers (step 7).
+    const stored = prior?.graphics && typeof pack === "string" && prior.pack === pack ? structuredClone(prior.graphics) : null;
     return {
       id: record.id, name: record.name, kind: record.kind, revision: record.revision, status, build: engine?.build || null,
       switches: mapped.switches, network: mapped.network, adBlocker: mapped.adBlocker, results, warnings,
+      // What it asked for (graphics, screen, window, locale) and the measurement kept for this
+      // build and pack: the graphics steps' inputs (daemon/browser/graphics.mjs).
+      request: requestOf(record), measured: stored,
       // What pages read for time zone and languages (the network check's coherence input, C13):
       // the profile's on the native build, else this computer's; a value geoip supplies follows the
       // exit, so isn't judged.
@@ -219,7 +238,57 @@ export function createProfiles(st, deps = {}) {
   // The running profile's open coherence items (B14), [] with none running.
   const coherence = () => (st.profile?.coherence || []).map((i) => ({ ...i }));
 
-  const api = { prepare, forLaunch, release, statusParts, list, store, configSettings, coherence };
+  // The running browser's graphics verdict on its build (section 3.2 step 7): an entry with a
+  // measurement of this pack and runtime key replaces the build's (store.recordValidation); one
+  // without is a launch's (store.recordLaunch), and with replaceMeasured (the measurement kept was
+  // of another runtime) it replaces a measured one too, so the next start measures again. The
+  // running profile's status and coherence items follow the entry. A write that fails is logged,
+  // never a refusal (the entry still gives the status). Returns the status.
+  function fileValidation(entry, { build, replaceMeasured = false } = {}) {
+    const p = st.profile;
+    if (!p || !entry || typeof build !== "string") return null;
+    try {
+      if (entry.graphics) store.recordValidation(p.id, { build, entry });
+      else store.recordLaunch(p.id, { build, entry, replaceMeasured });
+    } catch (e) { log(`launch: browser profile "${shown(p.name)}": its graphics checks weren't kept (${e?.code || "error"})`); }
+    p.status = entry.graphics && ["validated", "failed"].includes(entry.status) ? entry.status : "unverified";
+    p.coherence = coherenceOf(p.believable || [], entry.graphics ? entry : null, p.name);
+    return p.status;
+  }
+
+  // The config-backed default on the native build: its record, browserArgs and toLaunch parts.
+  const defaultLaunch = () => {
+    const record = store.use(DEFAULT_PROFILE, { configSettings: fromConfig(config, { native: true, platform }) });
+    const userArgs = launchableBrowserArgs(browserArgsOf(config), platform);
+    return { record, userArgs, mapped: toLaunch(record, { browserKind: "pairbrowse", platform, userArgs }) };
+  };
+
+  // The switches an install self-check's graphics probe starts with (native/check.mjs selfCheck
+  // profileArgs): the default's mapped ones (its graphics backend among them), as its launch
+  // passes them after browserArgs, so the measurement's runtime key is the launch's. [] when the
+  // default doesn't map (the launch then refuses on its own).
+  function selfCheckArgs() {
+    try { return defaultLaunch().mapped.switches; } catch { return []; }
+  }
+
+  // An install self-check's measurement (spec step 44): kept as the config-backed default's
+  // evidence for build (the self-check started config.json's settings, which are the default's),
+  // through the same check as a launch's (its switches: browserArgs and the default's mapped ones
+  // after them, as the self-check's probe passed them, selfCheckArgs). virtualScreen: the
+  // self-check's screen on Xvfb. Whether it was kept; a failure is logged.
+  function fileSelfCheck(measured, { build, pack = null, virtualScreen = null } = {}) {
+    if (!measured || typeof build !== "string" || !BUILD.test(build)) return false;
+    try {
+      const { record, userArgs, mapped } = defaultLaunch();
+      const entry = measuredEntry(record, { build, pack, measured, runtimeKey: measured.runtimeKey, platform, virtualScreen, switches: [...userArgs, ...mapped.switches], results: mapped.results, now });
+      if (!entry.graphics) return false;
+      store.recordValidation(record.id, { build, entry });
+      log(`launch: the install check's graphics kept with browser profile "${record.name}" (${entry.status} on ${build})`);
+      return true;
+    } catch (e) { log(`launch: the install check's graphics weren't kept (${e?.code || e?.message || "error"})`); return false; }
+  }
+
+  const api = { prepare, forLaunch, release, statusParts, list, store, configSettings, coherence, fileValidation, fileSelfCheck, selfCheckArgs };
   api.owner = createProfileOwner(st, { config, log, store, platform, now, configSettings });
   return api;
 }

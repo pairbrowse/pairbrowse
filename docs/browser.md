@@ -100,7 +100,9 @@ throwaway browser of its own (hidden on macOS; on Linux on the launch test's own
 virtual screen on a server, your desktop otherwise, where its window shows briefly as the launch
 test's does): the backend the browser renders with, WebGL, WebGPU, canvas, fonts and screen; the
 install record keeps one line such as "graphics: software, WebGL 2, WebGPU unavailable" (on Windows
-"graphics: not measured on Windows"). A measurement that fails never stops the install. The check
+"graphics: not measured on Windows"), and the measurement is kept with the `default` browser
+profile as its evidence for that build (the first start of any other profile, or `node
+scripts/profiles/cli.mjs validate`, measures it once the same way). A measurement that fails never stops the install. The check
 runs before the first start after an update: the launch test has three minutes, the graphics
 measurement two more, and one that runs over is stopped and waited for (at most 105 seconds more),
 so the worst case is under seven minutes in all, and a slow measurement leaves the line

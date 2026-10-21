@@ -133,10 +133,61 @@ export async function graphicsCheck({ launch, build, pack = null, display = "nat
   return graphicsStep(done.measured);
 }
 
+// A graphics probe's browser start (native/probe.mjs probeLaunch's launch(directory)): the build
+// started as the helper starts it (launchOptions, with a profile's switches when given, and the
+// engine config's layer: a profile's keys), the same sandbox rule (required in server mode), on
+// the given screen, hidden on macOS (probeOptions), a plain about:blank first tab, no live view.
+// Never geoip (probeEngine). Shared by the self-check, the helper's first launch per runtime key
+// and cli.mjs validate.
+export function probeLauncher({ chromium, engine, config = {}, shell, screen = null, env = process.env, executablePath, profileArgs = [], server = false, log = () => {} }) {
+  return (directory) => {
+    prepareProfile(directory, undefined, { browserPages: !!shell?.ownPages, layout: config.layout });
+    const options = probeOptions(launchOptions(config, { shell, screen, env: { ...env, ...(screen?.env || {}) }, executablePath, blankStart: true, profileArgs }));
+    return launchEngine(chromium, { ...probeEngine(engine), virtualDisplay: screen?.geometry ?? null }, directory, options, log, undefined, { server });
+  };
+}
+
+// A probe's engine config: geoip off in both places it can be on (config.json's pairbrowse block
+// and the profile's engine layer). A probe has no proxy, so geoip's region lookup would go straight
+// out from this computer and send its own address to an outside service (spec C11; and on a server
+// without direct egress it fails, so the profile is never measured); its time zone and languages
+// are the profile's own, else this computer's (Intl). Graphics don't depend on either.
+export function probeEngine(engine = {}) {
+  const out = { ...engine };
+  if (out.pairbrowse && typeof out.pairbrowse === "object") out.pairbrowse = { ...out.pairbrowse, geoip: false };
+  if (out.browserProfile && typeof out.browserProfile === "object") out.browserProfile = { ...out.browserProfile, geoip: false };
+  return out;
+}
+
+// cli.mjs validate's measurement (spec E4): the installed build exec, started for one profile
+// (engineLayer: sessions/profiles.mjs's engine layer; profileArgs: its switches) in a probe
+// browser of its own, on a private virtual screen where this machine needs one (as the helper's
+// browser runs there). Answers { measured (null when not measured), line (graphicsStep's, or why),
+// display }. Never throws for a probe that fails; a driver that can't load does.
+export async function measureGraphics(exec, { config = loadConfig(), engineLayer = null, profileArgs = [], log = () => {}, env = process.env, check = graphicsCheck } = {}) {
+  ensureRuntime(log);
+  const { chromium } = loadBrowserDriver(createRequire(join(paths.runtime, "package.json")), config, process.versions.node, patchrightNodeMinimum(paths.runtime));
+  mkdirSync(paths.browser, { recursive: true });
+  const scratch = mkdtempSync(join(paths.browser, ".measure-"));
+  const engine = { ...engineConfig(config, { binary: "native", executablePath: exec }), ...(engineLayer ? { browserProfile: engineLayer } : {}) };
+  let screen = null, measured = null;
+  try {
+    if (needsVirtualDisplay(config, env)) screen = await startVirtualDisplay(log, { name: "Xauthority-measure", geometry: screenGeometry(config) });
+    const launch = probeLauncher({ chromium, engine, config, shell: shellOf(engine), screen, env, executablePath: exec, profileArgs, server: serverMode(config, env), log });
+    const line = await check({ launch, build: nativeManifest(exec).version, pack: NATIVE.engine?.sha256 ?? null, display: screen ? "xvfb" : "native", scratch, log, onMeasured: (m) => { measured = m; } });
+    return { measured, line, display: screen ? "xvfb" : "native", virtualScreen: screen?.geometry ?? null };
+  } finally {
+    await screen?.stop();
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
 // Returns what passed; throws on the first failure. On a Linux machine without a screen the check
 // runs on a private virtual screen of its own, like the browser itself (display.mjs).
-// graphicsMs: the graphics step's bound; onGraphics(measured): its measurement (graphicsCheck).
-export async function selfCheck(exec, { config = loadConfig(), log = () => {}, timeoutMs = CHECK_TIMEOUT_MS, graphicsMs = GRAPHICS_TIMEOUT_MS, onGraphics = () => {}, env = process.env } = {}) {
+// graphicsMs: the graphics step's bound; onGraphics(measured): its measurement (graphicsCheck);
+// profileArgs: the default profile's switches its probe starts with, as the helper's launch passes
+// them (sessions/profiles.mjs selfCheckArgs), so the measurement's runtime key is that launch's.
+export async function selfCheck(exec, { config = loadConfig(), log = () => {}, timeoutMs = CHECK_TIMEOUT_MS, graphicsMs = GRAPHICS_TIMEOUT_MS, onGraphics = () => {}, env = process.env, profileArgs = [] } = {}) {
   ensureRuntime(log);
   const { chromium } = loadBrowserDriver(createRequire(join(paths.runtime, "package.json")), config, process.versions.node, patchrightNodeMinimum(paths.runtime));
   const browserDir = paths.browser;
@@ -194,11 +245,7 @@ export async function selfCheck(exec, { config = loadConfig(), log = () => {}, t
     const result = await withTimeout(work, timeoutMs, `the check took longer than ${timeoutMs / 1000} s`);
     // On the check's own screen, which stays until the finally below.
     log("measuring the new browser's graphics");
-    const launch = (directory) => {
-      prepareProfile(directory, undefined, { browserPages: ownPages, layout: config.layout });
-      const options = probeOptions(launchOptions(config, { shell, screen, env: { ...env, ...(screen?.env || {}) }, executablePath: exec, blankStart: true }));
-      return launchEngine(chromium, { ...engine, virtualDisplay: screen?.geometry ?? null }, directory, options, log, undefined, { server: serverMode(config, env) });
-    };
+    const launch = probeLauncher({ chromium, engine, config, shell, screen, env, executablePath: exec, profileArgs, server: serverMode(config, env), log });
     result.push(await graphicsCheck({ launch, build: nativeManifest(exec).version, pack: NATIVE.engine?.sha256 ?? null, display: screen ? "xvfb" : "native", scratch, log, onMeasured: onGraphics, timeoutMs: graphicsMs }));
     return result;
   } finally {

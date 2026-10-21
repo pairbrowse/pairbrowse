@@ -115,6 +115,7 @@ const PART_SEAMS = {
   "scripts/daemon/browser/launch.mjs": ["adBlockerOf", "safeStorageKeyFileOf", "adBlockerCrxOf", "proxyAuthFileOf"],
   "scripts/daemon/browser/supervise.mjs": ["startScreen", "needsScreen", "server", "now", "setTimer", "mark"],
   "scripts/daemon/sessions/profiles.mjs": ["now", "platform", "identityDir", "env", "migrateHome"],
+  "scripts/daemon/browser/graphics.mjs": ["probeGraphics", "readBackendOf", "platform", "arch", "scratch"],
 };
 const namesIn = (list) => list.split(",").map((s) => s.trim().split(/\s*=/)[0].trim()).filter(Boolean);
 

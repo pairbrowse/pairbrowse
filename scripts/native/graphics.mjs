@@ -175,3 +175,14 @@ export function runtimeKey({ build, pack = null, platform, arch, display, backen
   const key = { build, pack: typeof pack === "string" ? pack : null, platform, arch, display, gpu, switches: backendSwitches(switches) };
   return createHash("sha256").update(JSON.stringify(key)).digest("hex");
 }
+
+// pairbrowse_status's part for the running browser (spec Phase E design): "Graphics: <kind>
+// (<renderer>), requested <backend>, <status> on <build>". g: GRAPHICS as the launch filed it.
+// renderer: false leaves the renderer out (a joiner's agent, like a report, gets the kind and
+// status only: row E-3). build: the native build's version; none on the open build.
+export function graphicsStatusPart(g = GRAPHICS, { build = null, renderer = true } = {}) {
+  const kind = ["hardware", "software"].includes(g?.kind) ? g.kind : "unverified";
+  const name = renderer && kind !== "unverified" && typeof g?.renderer === "string" && g.renderer ? ` (${g.renderer.slice(0, 80)})` : "";
+  const status = ["validated", "failed"].includes(g?.status) ? g.status : "unverified";
+  return `Graphics: ${kind}${name}, requested ${GRAPHICS_BACKENDS.includes(g?.requested) ? g.requested : "auto"}, ${status} on ${build || "the open build"}`;
+}

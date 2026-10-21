@@ -5,12 +5,15 @@
 // build (profiles/map.mjs toLaunch: a setting the build can't apply refuses, naming it, nothing
 // changed), then holds it to this build's engine and keeps the mapping's items as this build's
 // evidence (store.repin: no new revision, a history entry naming "engine"). Its status stays
-// "unverified": "validated" needs measured evidence (spec E6), which comes with Phase E's probe; so
-// requireValidatedProfiles still refuses it.
+// "unverified" there: "validated" needs measured evidence (spec E6). cli.mjs validate then
+// measures the build in a probe browser of its own (native/check.mjs measureGraphics, E4) and
+// files the verdict (measuredEntry, store.recordValidation); the sessions page's Check doesn't
+// measure (the helper's next start of the profile does, once per runtime key).
 //
 // Node's standard library only.
 import { fileURLToPath } from "node:url";
 import { toLaunch } from "./map.mjs";
+import { validate } from "../native/validate.mjs";
 
 const BUILD = /^\d{1,4}(?:\.\d{1,6}){3}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
@@ -37,7 +40,7 @@ export function validateProfile(store, ref, { build, pack = null, configSettings
 }
 
 // The native build this home's browser runs, as the launch would pick it (browser/choice.mjs
-// chooseBrowser): { build, pack } or { problem }. Loaded only when asked (it reads the install).
+// chooseBrowser): { build, pack, exec } or { problem }. Loaded only when asked (it reads the install).
 export async function installedBuild(config = {}) {
   const [{ chooseBrowser }, { pinnedAsset, nativeDirs }, { nativeManifest }, { NATIVE }, { existsSync }] = await Promise.all([
     import("../browser/choice.mjs"), import("../native/install.mjs"), import("../native-engine.mjs"), import("../native-pack.mjs"), import("node:fs"),
@@ -46,5 +49,22 @@ export async function installedBuild(config = {}) {
   if (spec.binary !== "native") return { problem: "This home's browser is the open build (or a browser of your own): profiles are checked on the native PairBrowse build only." };
   const exec = spec.executablePath || nativeDirs().exec;
   if (!exec || !existsSync(exec)) return { problem: "The native PairBrowse build isn't installed yet: start the browser once, then check the profile." };
-  try { return { build: nativeManifest(exec).version, pack: NATIVE.engine?.sha256 || null }; } catch (e) { return { problem: e?.message || String(e) }; }
+  try { return { build: nativeManifest(exec).version, pack: NATIVE.engine?.sha256 || null, exec }; } catch (e) { return { problem: e?.message || String(e) }; }
+}
+
+// What a profile asked for, as native/validate.mjs validate reads it: its graphics request, screen,
+// window and the time zone and languages it sets (null: this computer's or the exit's, not
+// checked).
+export const requestOf = (record) => ({ graphics: record.graphics, screen: record.screen, window: record.window,
+  locale: { timezone: record.locale?.timezone ?? null, languages: record.locale?.languages ?? null } });
+
+// A measurement's verdict for a profile (spec E6, E8): validate() over the profile's request, the
+// launch's switches and mapping items (results), what the build derives (build, pack, the
+// runtime's key, platform as process.platform names it, the virtual screen on Xvfb) and the
+// measurement, with live: a running browser's own backend read (E3), null for a probe alone. The
+// answer is the validation[build] entry: with the measurement only when it is of this pack and
+// runtime key (store.recordValidation), else a launch's unverified entry (store.recordLaunch).
+export function measuredEntry(record, { build, pack = null, measured = null, live = null, runtimeKey = null, platform = process.platform, virtualScreen = null, switches = [], results = [], now = Date.now } = {}) {
+  const screen = virtualScreen && Number.isFinite(virtualScreen.width) && Number.isFinite(virtualScreen.height) ? { width: virtualScreen.width, height: virtualScreen.height } : null;
+  return validate({ requested: { ...requestOf(record), switches, results }, derived: { build, pack, runtimeKey, platform, virtualScreen: screen }, measured, live, at: new Date(now()).toISOString() });
 }

@@ -460,7 +460,7 @@ export function applyGraphicsPlan(fingerprint, settings, { platform = process.pl
     // A screen key set without screenWidth and screenHeight (a pixel ratio, a depth) gives way to the
     // virtual screen's, never silently.
     const screenOther = SCREEN_KEYS.filter((k) => plan.engineKeys[k] !== undefined && differs(k));
-    if (screenOther.length) log(`launch: ${screenOther.join(", ")} not applied on Linux: the virtual screen's apply (set screenWidth and screenHeight to choose a screen)`);
+    if (screenOther.length) log(`launch: ${screenOther.join(", ")} not applied on Linux: the virtual screen's apply (set virtualScreen in config.json to choose a screen)`);
   }
   Object.assign(fingerprint, plan.engineKeys);
   const screen = SCREEN_KEYS.every((k) => plan.engineKeys[k] !== undefined) ? `, screen ${plan.engineKeys.screenWidth}x${plan.engineKeys.screenHeight} (the virtual screen)` : "";

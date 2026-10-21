@@ -1098,10 +1098,10 @@ inconsistency; remove the canvas bridge; keep the sandbox on.
 | `scripts/native/properties.mjs` (new, pure) | the section 9 matrix as data: field, class per runtime, switch or key, rule; `classOf`, `runtimeOf` |
 | `scripts/native-engine.mjs` | E1 guard, `normalizeWebgpu` on every layer, `graphicsPlan` merged, E7 screen, `graphics` read so it is not logged unknown |
 | `scripts/config-schema.mjs` | `pairbrowse.graphics: { values: GRAPHICS_BACKENDS }` |
-| `scripts/daemon/browser/launch.mjs` | steps 4 and 7 of section 3.2 |
+| `scripts/daemon/browser/launch.mjs`, `scripts/daemon/browser/graphics.mjs` (new, step 44) | steps 4 and 7 of section 3.2 |
 | `scripts/daemon/serve/tools/status.mjs` | part `Graphics: <kind> (<renderer>), requested <backend>, <status> on <build>` |
 | `scripts/daemon/diagnostics.mjs` | reports carry backend kind and status only, never GPU model or IDs |
-| `scripts/native/check.mjs` | step "graphics: <kind>, WebGL <1/2>, WebGPU <adapter or unavailable>" |
+| `scripts/native/check.mjs` | step "graphics: <kind>, WebGL <1/2>, WebGPU <adapter or unavailable>"; `probeLauncher`, `measureGraphics` (step 44) |
 | `scripts/paths.mjs` | `fontCache` |
 
 Probe measures: browser process (GPU devices, vendor and device IDs, driver, GL/ANGLE renderer, feature
@@ -2472,6 +2472,69 @@ it depends on.
 44. Launch steps 4 and 7, status part, diagnostics (E7, E9); the other two graphics probe triggers
     (E4): the first launch per runtime key ("measuring graphics once for this browser version") and
     `cli.mjs validate`; filing a measurement into a profile's `validation[build]`. -> 41, 42, 37
+    Landed as: `scripts/daemon/browser/graphics.mjs` `createGraphics(st, deps, api)` (made by
+    `launch.mjs`, same folder, so no new `ALLOWED` edge; test seams `probeGraphics`,
+    `readBackendOf`, `platform`, `arch`, `scratch` in `PART_SEAMS`). `before(...)` (step 4, after
+    the profile's `forLaunch` and the network's `forLaunch` (step 3, so a network refusal never
+    waits for a probe; inside the try whose finally drops the auth file), before `prepareProfile`,
+    key files and `launchEngine`, so a refusal writes nothing): the measurement `forLaunch` now hands over (`measured`: `validation[build].graphics`
+    of this engine pack) counts when its runtime's platform, arch and display kind are this
+    launch's; else the first start per runtime measures now (logged `MEASURING_GRAPHICS`, "launch:
+    measuring graphics once for this browser version", and the live view's status line until it
+    ends) with `native/check.mjs` `graphicsCheck` over `probeLauncher` (new, shared with the
+    self-check and the CLI: launchOptions with the profile's switches, the engine config with the
+    profile's engine layer, the launch's screen and env, the server sandbox rule, `probeOptions`,
+    no live view, proxy or key file, and never geoip: `probeEngine` turns it off in config.json's
+    block and the engine layer, since without the proxy its region lookup would send this
+    computer's own address out; the probe's time zone and languages are the profile's, else this
+    computer's), its bound and stop as the self-check's; a probe that fails is not retried for that
+    profile, build, pack and display until the helper restarts. While it runs (`st.probing`) a
+    call waiting on the start, or one that comes in, is refused at once with "PairBrowse is
+    measuring this browser's graphics once (a minute or two). Tell the user, then retry", as during
+    an install, never held silently. The runtime
+    key itself needs the browser's read (the GPU's IDs and the launch's final backend switches), so
+    step 4 matches on build, pack, platform, arch and display and step 7 compares the key: a
+    measurement of another key is dropped (`store.recordLaunch(..., { replaceMeasured })`, new; a
+    launch's own entry otherwise never replaces one holding a measurement) and the next start
+    measures again; never over a read that failed (an unverified backend proves nothing changed),
+    and a probe of this helper run that isn't kept (its key isn't the browser's, or the read
+    failed) isn't repeated for that runtime until the helper restarts, so a probe and a browser
+    that never agree don't measure at every start. Then `compatErrors` over the request (`forLaunch`'s new `request`:
+    `profiles/validate.mjs` `requestOf`), the measurement (or, with `gpu` or a requirement and none,
+    an unverified read: "could not confirm"), config.json's `browserArgs` and `pairbrowse` block
+    (the legacy identity) and the virtual screen; any error refuses the start naming all of them.
+    `after(ctx, plan, ...)` (step 7, after `checkAtLaunch`, before `net.started()`, the close
+    handler and any tab): `readBackend`, `GRAPHICS` kind and renderer, `runtimeKey` from the read and
+    `GRAPHICS.switches`, `compatErrors`' backend and requirement errors over the read, then
+    `profiles/validate.mjs` `measuredEntry` (new: `validate` over the request, the launch's switches
+    and mapping items, build, pack, the key, the virtual screen) filed by `sessions/profiles.mjs`
+    `fileValidation` (`recordValidation` with a measurement, else `recordLaunch`; the running
+    profile's status and coherence items follow); a `backend.requested` or `backend.stable`
+    mismatch, or with `requireValidatedProfiles` anything but `validated` (the runtime key now
+    compared at launch, step 40's open point), refuses and the launch closes the browser (bounded)
+    before the close handler, so no crash for the guard. The open build gets the read only
+    (`Graphics: <kind> (<renderer>), requested auto, unverified on the open build`). Status part:
+    `native/graphics.mjs` `graphicsStatusPart`, after the profile's in `context.statusParts({
+    remote })`; `pairbrowse_status` passes `remote` for a joiner's agent, which gets no renderer.
+    Diagnostics: `diagnostics.mjs` `graphicsSummary` (kind and status only) as `browser.graphics`
+    in `diagnostics.json` and a "Graphics: <kind>, <status>" report line (row E-3, new); the Tools
+    tab shows it in the Browser fact. `profiles/map.mjs` `toLaunch` now applies `gpu` and
+    `graphics.require` on the native build (checked at steps 4 and 7) and refuses both on the open
+    build. Self-check filing: `installNative`/`ensureNative` hand the check's measurement out
+    (`onGraphics`); `launch.mjs` `chooseEngine` files it with the config-backed default
+    (`fileSelfCheck`: the default's request, mapping, `browserArgs` and its mapped switches after
+    them, `screenGeometry(config)` on Xvfb), since the self-check starts config.json's settings and
+    its probe the default's mapped switches (`selfCheckArgs`, through `ensureNative`'s
+    `profileArgs`), as the launch does; the by-hand `native-install.mjs`
+    keeps only its line. `cli.mjs validate`: after `validateProfile` (mapping and repin), each
+    profile is measured by `check.mjs` `measureGraphics` (driver, a private virtual screen where
+    needed, the profile's engine layer with geoip off and its switches) and its verdict kept with
+    `recordValidation`; the line names the status and the failing error checks; a probe that
+    can't measure exits 1 and leaves it unverified. The sessions page's Check still only maps and
+    repins (the next start measures). Tests: `test/launch-graphics.test.mjs` (new),
+    `test/profile-map.test.mjs`, `test/profile-cli.test.mjs`, `test/diagnostics.test.mjs`,
+    `test/tools-routes.test.mjs`, `test/native-check.test.mjs`, `test/native-install.test.mjs`,
+    `test/supervise.test.mjs`, `test/structure.test.mjs`.
 45. Saved card: profile field, key-store check, prefs, owner "Add a saved card", "Fill saved card",
     agent refusals and masking (B-AP4, B12). -> 37, 21
 46. Phase A integration file, CI `xauth`, Phase A opt-in tests on the harness (A13). -> 8, 39

@@ -2954,6 +2954,15 @@ binding for implementation; where a phase section above says otherwise, this sec
     compared with an everyday browser of the same version). A managed Turnstile that asks for a click
     is a person's check: PairBrowse records whether it appears and hands it over, never clicks it
     itself. Plus a Patchright against plain Playwright row on our native build.
+    README comparison (user, 2026-10-22): once the final measurement is done, the README gets this
+    table naming the reference (CloakBrowser), in its own style, with three columns (stock Playwright,
+    CloakBrowser, PairBrowse), measured by us on the same machine, network, pages and date, each in its
+    recommended setup and on its current build (theirs through their free signed-in build), plus rows
+    for what only PairBrowse has (a person in the loop, the sandbox, credentials off the command line,
+    failing closed instead of leaking the real IP, no calls home), rows where they still win shown as
+    such, and the date, versions, network and method linked underneath. Wording: "scores as an everyday
+    browser on these checks", never "undetectable" or "passes every test". Not published from
+    preliminary numbers.
     Decided by the first measurement (2026-10-22, baseline in the native repo's plans): canvas
     noise on a host without a GPU, measured on and off on the same Linux host, changed one verdict
     (BrowserScan's canvas check, lost with noise on) and gained nothing measured, so

@@ -2943,6 +2943,16 @@ binding for implementation; where a phase section above says otherwise, this sec
     sessions (returning visitor); Widevine availability; and signed downloads (an Ed25519 signature
     over the published checksums, in addition to our pinned SHA-256). Where we already differ by design
     (no debugging port, credentials never in a proxy URL, a person in the loop), the table says so.
+    The published comparison table is reproduced with our own measurements and a third column, so the
+    rows match theirs one for one: stock Playwright, the reference, PairBrowse (each setup). Rows:
+    reCAPTCHA v3 score (server-side verified, with our own key), Turnstile non-interactive, Turnstile
+    managed, a production site behind ShieldSquare (opened and read only), FingerprintJS bot detection
+    (its demo), BrowserScan bot detection, bot.incolumitas.com, deviceandbrowserinfo.com (isBot and
+    isAutomatedWithCDP), navigator.webdriver, navigator.plugins.length, window.chrome, the UA string,
+    and the TLS fingerprint (ja3n, ja4 and the HTTP/2 fingerprint, read from a public TLS echo page,
+    compared with an everyday browser of the same version). A managed Turnstile that asks for a click
+    is a person's check: PairBrowse records whether it appears and hands it over, never clicks it
+    itself. Plus a Patchright against plain Playwright row on our native build.
 
 12. **Server mode needs the native PairBrowse browser (user, 2026-10-21).** The open build with the side
     panel extension stays supported on a desktop and is kept aligned with the native build wherever it

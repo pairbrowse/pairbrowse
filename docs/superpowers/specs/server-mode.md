@@ -3106,6 +3106,13 @@ binding for implementation; where a phase section above says otherwise, this sec
     run on Linux in the A13 container, `test/optin/server/container.mjs`, 2026-10-21). Tests:
     `test/browser-choice.test.mjs`.
 
+13. **Always on the latest base (user, 2026-10-22).** The engine follows the newest ungoogled-chromium
+    release (155.0.8059.84 now). The engine's fingerprint patch series is kept by PairBrowse itself:
+    each upstream patch is ported to every new base with the same behaviour, checked with the
+    upstream's own collector before and after, its BSD notices kept; PairBrowse's tail patches follow.
+    A rebase script tries the whole series on each new base and reports what broke, so a release every
+    two weeks is routine. When the upstream publishes its own newer open series, it is merged back in.
+
 Implementation conditions (from the user):
 - Keep the five phases and every agreed requirement: profile import and export, per-profile isolation,
   proxy separation, graphics validation, mobile interactive hand-off.

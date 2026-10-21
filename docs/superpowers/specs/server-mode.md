@@ -2819,6 +2819,11 @@ binding for implementation; where a phase section above says otherwise, this sec
     Proof of Human's 2026 benchmark (a detection vendor's own study, so read with that in mind)
     found reCAPTCHA v3 caught most AI-agent sessions (including Grok's agent) but none from a stealth
     browser on a residential proxy, while hCaptcha and Turnstile showed the reverse.
+    Public pages read (never typed into) once per build, alongside our own page: BrowserScan,
+    bot.incolumitas.com, deviceandbrowserinfo.com, and FingerprintJS's demo; each kept only while it
+    still exists. Open question for after the first measurement: whether a host without a GPU should
+    present as the most common desktop platform rather than Linux (a bigger identity change: platform,
+    fonts, which needs a font set we may ship, so licenses first).
 
 Implementation conditions (from the user):
 - Keep the five phases and every agreed requirement: profile import and export, per-profile isolation,

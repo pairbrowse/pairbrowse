@@ -17,7 +17,7 @@ const FETCH_MS = 120_000;
 
 // The list (its file's bytes, or its text) as a set of lower-case host names (comments, blanks
 // and anything that isn't a host name left out; ASCII spaces around a name read as none):
-// { size, has(host) }. Kept compact, since the list holds about 400,000 names: the file's bytes
+// { size, has(host) }, iterable. Kept compact, since the list holds about 400,000 names: the file's bytes
 // and a hash table of where each name starts in them, built and searched a byte at a time, so no
 // string is made per name. (A Set of them took about 40 MB of the helper's heap, and making it
 // about 120 MB more memory that the process kept; this keeps about 15 MB, outside the heap.)
@@ -67,7 +67,9 @@ export function parseList(input) {
     const at = (i) => h.charCodeAt(i);
     return slots[slotOf(at, 0, h.length)] !== 0;
   };
-  return { size, has };
+  // Every name, as a string (made only when asked).
+  function* names() { for (const at of slots) if (at) yield bytes.toString("latin1", at - 1, end(at - 1)).toLowerCase(); }
+  return { size, has, [Symbol.iterator]: names };
 }
 export function listedHost(list, host) {
   const h = String(host ?? "").toLowerCase().replace(/\.$/, "");

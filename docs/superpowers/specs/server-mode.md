@@ -2749,6 +2749,11 @@ binding for implementation; where a phase section above says otherwise, this sec
    Away is off by default, remembered across restarts, and needs at least one channel set up (the
    switch says so if none is). In server mode, sending is always on.
 
+9. **U4 changed (user, 2026-10-21): SOCKS5 with a username and password is required too.** It lands
+   with the engine work of step 47 as part of patch 962 (RFC 1929 username/password in the engine's
+   SOCKS client, reading the same 0600 credential file as HTTP and HTTPS proxies; never on argv or in
+   logs), with its tests in step 49 on macOS and Linux. The U4 refusal is removed when it lands.
+
 Implementation conditions (from the user):
 - Keep the five phases and every agreed requirement: profile import and export, per-profile isolation,
   proxy separation, graphics validation, mobile interactive hand-off.

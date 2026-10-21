@@ -2,10 +2,11 @@
 //
 // fromConfig(config): the settings config.json gives the config-backed "default" profile (D5;
 // profiles/store.mjs configProfile takes them): `browser` (and its older names) as browser.kind,
-// the screened browserArgs' --lang, --window-size, --force-device-scale-factor, --force-dark-mode and
-// --force-prefers-reduced-motion, and, when config starts the native build, the pairbrowse block's
-// time zone, languages, screen keys, seed, geoip, graphics backend (E2) and persona choice (D9). It
-// never rewrites config.json, and the switches stay in browserArgs as written. What it doesn't read
+// the screened browserArgs' --lang, --window-size, --force-device-scale-factor, --force-dark-mode,
+// --force-prefers-reduced-motion and --force-prefers-no-reduced-motion, and, when config starts
+// the native build, the pairbrowse block's time zone, languages, screen keys, seed, geoip, graphics
+// backend (E2) and persona choice (D9). It never rewrites config.json, and the switches stay in
+// browserArgs as written. What it doesn't read
 // is reported (readConfig's items), never dropped quietly: another device's hardware keys stay
 // config.json-only legacy (decision U6), helper-wide settings stay global, the network block is
 // operator config (a network change never changes a profile, so never its revision).
@@ -34,7 +35,11 @@ export const PICKS_THIS_COMPUTER = ["auto", "local"];
 export const THIS_COMPUTER_NOTE = "PairBrowse no longer picks another device's profile; graphics come from this computer";
 
 // Every switch the mapper can add, and every engine key it can set (D6); the fuzz test holds it to these.
-export const SWITCHES = Object.freeze(["lang", "window-size", "force-dark-mode", "force-prefers-reduced-motion", "use-angle"]);
+export const SWITCHES = Object.freeze(["lang", "window-size", "force-dark-mode", "force-prefers-reduced-motion", "force-prefers-no-reduced-motion", "use-angle"]);
+// Why a display setting can't start (toLaunch's refusals, also said at import and selection: buildFit).
+export const LIGHT_ON_EXTENSION = "PairBrowse as an extension can't give pages a light scheme: no switch forces one, and its Appearance setting would turn its whole window light too (the native PairBrowse browser applies it; null follows this computer)";
+export const DARK_FORCED = "config.json's browserArgs has --force-dark-mode, which asks for a dark scheme, while the profile asks for light (remove that switch, or set the profile's colorScheme to dark or null)";
+export const REDUCED_MOTION_FORCED = "config.json's browserArgs has --force-prefers-reduced-motion, which the browser checks first, so reduced motion can't be off (remove that switch, or set the profile's reducedMotion to true or null)";
 export const ENGINE_KEYS = Object.freeze(["acceptLanguage", "timezone", "screenWidth", "screenHeight", "availWidth", "availHeight", "colorDepth", "devicePixelRatio", "fingerprint"]);
 const BUILD_NAMES = { pairbrowse: "the native PairBrowse browser", "pairbrowse-open": "PairBrowse as an extension" };
 // config.json's pairbrowse keys this module reads into a profile.
@@ -173,7 +178,9 @@ export function readConfig(config = {}, { native = false, platform = process.pla
     else if (scale !== undefined) report("browserArgs", "not-applied", "C", "--force-device-scale-factor without a screen size: kept in browserArgs as written (a profile's screen takes a width and a height)");
   }
   if (size) settings.window = { width: Number(size[1]), height: Number(size[2]) };
-  settings.display = { colorScheme: has("force-dark-mode") ? "dark" : null, reducedMotion: has("force-prefers-reduced-motion") ? true : null };
+  // The engine checks --force-prefers-reduced-motion first, so it wins when both are given.
+  settings.display = { colorScheme: has("force-dark-mode") ? "dark" : null,
+    reducedMotion: has("force-prefers-reduced-motion") ? true : has("force-prefers-no-reduced-motion") ? false : null };
   // The backend (E2): the native build's pairbrowse.graphics, else this computer's ("auto").
   if (pb.graphics !== undefined && !GRAPHICS_BACKENDS.includes(pb.graphics)) report("pairbrowse.graphics", "not-applied", "M", `not one of ${GRAPHICS_BACKENDS.map((b) => `"${b}"`).join(", ")}; not read`, "warning");
   settings.graphics = { backend: GRAPHICS_BACKENDS.includes(pb.graphics) ? pb.graphics : "auto", require: null };
@@ -217,6 +224,21 @@ export function readConfig(config = {}, { native = false, platform = process.pla
 // The settings config.json gives the config-backed profile (readConfig without its report).
 export const fromConfig = (config, options) => readConfig(config, options).settings;
 
+// What a profile's settings can't do on a browser, said before any launch (D11): at import (on the
+// browser the profile is for) and when a session is put on it (on the browser the next launch
+// starts), so a setting is never accepted quietly and found only by a launch that fails.
+// browserKind: the browser (default: the profile's own, browser.kind); platform and userArgs as
+// toLaunch's. Answers { items, problem }: toLaunch's refusing items (status "unsupported" or
+// "mismatch", each naming its field and reason) and one sentence naming them all, or null. Pure.
+export function buildFit(profile, { browserKind = null, platform = process.platform, userArgs = [] } = {}) {
+  const kind = browserKind ?? profile?.browser?.kind;
+  const mapped = toLaunch(profile, { browserKind: kind, platform, userArgs });
+  const items = mapped.results.filter((r) => r.severity === "error");
+  if (!items.length) return { items: [], problem: mapped.problem ? mapped.problem.replace(/ Change the profile or the browser; nothing was started\.$/, ".") : null };
+  const name = typeof profile?.name === "string" ? profile.name : "(unnamed)";
+  return { items, problem: `Browser profile "${name}" can't start on ${BUILD_NAMES[kind] || "this browser"}: ${items.map((r) => `${r.field} (${r.reason})`).join("; ")}.` };
+}
+
 // One checked record as a launch's parts: { switches, engineKeys, prefs, geoip, network, adBlocker,
 // results, problem }. browserKind: the browser this launch starts ("pairbrowse" or
 // "pairbrowse-open"; a browser of your own by its path is "pairbrowse-open"); platform: the
@@ -225,7 +247,8 @@ export const fromConfig = (config, options) => readConfig(config, options).setti
 // validation[build] (D10; the caller files them under its build). problem: null, or the sentence
 // that refuses the launch (D11), naming the profile and every field it can't apply; with a
 // problem, switches and engine keys are empty. prefs: { savedCard: true } when the profile asks for
-// a saved card (the launch writes it only with a real key store). network: the profile's network id for
+// a saved card (the launch writes it only with a real key store), and colorScheme ("light" or
+// "dark", native only) for the browser's Appearance setting the launch writes. network: the profile's network id for
 // net/config.mjs networkFor's profileNetwork; adBlocker: its choice (null: config.json's).
 // userArgs: config.json's browserArgs as the launch passes them (the graphics plan refuses a
 // renderer switch the profile's backend contradicts). The profile is never changed. Never throws.
@@ -283,12 +306,31 @@ export function toLaunch(profile, { browserKind, platform = process.platform, us
     applied("window", "C", "the window's size (--window-size)", { ...p.window });
   } else derived("window", "C", "the browser's own");
 
-  // Display: only a dark scheme and reduced motion have switches; light and false can't be forced.
+  // Display. The color scheme pages read: the engine has a switch for dark only (--force-dark-mode,
+  // which pages follow only while the browser's Appearance setting is "System"). On the native build
+  // pages follow that setting (browser.theme.color_scheme2, the browser's own window stays its
+  // own colors), so the launch sets it to the profile's light or dark (prefs.colorScheme,
+  // browser.mjs profilePreferences); on PairBrowse as an extension that setting turns the whole
+  // window light too, so light stays refused there. Reduced motion: a switch each way
+  // (--force-prefers-reduced-motion, --force-prefers-no-reduced-motion); the engine checks the
+  // first before the second, so a reduced-motion switch in config.json's browserArgs would win
+  // over a profile's false. Either clash with config.json's browserArgs (a dark switch beside a
+  // profile's light, whose Appearance setting would then keep the switch from pages) is a named
+  // mismatch, never settled quietly.
   const { colorScheme, reducedMotion } = p.display;
-  if (colorScheme === "dark") { switches.push("--force-dark-mode"); applied("display.colorScheme", "C", "--force-dark-mode", "dark"); } else if (colorScheme === "light") refuse("display.colorScheme", "C", "no switch forces a light scheme (null follows this computer)");
-  else derived("display.colorScheme", "C", "this computer's");
-  if (reducedMotion === true) { switches.push("--force-prefers-reduced-motion"); applied("display.reducedMotion", "C", "--force-prefers-reduced-motion", true); } else if (reducedMotion === false) refuse("display.reducedMotion", "C", "no switch turns reduced motion off (null follows this computer)");
-  else derived("display.reducedMotion", "C", "this computer's");
+  if (colorScheme === "dark") {
+    switches.push("--force-dark-mode");
+    if (native) prefs.colorScheme = "dark";
+    applied("display.colorScheme", "C", native ? "the browser's Appearance setting at Dark, which pages follow, and --force-dark-mode" : "--force-dark-mode", "dark");
+  } else if (colorScheme === "light") {
+    if (native && userArgs.some((a) => switchName(a, platform) === "force-dark-mode")) refuse("display.colorScheme", "C", DARK_FORCED, "mismatch");
+    else if (native) { prefs.colorScheme = "light"; applied("display.colorScheme", "C", "the browser's Appearance setting at Light, which pages follow", "light"); } else refuse("display.colorScheme", "C", LIGHT_ON_EXTENSION);
+  } else derived("display.colorScheme", "C", "this computer's");
+  const forcedOn = userArgs.some((a) => switchName(a, platform) === "force-prefers-reduced-motion");
+  if (reducedMotion === true) { switches.push("--force-prefers-reduced-motion"); applied("display.reducedMotion", "C", "--force-prefers-reduced-motion", true); } else if (reducedMotion === false) {
+    if (forcedOn) refuse("display.reducedMotion", "C", REDUCED_MOTION_FORCED, "mismatch");
+    else { switches.push("--force-prefers-no-reduced-motion"); applied("display.reducedMotion", "C", "--force-prefers-no-reduced-motion", false); }
+  } else derived("display.reducedMotion", "C", "this computer's");
 
   // Graphics (E2, native/graphics.mjs graphicsPlan): software is the engine's own software renderer
   // on Linux (refused on macOS and on the open build, never partly applied); a GPU (native only:

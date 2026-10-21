@@ -14,7 +14,9 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createGraphics, MEASURING_GRAPHICS, MEASURING_BUSY } from "../scripts/daemon/browser/graphics.mjs";
+import { createGraphics, MEASURING_GRAPHICS, MEASURING_BUSY, MEASURING_WAIT_MS } from "../scripts/daemon/browser/graphics.mjs";
+import { throughMeasurement } from "../scripts/daemon/browser/launch.mjs";
+import { GRAPHICS_TIMEOUT_MS, GRAPHICS_STOP_MS } from "../scripts/native/check.mjs";
 import { GRAPHICS, runtimeKey, graphicsStatusPart, SOFTWARE_SWITCH } from "../scripts/native/graphics.mjs";
 import { parseSystemInfo } from "../scripts/native/backend.mjs";
 import { measuredRecord } from "../scripts/native/validate.mjs";
@@ -338,7 +340,7 @@ test("cli.mjs validate measures each profile in a probe browser of its own and k
 
 test("launch.mjs: step 4 before the browser starts, step 7 after the network check and before any tab; a self-check's measurement filed", () => {
   const src = readFileSync(new URL("../scripts/daemon/browser/launch.mjs", import.meta.url), "utf8");
-  const launch = src.slice(src.indexOf("  async function launch() {"), src.indexOf("  function getContext() {"));
+  const launch = src.slice(src.indexOf("  async function launch() {"), src.indexOf("  function getContext("));
   const at = (s) => { const i = launch.indexOf(s); assert.ok(i > 0, s); return i; };
   assert.ok(at("api.profiles.forLaunch(") < at("network.forLaunch(") && at("network.forLaunch(") < at("graphics.before("), "steps 2, 3, 4 in order: a network refusal never waits for a probe");
   assert.ok(at("try {") < at("network.forLaunch(") && at("graphics.before(") < at("finally { net?.drop();"), "the auth file is dropped whatever stops the launch, the graphics step included");
@@ -346,9 +348,10 @@ test("launch.mjs: step 4 before the browser starts, step 7 after the network che
     "step 4: before any preference, key file or the start");
   assert.match(launch, /probeLaunch: native \? probeLauncher\(\{ chromium: browserType\(\), engine: \{ \.\.\.next, browserProfile: \{ \.\.\.chosen\.engine, geoip: false \} \}, config, shell: st\.shell, screen, env: process\.env, executablePath: next\.executablePath, profileArgs: chosen\.switches, server: api\.isServer\(\), log \}\) : null/,
     "the probe starts as this launch would (the profile's engine layer and switches, the screen, the sandbox rule), never with geoip");
-  const ctxFn = src.slice(src.indexOf("  function getContext() {"), src.indexOf("  // The browser, once saved tabs are back."));
-  assert.match(ctxFn, /st\.probing \? MEASURING_BUSY : /, "a call waiting on a probe hears so");
-  assert.match(ctxFn, /if \(st\.installing \|\| st\.probing\) return Promise\.reject\(busy\(\)\);/);
+  const ctxFn = src.slice(src.indexOf("  function getContext("), src.indexOf("  // The browser, once saved tabs are back."));
+  assert.match(ctxFn, /const busy = \(measured = st\.probing\) => new Error\(measured \? MEASURING_BUSY : /, "a call waiting on a probe hears so");
+  assert.match(ctxFn, /if \(waitMeasuring && !st\.installing\) return throughMeasurement\(st\.contextPromise, \{ st, waiters: installWaiters, ms: deps\.measuringWaitMs \?\? MEASURING_WAIT_MS, onMeasuring, busy \}\);\n\s+if \(st\.installing \|\| st\.probing\) return Promise\.reject\(busy\(\)\);/,
+    "an agent's session switch waits through a measurement (bounded); every other call hears it at once");
   assert.match(src, /createGraphics\(st, deps, \{ \.\.\.api, onProbing: tellWaiters \}\)/, "a probe that starts tells the calls already waiting");
   assert.ok(at("network.checkAtLaunch(") < at("graphics.after(") && at("graphics.after(") < at("net.started()") && at("graphics.after(") < at("api.restore("), "step 7: after step 6, before any tab");
   const refused = launch.slice(at("if (!drawn.ok) {"), at('step("graphics read")'));
@@ -357,4 +360,66 @@ test("launch.mjs: step 4 before the browser starts, step 7 after the network che
   assert.match(src, /ensureNativeBuild\(installLog, \{ asset, config, onGraphics: \(m\) => \{ checked = m; \}, profileArgs: api\.profiles\.selfCheckArgs\?\.\(\) \?\? \[\] \}\)/, "the self-check's probe starts with the default's switches");
   assert.match(src, /api\.profiles\.fileSelfCheck\(checked, \{ build, pack: NATIVE\.engine\.sha256,/);
   assert.match(src, /api\.profiles\.release\(\); graphics\.release\(\);/, "the status part ends with the browser");
+});
+
+test("an agent's session switch waits through a measurement, bounded, and hears an install at once", async () => {
+  // The bound: the probe's worst case and a minute for the start after it, under the 10-minute turn cap.
+  assert.equal(MEASURING_WAIT_MS, GRAPHICS_TIMEOUT_MS + GRAPHICS_STOP_MS + 60_000);
+  assert.ok(MEASURING_WAIT_MS < 10 * 60_000);
+  const busy = () => new Error("busy");
+  // A measurement under way: waited for, onMeasuring once, the start's answer, the waiter gone.
+  const st = { probing: true, installing: false };
+  const waiters = new Set();
+  let told = 0, resolve;
+  const started = new Promise((r) => { resolve = r; });
+  const waiting = throughMeasurement(started, { st, waiters, ms: 5000, onMeasuring: () => told++, busy });
+  assert.equal(waiters.size, 1);
+  for (const w of waiters) w(); // the probe's start tells the waiters again: still once
+  setTimeout(() => { st.probing = false; resolve("ctx"); }, 20);
+  assert.equal(await waiting, "ctx");
+  assert.deepEqual([told, waiters.size], [1, 0]);
+  // A measurement that starts while it waits is noted too.
+  const st2 = { probing: false, installing: false };
+  const w2 = new Set();
+  let told2 = 0, resolve2;
+  const p2 = throughMeasurement(new Promise((r) => { resolve2 = r; }), { st: st2, waiters: w2, ms: 5000, onMeasuring: () => told2++, busy });
+  assert.equal(told2, 0);
+  st2.probing = true;
+  for (const w of w2) w();
+  resolve2("ctx2");
+  assert.equal(await p2, "ctx2");
+  assert.equal(told2, 1);
+  // Past the bound: the measurement's retry message (busy(true)), the waiter gone.
+  const w3 = new Set();
+  const said = (measured) => new Error(measured ? "measuring" : "installing");
+  await assert.rejects(throughMeasurement(new Promise(() => {}), { st: { probing: true, installing: false }, waiters: w3, ms: 20, busy: said }), /^Error: measuring$/);
+  assert.equal(w3.size, 0);
+  // No measurement: no limit, as every start is waited for (never the install message for a slow start).
+  let resolve5;
+  const p5 = throughMeasurement(new Promise((r) => { resolve5 = r; }), { st: { probing: false, installing: false }, waiters: new Set(), ms: 20, busy: said });
+  let early = null;
+  p5.then((v) => { early = v; }, (e) => { early = e; });
+  await new Promise((r) => setTimeout(r, 80));
+  assert.equal(early, null, "still waiting past ms with no measurement");
+  resolve5("ctx5");
+  assert.equal(await p5, "ctx5");
+  // A measurement that starts late: the bound runs from its start, not from the call.
+  const st6 = { probing: false, installing: false };
+  const w6 = new Set();
+  let resolve6;
+  const p6 = throughMeasurement(new Promise((r) => { resolve6 = r; }), { st: st6, waiters: w6, ms: 60, busy: said });
+  await new Promise((r) => setTimeout(r, 50));
+  st6.probing = true;
+  for (const w of w6) w();
+  setTimeout(() => resolve6("ctx6"), 30); // 80 ms after the call, 30 ms into the measurement
+  assert.equal(await p6, "ctx6");
+  // An install that begins meanwhile: busy at once.
+  const st4 = { probing: false, installing: false };
+  const w4 = new Set();
+  const p4 = throughMeasurement(new Promise(() => {}), { st: st4, waiters: w4, ms: 60_000, busy });
+  st4.installing = true;
+  for (const w of w4) w();
+  await assert.rejects(p4, /^Error: busy$/);
+  // A start that fails: its own error.
+  await assert.rejects(throughMeasurement(Promise.reject(new Error("refused")), { st: { probing: true, installing: false }, waiters: new Set(), ms: 5000, busy }), /refused/);
 });

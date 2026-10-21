@@ -41,7 +41,7 @@
 import { readAssignment, readBinding, writeBinding, validName, assignedTo } from "../../sessions.mjs";
 import { createProfileStore } from "../../profiles/store.mjs";
 import { launchableBrowserArgs, browserArgsOf } from "../../browser-args.mjs";
-import { fromConfig, toLaunch, ENGINE_KEYS, PICKS_THIS_COMPUTER, THIS_COMPUTER_NOTE } from "../../profiles/map.mjs";
+import { fromConfig, toLaunch, buildFit, ENGINE_KEYS, PICKS_THIS_COMPUTER, THIS_COMPUTER_NOTE } from "../../profiles/map.mjs";
 import { PROFILE_ID, DEFAULT_PROFILE } from "../../profiles/schema.mjs";
 import { cliCommand, requestOf, measuredEntry } from "../../profiles/validate.mjs";
 import { entryStatus } from "../../native/validate.mjs";
@@ -49,6 +49,8 @@ import { takeIdentity } from "../../profiles/lock.mjs";
 import { ensureMigrated, readMigration, migrationNote } from "../../profiles/migrate.mjs";
 import { createProfileOwner } from "./profile-owner.mjs";
 import { COHERENCE_RULES, screenBelievable } from "../../rules/coherence.mjs";
+import { chooseBrowser } from "../../browser/choice.mjs";
+import { nativeLayout, pinnedAsset } from "../../native/install.mjs";
 
 // A native build's version as validation keys it (profiles/schema.mjs BUILD).
 const BUILD = /^\d{1,4}(?:\.\d{1,6}){3}$/;
@@ -203,6 +205,8 @@ export function createProfiles(st, deps = {}) {
       switches: mapped.switches, network: mapped.network, adBlocker: mapped.adBlocker, results, warnings,
       // Whether the profile asks for a saved card (the launch honors it only with a key store).
       savedCard: mapped.prefs.savedCard === true,
+      // The color scheme for the browser's Appearance setting (native only; browser.mjs profilePreferences).
+      colorScheme: mapped.prefs.colorScheme ?? null,
       // What it asked for (graphics, screen, window, locale) and the measurement kept for this
       // build and pack: the graphics steps' inputs (daemon/browser/graphics.mjs).
       request: requestOf(record), measured: stored,
@@ -304,7 +308,30 @@ export function createProfiles(st, deps = {}) {
     } catch (e) { log(`launch: the install check's graphics weren't kept (${e?.code || e?.message || "error"})`); return false; }
   }
 
-  const api = { prepare, forLaunch, release, statusParts, list, store, configSettings, coherence, fileValidation, fileSelfCheck, selfCheckArgs, setSavedCard, savedCard };
-  api.owner = createProfileOwner(st, { config, log, store, platform, now, configSettings });
+  // Whether the next launch starts the native build: the browser in use (the running browser's
+  // profile, else the last launch's engine), else, before any launch, config.json's choice as
+  // launch.mjs chooseEngine makes it (browser/choice.mjs chooseBrowser: unset, the native build
+  // where one is pinned for this computer). The one answer every selection path uses (fit, the
+  // agent's new session in sessions/switch.mjs, the person's assignment in profile-owner.mjs),
+  // for the browser a profile is checked on and the config-backed default's settings alike.
+  function nextNative() {
+    if (st.profile) return st.profile.browserKind === "pairbrowse";
+    if (st.engine) return st.engine.browserEngine === "pairbrowse";
+    return chooseBrowser(config, { native: !!pinnedAsset(nativeLayout(platform)) }).binary === "native";
+  }
+
+  // When a session is put on a profile (an agent's new session, the person's assignment): what it
+  // can't apply on the browser the next launch starts (nextNative; profiles/map.mjs buildFit, D11),
+  // so the choice is refused there, naming each setting, never left to a launch that fails.
+  // record: a profile record (store.use's). Answers buildFit's { items, problem }.
+  function fit(record) {
+    const native = nextNative();
+    // The config-backed default's stored part only: its whole record as config.json gives it now.
+    const whole = record?.settings === "config.json" ? store.use(record.id, { configSettings: configSettings(native) }) : record;
+    return buildFit(whole, { browserKind: native ? "pairbrowse" : "pairbrowse-open", platform, userArgs: launchableBrowserArgs(browserArgsOf(config), platform) });
+  }
+
+  const api = { prepare, forLaunch, release, statusParts, list, store, configSettings, coherence, fileValidation, fileSelfCheck, selfCheckArgs, setSavedCard, savedCard, fit, nextNative };
+  api.owner = createProfileOwner(st, { config, log, store, platform, now, configSettings, fit, nextNative });
   return api;
 }

@@ -64,6 +64,7 @@ test("session new with profile assigns it; action profiles only lists", { timeou
   const berlin = store.create({ name: "berlin", browser: { kind: "pairbrowse-open" }, locale: { languages: ["de-DE"], timezone: null, source: "set" } });
   store.create({ name: "old" });
   store.retire("old");
+  store.create({ name: "office", browser: { kind: "pairbrowse-open" }, display: { colorScheme: "light", reducedMotion: null } });
   const chromium = { launchPersistentContext: async () => { const ctx = new EventEmitter(); ctx.pages = () => []; ctx.addInitScript = async () => {}; ctx.newPage = async () => ({ on() {}, once() {}, url: () => "about:blank", isClosed: () => false, goto: async () => {}, close: async () => {}, context: () => ctx }); ctx.browser = () => null; ctx.close = async () => { ctx.emit("close"); }; return ctx; } };
   const quiet = () => {};
   const context = createContext({
@@ -80,8 +81,10 @@ test("session new with profile assigns it; action profiles only lists", { timeou
   assert.match(listed.text, /old \(retired: can't be picked\)/);
   assert.doesNotMatch(listed.text, /de-DE/, "names only, never a setting");
   assert.equal(JSON.stringify(store.list()), before, "listing changes nothing");
-  // Refused before anything is made: a profile that isn't there, a retired one, profile on use.
-  for (const [profile, why] of [["nowhere", /There is no browser profile "nowhere"|doesn't exist/], ["old", /retired/]]) {
+  // Refused before anything is made: a profile that isn't there, a retired one, one with a setting
+  // its browser can't apply (named, never left to a start that fails), profile on use.
+  for (const [profile, why] of [["nowhere", /There is no browser profile "nowhere"|doesn't exist/], ["old", /retired/],
+    ["office", /^Browser profile "office" can't start on PairBrowse as an extension: display\.colorScheme \(PairBrowse as an extension can't give pages a light scheme.*\)\. Nothing was made/]]) {
     const r = await context.sessionCommand({ action: "new", name: `cs-${profile}`, profile });
     assert.equal(r.error, true, profile);
     assert.match(r.text, why);

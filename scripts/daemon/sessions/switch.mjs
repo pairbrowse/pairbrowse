@@ -22,7 +22,9 @@ export function createSwitch(st, deps, api) {
 
   // renameFrom: a person's rename of the open session (renameCurrent): the browser closes, the
   // session's files move to the new name, and the same session reopens with its tabs.
-  async function switchTo(name, { renameFrom = null } = {}) {
+  // waitMeasuring, onMeasuring: an agent's switch waits (bounded) through a graphics measurement
+  // the start runs, rather than hearing it should retry (launch.mjs getContext).
+  async function switchTo(name, { renameFrom = null, waitMeasuring = false, onMeasuring = () => {} } = {}) {
     if (!renameFrom && name === st.session && st.contextPromise) {
       // The open session, chosen by an agent while the picker is up: the picker goes, its tabs come back.
       if (st.pick.state === "showing") {
@@ -77,7 +79,7 @@ export function createSwitch(st, deps, api) {
     // An agent switching is a choice too: no picker in the next browser.
     if (!renameFrom) api.picked(`Session "${isTemporary(name) ? "clean" : name}" was chosen by an agent.`);
     if (renamed) hostNote(`The person renamed this browser session "${renameFrom}" to "${name}"; the browser restarted on it and its tabs are reopening (pairbrowse_session use ${name}).`);
-    await api.getContext();
+    await api.getContext({ waitMeasuring, onMeasuring });
     log(renameFrom ? `session ${renameFrom} renamed to ${name}` : `switched to session ${name}`);
   }
 
@@ -144,6 +146,24 @@ export function createSwitch(st, deps, api) {
     return `Browser profiles (pick one for a new session: action "new" with name and profile; only the user makes or changes them):\n${rows.length ? rows.map(line).join("\n") : "  default (from config.json)"}`;
   }
 
+  // An agent's switch (pairbrowse_session use and new): the start is waited for through a graphics
+  // measurement it runs (bounded, launch.mjs getContext waitMeasuring), and the answer says so: ""
+  // or a sentence (with a trailing space). made: what was already done, said when the browser
+  // still didn't open, so the agent continues with "use" rather than making it again.
+  async function agentSwitch(target, made = "") {
+    let measured = false;
+    const started = Date.now();
+    try {
+      await switchTo(target, { waitMeasuring: true, onMeasuring: () => { measured = true; } });
+    } catch (e) {
+      if (!made) throw e;
+      throw new Error(`${made}, but its browser isn't open yet: ${e?.message || e} Continue with pairbrowse_session use ${target}.`, { cause: e });
+    }
+    if (!measured) return "";
+    const s = Math.max(1, Math.round((Date.now() - started) / 1000));
+    return `It waited ${s} s while PairBrowse measured this browser's graphics once (the first start of this browser version); nothing needs retrying. `;
+  }
+
   // pairbrowse_session. Returns { text, error }.
   async function sessionCommand({ action, name, profile } = {}) {
     const fail = (text) => ({ text, error: true });
@@ -158,8 +178,8 @@ export function createSwitch(st, deps, api) {
     if (profile !== undefined && action !== "new") return fail('profile goes with action "new" only: an agent picks a profile for a new session; the user reassigns existing ones.');
     if (action === "use") {
       if (!exists()) return fail(`No session "${name}".\n${list()}`);
-      await switchTo(name);
-      return { text: `Now using session "${name}" (${where().toLowerCase()} browser). Its tabs are reopening.` };
+      const waited = await agentSwitch(name);
+      return { text: `Now using session "${name}" (${where().toLowerCase()} browser). ${waited}Its tabs are reopening.` };
     }
     if (action === "new") {
       if (name !== undefined && !validName(name)) return fail("Session names use letters, numbers, - and _ (up to 40).");
@@ -168,20 +188,27 @@ export function createSwitch(st, deps, api) {
       const target = name || `clean-${Date.now()}`;
       // A profile chosen: the new session is assigned it (sessions.mjs createSession: unknown or
       // retired refused by name, nothing made then).
+      // A profile with a setting the browser in use can't apply is refused by name before anything
+      // is made (sessions/profiles.mjs fit), never left to a start that fails.
       let chosen = null;
       try {
         if (profile === undefined) createSession(target);
         else {
-          createSession(target, profile, { store: api.profiles.store, configSettings: api.profiles.configSettings(st.engine?.browserEngine === "pairbrowse") });
-          chosen = api.profiles.store.use(profile).name;
+          // The browser the next launch starts, as the person's assignment and fit decide it.
+          const configSettings = api.profiles.configSettings(api.profiles.nextNative());
+          const record = api.profiles.store.use(profile, { configSettings });
+          const fitted = api.profiles.fit(record);
+          if (fitted?.problem) return fail(`${fitted.problem} Nothing was made: pick another profile, or tell the user which setting to change.\n${profileList()}`);
+          createSession(target, profile, { store: api.profiles.store, configSettings });
+          chosen = record.name;
         }
       } catch (e) { return fail(`${String(e?.message || e)}\n${profileList()}`); }
-      await switchTo(target);
+      const waited = await agentSwitch(target, name ? `Session "${name}" was created` : "The clean session was made");
       const on = chosen ? ` on browser profile "${chosen}"` : "";
       return {
         text: name
-          ? `Created and switched to the new session "${name}"${on}: an empty browser with no logins.`
-          : `Switched to a clean, throwaway browser${on}: no logins, no history. It's deleted when you switch away or the browser shuts down.`,
+          ? `Created and switched to the new session "${name}"${on}: an empty browser with no logins.${waited ? ` ${waited.trim()}` : ""}`
+          : `Switched to a clean, throwaway browser${on}: no logins, no history. It's deleted when you switch away or the browser shuts down.${waited ? ` ${waited.trim()}` : ""}`,
       };
     }
     if (action === "delete") {

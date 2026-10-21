@@ -873,8 +873,14 @@ one.
   apply refuses the launch (for example `locale.timezone` on the open build). Data inside an imported
   file that is not applied is listed per field as `unsupported` or `not-applied` and never refuses.
   The open build applies switch-based fields only (`--lang`, `--window-size`, `--force-dark-mode`,
-  `--force-prefers-reduced-motion`, `--disable-gpu`; step 36: a profile's `screen` is whole, so the
-  open build refuses a set screen and `--force-device-scale-factor` stays a `browserArgs` switch).
+  `--force-prefers-reduced-motion`, `--force-prefers-no-reduced-motion`, `--disable-gpu`; step 36: a
+  profile's `screen` is whole, so the open build refuses a set screen and `--force-device-scale-factor`
+  stays a `browserArgs` switch). Step 46c: what a profile's browser cannot apply is also said before
+  any launch (`profiles/map.mjs` `buildFit`): at import, as `import.build` warning items for the
+  browser the profile is for on this computer (the profile is still imported), and when a session is
+  put on it (an agent's `pairbrowse_session new` with `profile`, the person's assignment), refused
+  there naming each field for the browser in use (the profile's own before any launch), never left
+  to a start that fails.
 - **D12. Derived values are recorded, never stored as configuration**: geoip, host `Intl`, build
   `platform` and `brandVersion` (`native-engine.mjs:247-248`, fixes F4: step 11's pinning test confirms a persisted
   `brandVersion` outlives a build update and a copied persona keeps its system's `platform`).
@@ -1204,7 +1210,8 @@ macOS native (host capture), Linux native on Xvfb without a GPU (software), Linu
 | Screen size, avail, color depth | profile `screen`; on Xvfb `virtualScreen` | screen engine keys | C | C (must equal `virtualScreen`) | C (on Xvfb must equal it) | `native-graphics` "screen vs virtualScreen"; probe `screen` | none |
 | Window size | profile `window`; on Xvfb the screen | `--window-size` | C | C | C | `server-display` "window matches virtualScreen" | none |
 | Device pixel ratio | profile `screen.devicePixelRatio` | `devicePixelRatio` key | C | C | C | `profiles-native` | none |
-| Color scheme, reduced motion | profile `display` | `--force-dark-mode`, `--force-prefers-reduced-motion` | C | C | C | `profile-map` "toLaunch passes screenBrowserArgs" | none |
+| Color scheme | profile `display.colorScheme` | native: the browser's Appearance setting (`browser.theme.color_scheme2`), which its pages follow, and `--force-dark-mode` for dark; extension: `--force-dark-mode`, light refused | C | C | C | `profile-map` "a light scheme and reduced motion off"; `browser` "Appearance setting" | none |
+| Reduced motion | profile `display.reducedMotion` | `--force-prefers-reduced-motion`, `--force-prefers-no-reduced-motion` | C | C | C | `profile-map` "toLaunch passes screenBrowserArgs" | none |
 | Persona seed | profile `persona.seed` or per session | `fingerprint` key | C | C | C | `profiles-native` "pinned seed reproduces" | none |
 | Proxy and egress | Phase C network | `--proxy-server`, auth file | C (proxy), M (egress) | C, M | C, M | `integration/proxy`, `net-verdict` | 962 for credentials |
 | WebRTC addresses | Phase C strict mode | WebRTC policy switch | C (policy), M (candidates) | C, M | C, M | `proxy` I4, I13 | none |
@@ -2989,6 +2996,47 @@ code:
 - Docs on landing: a new `docs/security.md` row ("Card details are entered by a person, never by an
   agent, in every session and app"), rows on the Pay click and masking updated, a plain-language
   CHANGELOG entry, SKILL.md and the test-site skill updated.
+
+### 13.2 End-to-end gate findings (step 46c, 2026-10-21)
+
+**Profile color settings.** The native build refused a profile with `display.colorScheme` "light" or
+`display.reducedMotion` false while import took them silently. The cause was the mapper, not the
+engine: `profiles/map.mjs` had a switch only for dark (`--force-dark-mode`) and reduced motion on, and
+refused the rest as "no switch forces it". Read from the engine's source (version 150): reduced motion
+has a switch each way (`ui/gfx/switches.cc` `force-prefers-reduced-motion` and
+`force-prefers-no-reduced-motion`, checked in that order in `gfx::Animation::PrefersReducedMotion`), and
+the native build's regular pages take their color scheme from the browser's Appearance setting
+(`ThemeService::BrowserUsesDarkColors`, the `browser.theme.color_scheme2` pref, 0 the system's, 1 light,
+2 dark; patch 501's `GetPreferredColorScheme` branch), while `--force-dark-mode` reaches pages only
+while that setting is "System". So, now:
+- Native build: light and dark are written as that Appearance setting at each launch
+  (`browser.mjs` `profilePreferences` `colorScheme`; dark keeps `--force-dark-mode`), with what was
+  there before kept beside it (`pairbrowse.profile_color_scheme`), so a profile that stops asking gives
+  the person's own choice back unless they changed it since. Its window keeps its own colors.
+- Reduced motion off: `--force-prefers-no-reduced-motion` on both builds (added to the `browserArgs`
+  list and the mapper's `SWITCHES`); `config.json`'s `--force-prefers-reduced-motion`, which the browser
+  checks first, makes a profile's false a named mismatch.
+- A profile's light beside `config.json`'s `--force-dark-mode` is a named mismatch too (`DARK_FORCED`):
+  the Appearance setting at Light would keep that switch from pages, so neither side wins quietly.
+- PairBrowse as an extension: light stays refused, with the reason named (no switch forces it, and
+  its Appearance setting would turn its whole window light).
+- What a profile's browser cannot apply is said at import (`import.build` warnings) and refused by
+  name when a session is put on it (`buildFit`, D11), never left to a failed start. Every selection
+  path checks it on the browser the next launch starts (`sessions/profiles.mjs` `nextNative`: the
+  browser in use, else, before any launch, `config.json`'s choice through `chooseBrowser`), the
+  config-backed default's settings resolved for that same browser.
+
+**Session creation during a graphics measurement.** An agent's `pairbrowse_session new` or `use`
+whose start ran the one-time graphics probe was told to retry (and a retried `new` then found the
+session made). Its switch now waits through the measurement (`launch.mjs` `getContext`
+`waitMeasuring`, `throughMeasurement`). A start with no measurement is waited for with no limit,
+as before; the limit, `MEASURING_WAIT_MS` (the probe's worst case `GRAPHICS_TIMEOUT_MS +
+GRAPHICS_STOP_MS` plus a minute for the start, under the turn cap), runs from the moment a
+measurement is first seen, and past it the answer is `MEASURING_BUSY`. Its result says it waited
+and for how long. When an install starts, it answers as before; a `new` that was made says so and to continue with `use`. Every other call still hears
+`MEASURING_BUSY` at once. Tests: `test/profile-map.test.mjs`, `test/profile-import.test.mjs`,
+`test/browser.test.mjs`, `test/session-profiles.test.mjs`, `test/context-switch.test.mjs`,
+`test/launch-graphics.test.mjs`.
 
 ## 14. Definition of done
 

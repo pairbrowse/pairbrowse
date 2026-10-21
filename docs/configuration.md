@@ -41,7 +41,7 @@
   - language and window: `--lang=<language tag>`, `--window-size=<w>,<h>`,
     `--window-position=<x>,<y>`, `--start-maximized`, `--force-device-scale-factor=<number>`;
   - colors, fonts and motion: `--force-dark-mode`, `--force-prefers-reduced-motion`,
-    `--force-color-profile=<name>`, `--font-render-hinting=none|slight|medium|full`,
+    `--force-prefers-no-reduced-motion`, `--force-color-profile=<name>`, `--font-render-hinting=none|slight|medium|full`,
     `--disable-font-subpixel-positioning`, `--disable-lcd-text`, `--hide-scrollbars`,
     `--disable-smooth-scrolling`, `--force-renderer-accessibility`;
   - GPU and display: `--disable-gpu`, `--disable-gpu-compositing`, `--use-gl=<name>`,
@@ -366,7 +366,8 @@ user's file, readable by others), the section says why and refuses a username or
   The `default` browser profile is read from this file, never written into it: `browser` (and
   its older names) gives the browser it is for; the screened `browserArgs` give its languages
   (`--lang`), window (`--window-size`), dark scheme (`--force-dark-mode`) and reduced motion
-  (`--force-prefers-reduced-motion`), each switch staying in `browserArgs` as written (one written
+  (`--force-prefers-reduced-motion` on, `--force-prefers-no-reduced-motion` off; with both, on, as
+  the browser reads them), each switch staying in `browserArgs` as written (one written
   twice with different values is left out of the profile; a graphics switch such as `--disable-gpu`
   or `--use-angle` stays there too and is named, the backend in use being measured);
   and, when the native build is chosen, `pairbrowse` gives its languages (`acceptLanguage`, else
@@ -386,7 +387,9 @@ user's file, readable by others), the section says why and refuses a username or
   place of the `pairbrowse` block's (the `default` profile's are the block's own; the hardware
   keys still apply to every profile), its network id unless `network.sessions` names one, and
   its ad blocker choice over `adBlocker`. A setting the browser in use can't apply stops the
-  start, naming it, except a saved card (below), whose safe side is off.
+  start, naming it, except a saved card (below), whose safe side is off. So does a profile's
+  setting that a switch in `browserArgs` contradicts: a light scheme beside `--force-dark-mode`,
+  or reduced motion off beside `--force-prefers-reduced-motion`; neither side wins quietly.
 
   A saved card (`payments.savedCard`, `false` by default; a store profile's only, set with
   `node scripts/profiles/cli.mjs edit <profile> --settings '{"payments":{"savedCard":true}}'`)

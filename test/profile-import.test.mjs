@@ -166,6 +166,21 @@ test("coherence: an unbelievable screen is reported as a warning and never refus
   assert.deepEqual(checkImport(DEVICE, HOST).items.filter((i) => i.rule === "screen.believable"), []);
 });
 
+test("a setting the profile's browser can't apply is imported and named at once, never found by a failed start", () => {
+  const builds = (r) => r.items.filter((i) => i.rule === "import.build");
+  // The native build applies a light scheme and reduced motion off (the fixture's): nothing to say.
+  const native = checkImport(exportProfile(RECORD, { at: AT }).text, { ...HOST, platform: "linux" });
+  assert.equal(native.ok, true, native.problem);
+  assert.deepEqual(builds(native), []);
+  assert.deepEqual(native.settings.display, { colorScheme: "light", reducedMotion: false });
+  // PairBrowse as an extension: its time zone, screen and light scheme named, each a warning.
+  const open = checkImport(exportProfile({ ...RECORD, browser: { kind: "pairbrowse-open" } }, { at: AT }).text, { ...HOST, platform: "linux" });
+  assert.equal(open.ok, true, open.problem);
+  assert.deepEqual(builds(open).map((i) => [i.field, i.status, i.severity]), [["locale.timezone", "unsupported", "warning"], ["screen", "unsupported", "warning"], ["display.colorScheme", "unsupported", "warning"]]);
+  assert.match(byField(builds(open), "display.colorScheme")[0].reason, /^can't start as it is: PairBrowse as an extension can't give pages a light scheme/);
+  assert.equal(open.settings.display.colorScheme, "light", "imported as it is");
+});
+
 test("an engine-persona's GPU, cores, memory, proxy, canvasBridge and launch options are unsupported and dropped, credentials in no file or log", () => {
   const r = checkImport(PERSONA, { ...HOST, file: "travel.json" });
   assert.equal(r.ok, true, r.problem);

@@ -56,6 +56,7 @@ export const ALLOWED = {
   "force-device-scale-factor": MATCHES(/^\d{1,2}(?:\.\d{1,4})?$/),
   "force-dark-mode": NONE,
   "force-prefers-reduced-motion": NONE,
+  "force-prefers-no-reduced-motion": NONE,
   "force-color-profile": MATCHES(/^[a-z0-9-]{1,32}$/),
   "font-render-hinting": ONE_OF("none", "slight", "medium", "full"),
   "disable-font-subpixel-positioning": NONE,

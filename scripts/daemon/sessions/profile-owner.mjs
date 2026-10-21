@@ -5,7 +5,7 @@
 //   assign(session, ref): puts a saved session that isn't open on a profile (sessions.mjs
 //     assignProfile: assignment and binding together, the old profile's persona removed); takes
 //     effect at its next start. The open session, a clean one and one another browser has open are
-//     refused.
+//     refused, and so is a profile with a setting the browser in use can't apply (named).
 //   importFile(bytes, host): one profile file (profiles/import.mjs importInto: checked, settings
 //     only, its SHA-256, source and license kept). host: { file, source, license, terms, name, dryRun }.
 //   exportOne(ref, options): a pairbrowse-profile/1 file's text (profiles/export.mjs).
@@ -23,14 +23,14 @@ import { DEFAULT_PROFILE } from "../../profiles/schema.mjs";
 const error = (e) => ({ error: String(e?.message || e || "That didn't work.") });
 
 // st: the browser's state (st.session, st.contextPromise, st.engine, st.profile). deps: config,
-// log, store, platform, now, configSettings(native).
-export function createProfileOwner(st, { config = {}, log = () => {}, store, platform = process.platform, now = Date.now, configSettings }) {
-  // Whether the native build is the one in use (the last launch's), for the default's settings.
-  const native = () => st.profile?.browserKind === "pairbrowse" || st.engine?.browserEngine === "pairbrowse";
+// log, store, platform, now, configSettings(native), fit(record) and nextNative() (sessions/profiles.mjs:
+// what the profile can't apply on the browser the next launch starts, { items, problem }, and
+// whether that browser is the native build).
+export function createProfileOwner(st, { config = {}, log = () => {}, store, platform = process.platform, now = Date.now, configSettings, fit = null, nextNative = () => false }) {
   // A profile by name or id, the config-backed default made from config.json when it never was.
   const use = (ref) => {
     try { return store.use(ref); } catch (e) {
-      if (e?.code === "PROFILE_UNKNOWN" && String(ref).toLowerCase() === DEFAULT_PROFILE) return store.use(ref, { configSettings: configSettings(native()) });
+      if (e?.code === "PROFILE_UNKNOWN" && String(ref).toLowerCase() === DEFAULT_PROFILE) return store.use(ref, { configSettings: configSettings(nextNative()) });
       throw e;
     }
   };
@@ -57,6 +57,9 @@ export function createProfileOwner(st, { config = {}, log = () => {}, store, pla
       if (profileInUse(name)) return { error: `Session "${name}" is open in another browser; close it there first.` };
       if (typeof ref !== "string" || !ref) return { error: "Name a browser profile." };
       const record = use(ref);
+      // A setting the browser in use can't apply is said now, never left to the next start.
+      const fitted = fit ? fit(record) : null;
+      if (fitted?.problem) return { error: `${fitted.problem} Session "${name}" stays on its profile: change that setting, or the browser, first.`, items: fitted.items.map(({ field, status, severity, reason }) => ({ field, status, severity, reason })) };
       const r = assignProfile(name, record.id, { store });
       log(`profiles: the person put session ${name} on browser profile ${record.name} (${record.id})`);
       return { ok: true, session: name, profileId: r.profileId, profile: r.profile, text: `Session "${name}" starts on browser profile "${r.profile}" from its next start.` };
@@ -79,7 +82,7 @@ export function createProfileOwner(st, { config = {}, log = () => {}, store, pla
     try {
       // The config-backed default's whole record: its settings as config.json gives them now.
       let whole = use(ref);
-      if (whole.kind === "config") whole = store.use(whole.id, { configSettings: configSettings(native()) });
+      if (whole.kind === "config") whole = store.use(whole.id, { configSettings: configSettings(nextNative()) });
       const out = exportProfile(whole, { withHistory, includeIdentity, at: new Date(now()).toISOString() });
       log(`profiles: the person exported browser profile ${whole.name} (${whole.id})`);
       return { ok: true, fileName: `${whole.name}.pairbrowse-profile.json`, text: out.text, sha256: out.sha256, warnings: out.warnings };

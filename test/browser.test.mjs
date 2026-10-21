@@ -226,6 +226,33 @@ test("a build with its own pages: the profile gets the docks' layout, no extensi
   assert.equal(readFileSync(secureFile, "utf8"), secure, "Secure Preferences untouched");
 });
 
+test("a profile's light or dark scheme is the browser's Appearance setting, and the person's own comes back after", async () => {
+  const { profilePreferences } = await import("../scripts/browser.mjs");
+  const pages = { browserPages: true };
+  // The person's System (no value): the profile's light, kept beside it what was there.
+  const light = profilePreferences({}, undefined, [], { ...pages, colorScheme: "light" });
+  assert.equal(light.browser.theme.color_scheme2, 1);
+  assert.deepEqual(light.pairbrowse.profile_color_scheme, { set: 1, before: 0 });
+  // Dark next time: still the person's System underneath.
+  const dark = profilePreferences(structuredClone(light), undefined, [], { ...pages, colorScheme: "dark" });
+  assert.equal(dark.browser.theme.color_scheme2, 2);
+  assert.deepEqual(dark.pairbrowse.profile_color_scheme, { set: 2, before: 0 });
+  // The profile stops asking: the person's choice back, the note gone.
+  const back = profilePreferences(structuredClone(dark), undefined, [], pages);
+  assert.equal(back.browser.theme.color_scheme2, 0);
+  assert.equal(back.pairbrowse.profile_color_scheme, undefined);
+  assert.deepEqual(back.pairbrowse.layout, dark.pairbrowse.layout, "the rest of pairbrowse stays");
+  // The person's own Light under a profile's dark comes back as Light.
+  const own = profilePreferences(profilePreferences({ browser: { theme: { color_scheme2: 1 } } }, undefined, [], { ...pages, colorScheme: "dark" }), undefined, [], pages);
+  assert.equal(own.browser.theme.color_scheme2, 1);
+  // Changed by the person since: theirs stays.
+  const changed = structuredClone(light);
+  changed.browser.theme.color_scheme2 = 2;
+  assert.equal(profilePreferences(changed, undefined, [], pages).browser.theme.color_scheme2, 2);
+  // No profile scheme and no note: nothing written.
+  assert.equal(profilePreferences({}, undefined, [], pages).browser.theme, undefined);
+});
+
 test("a disabled side panel record is dropped so the engine loads it enabled again", async () => {
   const { profileSecurePreferences } = await import("../scripts/browser.mjs");
   const id = panelExtensionId();

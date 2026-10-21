@@ -244,6 +244,51 @@ test("unknown or retired profile refused by name, never the default; a field the
   assert.equal(readBinding(shop).profileId, berlin.id, "the assignment's own binding stays as it was");
 });
 
+test("a light scheme and reduced motion off start on the native build; the person's assignment names what the browser in use can't apply", () => {
+  const store = newStore();
+  const office = store.create({ name: "office", display: { colorScheme: "light", reducedMotion: false } });
+  const { st, profiles } = parts(store);
+  const name = session("sp-light");
+  assignProfile(name, office.id, { store });
+  const got = profiles.forLaunch(name, NATIVE);
+  assert.equal(got.colorScheme, "light", "the launch writes the browser's Appearance setting");
+  assert.ok(got.switches.includes("--force-prefers-no-reduced-motion"));
+  profiles.release();
+  // The person puts a saved session on it: refused while PairBrowse as an extension is in use,
+  // naming the field, the session left on its profile; fine on the native build or before any launch.
+  const other = session("sp-light-2");
+  st.engine = { browserEngine: "chromium" };
+  const r = profiles.owner.assign(other, "office");
+  assert.match(r.error || "", /^Browser profile "office" can't start on PairBrowse as an extension: browser\.kind \(.*\); display\.colorScheme \(PairBrowse as an extension can't give pages a light scheme.*\)\. Session "sp-light-2" stays on its profile/);
+  assert.deepEqual(r.items.map((i) => i.field), ["browser.kind", "display.colorScheme"]);
+  assert.equal(readBinding(other).profileId, null, "nothing assigned");
+  st.engine = { browserEngine: "pairbrowse" };
+  assert.equal(profiles.owner.assign(other, "office").ok, true);
+  // The config-backed default is checked as config.json gives it now.
+  st.engine = null;
+  assert.equal(profiles.owner.assign(session("sp-light-3"), "default").ok, true);
+});
+
+test("before any launch, a profile is checked on the browser config.json chooses, by every selection path alike", () => {
+  const store = newStore();
+  store.create({ name: "office", display: { colorScheme: "light", reducedMotion: null } });
+  // config.json picks PairBrowse as an extension: a fresh helper refuses the native-kind light profile
+  // there, never on the profile's own browser (the next launch is the extension's).
+  const open = parts(store, { browser: "pairbrowse-open" });
+  assert.equal(open.profiles.nextNative(), false);
+  const r = open.profiles.owner.assign(session("sp-fresh-1"), "office");
+  assert.match(r.error || "", /^Browser profile "office" can't start on PairBrowse as an extension: .*display\.colorScheme/);
+  assert.match(open.profiles.fit(store.use("office")).problem || "", /PairBrowse as an extension/);
+  // config.json picks the native build: the same profile fits.
+  const native = parts(store, { browser: "pairbrowse" });
+  assert.equal(native.profiles.nextNative(), true);
+  assert.equal(native.profiles.fit(store.use("office")).problem, null);
+  assert.equal(native.profiles.owner.assign(session("sp-fresh-2"), "office").ok, true);
+  // The browser in use wins over config.json once there is one.
+  native.st.engine = { browserEngine: "chromium" };
+  assert.equal(native.profiles.nextNative(), false);
+});
+
 test("a reassignment removes another profile's persona; the default takes over the persona every session had before profiles", () => {
   const store = newStore();
   const berlin = store.create(BERLIN);

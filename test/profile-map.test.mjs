@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readConfig, fromConfig, toLaunch, browserKindOf, SWITCHES, ENGINE_KEYS } from "../scripts/profiles/map.mjs";
+import { readConfig, fromConfig, toLaunch, buildFit, browserKindOf, SWITCHES, ENGINE_KEYS, LIGHT_ON_EXTENSION, REDUCED_MOTION_FORCED, DARK_FORCED } from "../scripts/profiles/map.mjs";
 import { checkProfile, SETTINGS } from "../scripts/profiles/schema.mjs";
 import { createProfileStore } from "../scripts/profiles/store.mjs";
 import { screenBrowserArgs, switchName } from "../scripts/browser-args.mjs";
@@ -22,7 +22,7 @@ const RECORD = JSON.parse(readFileSync(new URL("./fixtures/profiles/record-1.jso
 const record = (changes = {}) => ({ ...structuredClone(RECORD), ...structuredClone(changes) });
 const NATIVE = { browserKind: "pairbrowse", platform: "linux" };
 const OPEN = { browserKind: "pairbrowse-open", platform: "linux" };
-// Settings the record check takes: no display a switch can't force.
+// Settings either build applies (the open build has no light scheme).
 const LAUNCHABLE = { display: { colorScheme: "dark", reducedMotion: true } };
 function makeStore() {
   let t = Date.parse("2026-10-21T10:00:00Z"), n = 0;
@@ -171,16 +171,18 @@ test("an explicit field the open build can't apply refuses", () => {
     assert.ok(out.results.some((r) => r.field === field && r.severity === "error" && r.status === "unsupported"));
     assert.ok(!out.problem.includes("pinned-1"));
   }
-  // On either build: a scheme or motion setting no switch can force, a GPU or a graphics
-  // requirement on the open build, and a profile made for the other browser.
+  // A light scheme on the open build, reduced motion off against config.json's switch forcing it
+  // on (either build), a GPU or a graphics requirement on the open build, and a profile made for
+  // the other browser.
   for (const [changes, field, options] of [
-    [{ display: { colorScheme: "light", reducedMotion: true } }, "display.colorScheme", NATIVE],
-    [{ display: { colorScheme: null, reducedMotion: false } }, "display.reducedMotion", OPEN],
+    [{ display: { colorScheme: "light", reducedMotion: true } }, "display.colorScheme", OPEN],
+    [{ display: { colorScheme: null, reducedMotion: false } }, "display.reducedMotion", { ...OPEN, userArgs: ["--force-prefers-reduced-motion"] }],
+    [{ display: { colorScheme: null, reducedMotion: false } }, "display.reducedMotion", { ...NATIVE, userArgs: ["--force-prefers-reduced-motion"] }],
     [{ graphics: { backend: "gpu", require: null } }, "graphics.backend", OPEN],
     [{ graphics: { backend: "auto", require: { webgl: 2, webgpu: false, platforms: [] } } }, "graphics.require", OPEN],
     [{ browser: { kind: "pairbrowse" } }, "browser.kind", OPEN],
   ]) {
-    const base = options === OPEN ? openRecord(changes) : record({ ...LAUNCHABLE, ...changes });
+    const base = options.browserKind === "pairbrowse-open" ? openRecord(changes) : record({ ...LAUNCHABLE, ...changes });
     const out = toLaunch(base, options);
     assert.ok(out.problem, field);
     assert.ok(out.results.some((r) => r.field === field && r.severity === "error"), field);
@@ -190,12 +192,13 @@ test("an explicit field the open build can't apply refuses", () => {
   // named and left off. Off writes nothing.
   const card = toLaunch(record({ ...LAUNCHABLE, payments: { savedCard: true } }), NATIVE);
   assert.equal(card.problem, null, card.problem);
-  assert.deepEqual(card.prefs, { savedCard: true });
+  assert.deepEqual(card.prefs, { savedCard: true, colorScheme: "dark" });
   assert.ok(card.results.some((r) => r.field === "payments.savedCard" && r.status === "applied" && r.severity === "info"));
   const openCard = toLaunch(openRecord({ payments: { savedCard: true } }), OPEN);
   assert.equal(openCard.problem, null, openCard.problem);
   assert.ok(openCard.results.some((r) => r.field === "payments.savedCard" && r.status === "not-applied" && r.severity === "warning"));
-  assert.deepEqual(toLaunch(record(LAUNCHABLE), NATIVE).prefs, {});
+  assert.deepEqual(toLaunch(record(LAUNCHABLE), NATIVE).prefs, { colorScheme: "dark" });
+  assert.deepEqual(toLaunch(record({ display: { colorScheme: null, reducedMotion: null } }), NATIVE).prefs, {});
   // On the native build a GPU and a requirement map (no switch): the launch checks them against
   // the measurement and the browser's own read (daemon/browser/graphics.mjs, step 44).
   for (const graphics of [{ backend: "gpu", require: null }, { backend: "auto", require: { webgl: 2, webgpu: true, platforms: ["linux"] } }]) {
@@ -205,12 +208,61 @@ test("an explicit field the open build can't apply refuses", () => {
     const field = graphics.require ? "graphics.require" : "graphics.backend";
     assert.ok(out.results.some((r) => r.field === field && r.status === "applied" && r.severity === "info"), field);
   }
-  // The fixture as it is (a light scheme, reduced motion off) names both fields in one refusal.
-  assert.match(toLaunch(record(), NATIVE).problem, /display\.colorScheme .*; display\.reducedMotion /);
+  // The fixture as it is (a light scheme, reduced motion off) starts on the native build; on the
+  // open build its light scheme is named among the rest in one refusal.
+  assert.equal(toLaunch(record(), NATIVE).problem, null);
+  assert.match(toLaunch(record({ browser: { kind: "pairbrowse-open" } }), OPEN).problem, /; display\.colorScheme \(PairBrowse as an extension can't give pages a light scheme/);
   // A record that isn't valid, or no browser kind: refused, never thrown.
   assert.match(toLaunch(null, NATIVE).problem, /^The browser profile can't start: /);
   assert.match(toLaunch({ ...record(LAUNCHABLE), executablePath: "/bin/sh" }, NATIVE).problem, /a profile can't name a path/);
   assert.match(toLaunch(record(LAUNCHABLE), { browserKind: "/opt/own" }).problem, /browser kind/);
+});
+
+test("a light scheme and reduced motion off: applied on the native build, light named on the open build", () => {
+  // Native: light and dark through the browser's Appearance setting, which its pages follow (dark
+  // keeps --force-dark-mode too); reduced motion off through --force-prefers-no-reduced-motion.
+  const light = toLaunch(record({ display: { colorScheme: "light", reducedMotion: false } }), NATIVE);
+  assert.equal(light.problem, null, light.problem);
+  assert.deepEqual(light.prefs, { colorScheme: "light" });
+  assert.ok(light.switches.includes("--force-prefers-no-reduced-motion") && !light.switches.includes("--force-dark-mode"));
+  assert.deepEqual(screenBrowserArgs(light.switches, "linux", { harness: false }).refused, []);
+  for (const f of ["display.colorScheme", "display.reducedMotion"]) assert.ok(light.results.some((r) => r.field === f && r.status === "applied"), f);
+  assert.deepEqual(light.results.find((r) => r.field === "display.reducedMotion").requested, false);
+  // The open build: reduced motion off applies (a switch), a light scheme is named, never dropped.
+  const off = toLaunch(record({ browser: { kind: "pairbrowse-open" }, screen: null, persona: { source: "seed", seed: null }, locale: { languages: null, timezone: null, source: "system" }, display: { colorScheme: null, reducedMotion: false } }), OPEN);
+  assert.equal(off.problem, null, off.problem);
+  assert.deepEqual(off.prefs, {});
+  assert.ok(off.switches.includes("--force-prefers-no-reduced-motion"));
+  const openLight = toLaunch(record({ browser: { kind: "pairbrowse-open" }, screen: null, persona: { source: "seed", seed: null }, locale: { languages: null, timezone: null, source: "system" }, display: { colorScheme: "light", reducedMotion: null } }), OPEN);
+  assert.match(openLight.problem, /display\.colorScheme \(PairBrowse as an extension can't give pages a light scheme/);
+  assert.equal(openLight.results.find((r) => r.field === "display.colorScheme").reason, LIGHT_ON_EXTENSION);
+  // config.json's reduced-motion switch wins in the engine: a profile's false is a mismatch, named.
+  const forced = toLaunch(record({ display: { colorScheme: null, reducedMotion: false } }), { ...NATIVE, userArgs: ["--force-prefers-reduced-motion"] });
+  assert.equal(forced.results.find((r) => r.field === "display.reducedMotion").reason, REDUCED_MOTION_FORCED);
+  // config.json's dark switch beside a profile's light: a named mismatch, never the light setting quietly winning.
+  const dark = toLaunch(record({ display: { colorScheme: "light", reducedMotion: null } }), { ...NATIVE, userArgs: ["--force-dark-mode"] });
+  const darkItem = dark.results.find((r) => r.field === "display.colorScheme");
+  assert.deepEqual([darkItem.status, darkItem.severity, darkItem.reason], ["mismatch", "error", DARK_FORCED]);
+  assert.equal(dark.prefs.colorScheme, undefined, "no Appearance setting written");
+  assert.match(buildFit(record({ display: { colorScheme: "light", reducedMotion: null } }), { browserKind: "pairbrowse", platform: "linux", userArgs: ["--force-dark-mode"] }).problem, /display\.colorScheme \(config\.json's browserArgs has --force-dark-mode/);
+  // config.json's --force-prefers-no-reduced-motion reads as false; with both, the engine's order (true).
+  assert.equal(fromConfig({ browserArgs: ["--force-prefers-no-reduced-motion"] }).display.reducedMotion, false);
+  assert.equal(fromConfig({ browserArgs: ["--force-prefers-no-reduced-motion", "--force-prefers-reduced-motion"] }).display.reducedMotion, true);
+});
+
+test("buildFit: what a profile can't apply, named before any launch", () => {
+  // On its own browser (browser.kind) when none is given; on another, the mismatch too.
+  assert.deepEqual(buildFit(record({ display: { colorScheme: "light", reducedMotion: false } }), { platform: "linux" }), { items: [], problem: null });
+  const openLight = record({ name: "office", browser: { kind: "pairbrowse-open" }, screen: null, persona: { source: "seed", seed: null }, locale: { languages: null, timezone: "Europe/Berlin", source: "set" }, display: { colorScheme: "light", reducedMotion: null } });
+  const fit = buildFit(openLight, { platform: "linux" });
+  assert.deepEqual(fit.items.map((i) => [i.field, i.status]), [["locale.timezone", "unsupported"], ["display.colorScheme", "unsupported"]]);
+  assert.match(fit.problem, /^Browser profile "office" can't start on PairBrowse as an extension: locale\.timezone \(.*\); display\.colorScheme \(PairBrowse as an extension can't give pages a light scheme.*\)\.$/);
+  const other = buildFit(record({ display: { colorScheme: null, reducedMotion: null } }), { browserKind: "pairbrowse-open", platform: "linux" });
+  assert.ok(other.items.some((i) => i.field === "browser.kind" && i.status === "mismatch"));
+  const forced = buildFit(record({ display: { colorScheme: null, reducedMotion: false } }), { platform: "linux", userArgs: ["--force-prefers-reduced-motion"] });
+  assert.deepEqual(forced.items.map((i) => i.field), ["display.reducedMotion"]);
+  // A record the check refuses: its problem, no items.
+  assert.match(buildFit({ name: "x" }, { platform: "linux" }).problem, /^The browser profile can't start: /);
 });
 
 test("derived values never written into the profile", () => {

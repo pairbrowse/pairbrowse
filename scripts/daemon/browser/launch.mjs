@@ -16,7 +16,7 @@ import { NATIVE } from "../../native-pack.mjs";
 import { OPEN_ACCEPT_MS } from "../../opener.mjs";
 import { isBrowserPage, BROWSER_PICKER, extensionUrl } from "../../../ui/urls.js";
 import { pruneStaleContexts } from "../exec-contexts.mjs";
-import { createGraphics, MEASURING_BUSY } from "./graphics.mjs";
+import { createGraphics, MEASURING_BUSY, MEASURING_WAIT_MS } from "./graphics.mjs";
 import { probeLauncher } from "../../native/check.mjs";
 import { screenGeometry } from "../../display.mjs";
 import { paths } from "../../paths.mjs";
@@ -45,6 +45,28 @@ export const adBlockerIn = (engine) => shellOf(engine).adBlocker;
 export const safeStorageKeyFileIn = (engine) => shellOf(engine).safeStorageKeyFile;
 export const adBlockerCrxIn = (engine) => shellOf(engine).adBlockerCrx;
 export const proxyAuthFileIn = (engine) => shellOf(engine).proxyAuthFile;
+
+// A start (start: its promise) waited for through a graphics measurement: with no limit until a
+// measurement runs (st.probing, at the call or when the waiters are told), as every start is
+// waited for; from the moment one is first seen, at most ms more, then busy(true)'s error (the
+// measurement's retry message). An install that begins meanwhile (st.installing when waiters are
+// told, getContext's installWaiters) answers busy() at once, as for every other call.
+// onMeasuring() once, when the measurement is first seen.
+export function throughMeasurement(start, { st, waiters, ms, onMeasuring = () => {}, busy }) {
+  let timer = null, waiter = null, stopWith = null;
+  const measuring = () => {
+    if (timer || !st.probing || !stopWith) return;
+    timer = setTimeout(() => stopWith(busy(true)), ms);
+    try { onMeasuring(); } catch {}
+  };
+  const stop = new Promise((_, reject) => {
+    stopWith = reject;
+    waiter = () => { if (st.installing) reject(busy()); else measuring(); };
+    waiters.add(waiter);
+  });
+  measuring();
+  return Promise.race([start, stop]).finally(() => { clearTimeout(timer); waiters.delete(waiter); });
+}
 
 // This Mac's one-time capture (native-engine.mjs MEASURING): the first launch of a browser version
 // waits up to a minute for it, and says so in the live view's status line and a notification (no
@@ -239,11 +261,12 @@ export function createLaunch(st, deps, api) {
       // on only when the profile asks and this launch's Safe Storage is a real key store (the
       // Keychain or the per-install key file, checked now; browser/safe-storage.mjs), read once
       // here and handed to launchOptions, so the browser gets the key store the preference counted on.
+      // The profile's light or dark scheme as the browser's Appearance setting (native only).
       const adBlockerOn = chosen.adBlocker ?? config.adBlocker !== false;
       const storage = safeStorageFor(config, st.shell, paths.safeStorageKey);
       const card = savedCardFor({ asked: chosen.savedCard === true, native, storage });
       api.profiles.setSavedCard?.(card);
-      const firstRun = prepareProfile(profile(), undefined, { browserPages: st.ownPages, layout: config.layout, adBlocker: st.shell.adBlocker && adBlockerOn, adBlockerCrx: shippedCrx(st.shell.adBlockerCrx, next.executablePath), savedCard: card.on });
+      const firstRun = prepareProfile(profile(), undefined, { browserPages: st.ownPages, layout: config.layout, adBlocker: st.shell.adBlocker && adBlockerOn, adBlockerCrx: shippedCrx(st.shell.adBlockerCrx, next.executablePath), savedCard: card.on, colorScheme: chosen.colorScheme ?? null });
       step("prepare");
       // A side panel worker from another build (an update): the browser would keep running its
       // cached copy, so it's loaded anew from disk (resetPanelWorker in browser.mjs).
@@ -351,9 +374,13 @@ export function createLaunch(st, deps, api) {
     return ctx;
   }
 
-  function getContext() {
+  // waitMeasuring: a caller that waits through a graphics measurement rather than being told to
+  // retry (an agent's session switch, sessions/switch.mjs): MEASURING_WAIT_MS at most from when one
+  // is first seen (browser/graphics.mjs), a start without one with no limit; onMeasuring() is
+  // called once if one runs while it waits. An install still answers at once.
+  function getContext({ waitMeasuring = false, onMeasuring = () => {} } = {}) {
     if (shuttingDown() && !st.contextPromise) return Promise.reject(new Error("PairBrowse is restarting. Retry in a moment."));
-    if (st.switching) return st.switched.then(() => getContext());
+    if (st.switching) return st.switched.then(() => getContext({ waitMeasuring, onMeasuring }));
     // The browser kept crashing soon after each start (browser/supervise.mjs): no new start for now.
     const loop = !st.contextPromise && api.crashLoop();
     if (loop) return Promise.reject(new Error(loop));
@@ -370,10 +397,13 @@ export function createLaunch(st, deps, api) {
       }).finally(() => { st.launching = false; installWaiters.clear(); });
     }
     if (!st.launching) return st.contextPromise;
-    const busy = () => new Error(st.probing ? MEASURING_BUSY : "PairBrowse is installing its browser (the first start or a new version: a minute or two). Tell the user, then retry the last action in a minute.");
+    // measured: the measurement's message whatever runs now (throughMeasurement's limit).
+    const busy = (measured = st.probing) => new Error(measured ? MEASURING_BUSY : "PairBrowse is installing its browser (the first start or a new version: a minute or two). Tell the user, then retry the last action in a minute.");
+    if (waitMeasuring && !st.installing) return throughMeasurement(st.contextPromise, { st, waiters: installWaiters, ms: deps.measuringWaitMs ?? MEASURING_WAIT_MS, onMeasuring, busy });
     if (st.installing || st.probing) return Promise.reject(busy());
     return Promise.race([st.contextPromise, new Promise((_, reject) => installWaiters.add(() => reject(busy())))]);
   }
+
 
   // The browser, once saved tabs are back.
   // Calls in flight when the browser closes (closed by hand, or crashed) are told at once.

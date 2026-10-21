@@ -227,7 +227,7 @@ test("a switch, shutdown, the helper's own reset or failed launch never counts; 
   assert.ok(launch.indexOf("api.noteUnexpectedClose(") > handler, "only in the close handler");
   assert.ok(launch.indexOf("if (screen && st.screen !== screen) {") < handler, "a failed launch closes before the handler is added");
   assert.ok(launch.indexOf("const launchedAt = Date.now();") < handler);
-  const get = launch.slice(launch.indexOf("function getContext()"), launch.indexOf("const closeWatchers"));
+  const get = launch.slice(launch.indexOf("function getContext("), launch.indexOf("const closeWatchers"));
   assert.match(get, /const loop = !st\.contextPromise && api\.crashLoop\(\);\n\s+if \(loop\) return Promise\.reject\(new Error\(loop\)\);/);
   assert.ok(get.indexOf("api.crashLoop()") < get.indexOf("st.contextPromise = launch()"), "refused before a launch starts");
   const context = src("context.mjs");
@@ -357,13 +357,13 @@ test("daemon.mjs: keep-alive keeps the helper when the browser closes and starts
 
 test("a saved card at launch: the Safe Storage read once decides payment autofill, the status hears it before the start, and the browser gets that same key store", async () => {
   const src = readFileSync(new URL("../scripts/daemon/browser/launch.mjs", import.meta.url), "utf8");
-  const launch = src.slice(src.indexOf("  async function launch() {"), src.indexOf("  function getContext() {"));
+  const launch = src.slice(src.indexOf("  async function launch() {"), src.indexOf("  function getContext("));
   const at = (s) => { const i = launch.indexOf(s); assert.ok(i > 0, s); assert.equal(launch.indexOf(s, i + 1), -1, `once: ${s}`); return i; };
   // Read once, decided from the profile's choice and the build, kept for the status, then written and handed on.
   assert.match(launch, /const storage = safeStorageFor\(config, st\.shell, paths\.safeStorageKey\);/);
   assert.match(launch, /const card = savedCardFor\(\{ asked: chosen\.savedCard === true, native, storage \}\);/);
   assert.match(launch, /api\.profiles\.setSavedCard\?\.\(card\);/);
-  assert.match(launch, /prepareProfile\(profile\(\), undefined, \{[^}]*savedCard: card\.on \}\);/, "the preference is the decision's");
+  assert.match(launch, /prepareProfile\(profile\(\), undefined, \{[^}]*savedCard: card\.on, colorScheme: chosen\.colorScheme \?\? null \}\);/, "the preference is the decision's; the profile's scheme beside it");
   assert.match(launch, /\.\.\.launchOptions\(config, \{[\s\S]*?\n\s+storage, \/\/ the Safe Storage the saved card was decided on\n/, "the browser gets the storage the decision read");
   assert.ok(at("safeStorageFor(") < at("savedCardFor(") && at("savedCardFor(") < at("setSavedCard?.(card)") && at("setSavedCard?.(card)") < at("prepareProfile(profile()")
     && at("prepareProfile(profile()") < at("...launchOptions(config, {") && at("...launchOptions(config, {") < at("await launchEngine("), "in that order, all before the browser starts");

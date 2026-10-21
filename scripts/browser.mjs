@@ -170,13 +170,36 @@ function extensionPreferences(prefs, panelId, oldPanels) {
   }
 }
 
+// A browser profile's color scheme (profiles/map.mjs toLaunch prefs.colorScheme, the native build
+// only): the browser's Appearance setting (browser.theme.color_scheme2: 0 the system's, 1 light,
+// 2 dark; engine version 150 BrowserColorScheme), which the
+// native build's pages follow (its own window keeps its colors). What PairBrowse set and what was
+// there before are kept beside it (pairbrowse.profile_color_scheme), so a profile that stops asking
+// gives the person's own choice back, unless they changed it since.
+const COLOR_SCHEMES = { light: 1, dark: 2 };
+function colorSchemePreference(prefs, scheme) {
+  const theme = prefs.browser?.theme || {};
+  const own = prefs.pairbrowse?.profile_color_scheme;
+  const wanted = COLOR_SCHEMES[scheme];
+  if (wanted) {
+    const before = own && theme.color_scheme2 === own.set ? own.before : (theme.color_scheme2 ?? 0);
+    prefs.browser = { ...(prefs.browser || {}), theme: { ...theme, color_scheme2: wanted } };
+    prefs.pairbrowse = { ...(prefs.pairbrowse || {}), profile_color_scheme: { set: wanted, before } };
+  } else if (own) {
+    if (theme.color_scheme2 === own.set) prefs.browser = { ...(prefs.browser || {}), theme: { ...theme, color_scheme2: Number.isInteger(own.before) ? own.before : 0 } };
+    const { profile_color_scheme: _gone, ...rest } = prefs.pairbrowse;
+    prefs.pairbrowse = rest;
+  }
+}
+
 // The profile settings PairBrowse needs, applied to a profile's Default/Preferences (parsed).
 // Run before every launch and by the install step; keeps everything else the user set.
 // browserPages (a build with its own pages): no extension or theme settings; the docks' layout
 // starts from config.layout (layout) the first time, and the browser keeps its own after that.
 // savedCard: the launch honors the session's profile's saved card (browser/safe-storage.mjs
 // savedCardFor: a real key store): payment autofill on, and nothing else (spec server-mode B12).
-export function profilePreferences(prefs = {}, panelId = panelExtensionId(), oldPanels = [], { browserPages = false, layout = null, savedCard = false } = {}) {
+// colorScheme: the profile's "light" or "dark" (colorSchemePreference above), else null.
+export function profilePreferences(prefs = {}, panelId = panelExtensionId(), oldPanels = [], { browserPages = false, layout = null, savedCard = false, colorScheme = null } = {}) {
   // The browser starts on a blank tab (its own restore would reload every tab during startup);
   // PairBrowse then brings the tabs back itself, one by one (see tabs.mjs).
   prefs.session = { ...(prefs.session || {}), restore_on_startup: 5 };
@@ -209,6 +232,7 @@ export function profilePreferences(prefs = {}, panelId = panelExtensionId(), old
   prefs.credentials_enable_service = false;
   prefs.credentials_enable_autosignin = false;
   prefs.autofill = { ...(prefs.autofill || {}), profile_enabled: false, credit_card_enabled: savedCard === true };
+  colorSchemePreference(prefs, colorScheme);
   return prefs;
 }
 
@@ -266,8 +290,8 @@ export function localStatePreferences(state) {
 // installs uBlock Origin Lite from the store (browser/adblock.mjs); false removes it at the next
 // start; null (the install step, the self-check) leaves it as it is. adBlockerCrx: the CRX the app
 // ships ({ file, version }, browser/adblock.mjs shippedCrx), else the store's. savedCard: as
-// profilePreferences (the launch's savedCardFor said on).
-export function prepareProfile(profile, panelId = panelExtensionId(), { browserPages = false, layout = null, adBlocker = null, adBlockerCrx = null, savedCard = false } = {}) {
+// profilePreferences (the launch's savedCardFor said on). colorScheme: as profilePreferences.
+export function prepareProfile(profile, panelId = panelExtensionId(), { browserPages = false, layout = null, adBlocker = null, adBlockerCrx = null, savedCard = false, colorScheme = null } = {}) {
   const dir = join(profile, "Default");
   mkdirSync(dir, { recursive: true });
   const file = join(dir, "Preferences");
@@ -277,11 +301,11 @@ export function prepareProfile(profile, panelId = panelExtensionId(), { browserP
   const secure = readJson(secureFile, null);
   const oldPanels = oldPanelIds(secure, panelId);
   if (browserPages) {
-    writeJsonAtomic(file, profilePreferences(prefs, panelId, oldPanels, { browserPages, layout, savedCard }), { indent: 0 });
+    writeJsonAtomic(file, profilePreferences(prefs, panelId, oldPanels, { browserPages, layout, savedCard, colorScheme }), { indent: 0 });
     if (adBlocker !== null) adBlockerFiles(profile, adBlocker, { crx: adBlockerCrx });
   } else {
     if (secure && profileSecurePreferences(secure, panelId)) writeJsonAtomic(secureFile, secure, { indent: 0 });
-    writeJsonAtomic(file, acknowledgeNewTabPage(profilePreferences(prefs, panelId, oldPanels, { savedCard }), secure, panelId), { indent: 0 });
+    writeJsonAtomic(file, acknowledgeNewTabPage(profilePreferences(prefs, panelId, oldPanels, { savedCard, colorScheme }), secure, panelId), { indent: 0 });
   }
   const localStateFile = join(profile, "Local State");
   const localState = readJson(localStateFile, null);

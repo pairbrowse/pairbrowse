@@ -24,10 +24,11 @@
 // st: the browser's state (st.graphics: the running browser's, or null; st.probing: true while a
 // probe runs). deps: config, log, status and hud (the live view's status line while a probe
 // runs); tests pass probeGraphics (graphicsCheck's place), readBackendOf, platform, arch and
-// scratch. api: onProbing (a probe starts: launch.mjs tells the calls waiting on it to retry), profiles
+// scratch. api: onProbing (a probe starts: launch.mjs tells the calls waiting on it to retry, or,
+// an agent's session switch, to wait on: MEASURING_WAIT_MS), profiles
 // (sessions/profiles.mjs fileValidation).
 import { mkdirSync } from "node:fs";
-import { graphicsCheck } from "../../native/check.mjs";
+import { graphicsCheck, GRAPHICS_TIMEOUT_MS, GRAPHICS_STOP_MS } from "../../native/check.mjs";
 import { readBackend, unverifiedBackend } from "../../native/backend.mjs";
 import { GRAPHICS, compatErrors, runtimeKey, graphicsStatusPart } from "../../native/graphics.mjs";
 import { measuredEntry } from "../../profiles/validate.mjs";
@@ -38,6 +39,10 @@ export const MEASURING_GRAPHICS = "launch: measuring graphics once for this brow
 export const MEASURING_GRAPHICS_STATUS = "Measuring this browser's graphics once (a minute or two): the browser opens after that.";
 // What a call waiting on the start hears while a probe runs (launch.mjs getContext).
 export const MEASURING_BUSY = "PairBrowse is measuring this browser's graphics once (a minute or two). Tell the user, then retry the last action in a minute.";
+// How long an agent's session switch waits through a measurement (launch.mjs getContext
+// waitMeasuring) before it hears MEASURING_BUSY: the probe's worst case (its bound and its stop,
+// native/check.mjs) and a minute for the browser's own start after it; under the turn cap.
+export const MEASURING_WAIT_MS = GRAPHICS_TIMEOUT_MS + GRAPHICS_STOP_MS + 60_000;
 const RUNTIME_PLATFORMS = { darwin: "macos", linux: "linux" };
 const isObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 

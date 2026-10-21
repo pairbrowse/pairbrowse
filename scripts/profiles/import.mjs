@@ -13,8 +13,9 @@
 // by content), integrity (a PairBrowse export's SHA-256 over its canonical JSON, as written),
 // version (a format version this PairBrowse reads; an older export upgraded), fields (every
 // top-level section classed; the settings read checked as a whole record, profiles/schema.mjs),
-// provenance (source and license present). Coherence (rules/coherence.mjs screen.believable) only
-// warns. Data in the file that isn't applied is reported per field and never refuses (D11).
+// provenance (source and license present). Coherence (rules/coherence.mjs screen.believable) and
+// a setting the profile's browser can't apply on this computer (profiles/map.mjs buildFit, rule
+// "import.build") only warn. Data in the file that isn't applied is reported per field and never refuses (D11).
 //
 // importInto(store, bytes, host) writes the checked profile through the store (profiles/store.mjs
 // create); readImportFile reads the one file asked for (a regular file, never a link, its size
@@ -27,6 +28,7 @@ import { EXPORT_FORMAT, SCHEMA_VERSION, SETTINGS, PROFILE_ID, PROVENANCE_MAX, HI
   checkProfile, profileDefaults, mostRestrictive, licenseRank, looserWhy, canonicalJson } from "./schema.mjs";
 import { upgradeExport } from "./upgrade.mjs";
 import { DEVICE_SCHEMA_VERSION, deviceSettings, personaSettings, item, reportable } from "./device.mjs";
+import { buildFit } from "./map.mjs";
 
 export const IMPORT_MAX_BYTES = 1024 * 1024;
 export const IMPORT_MAX_DEPTH = 32;
@@ -166,7 +168,8 @@ function readPersona(raw) {
 }
 
 // Checks one file (its bytes, or its text) for import. host: { file (the name it came as), at (the
-// import's ISO time), source, license, terms (the person's --source, --license, --terms), name }.
+// import's ISO time), source, license, terms (the person's --source, --license, --terms), name,
+// platform (the computer the build check is for: this one when left out) }.
 // Answers { ok, format, refused: { check, reason } | null, problem (a sentence, "" when ok), name,
 // settings, provenance, license, sha256, items, unverified }: on ok, everything store.create takes
 // (name, settings, provenance, license); items: the field report and coherence, D10's shape.
@@ -229,6 +232,9 @@ export function checkImport(data, host = {}) {
     out.items.push(item("license", "unverified", "U", 'its license is "unknown": the profile imports unverified, and every launch on it warns until its license is known', { severity: "warning", rule: "import.provenance" }));
   }
   for (const c of screenBelievable(profile.screen, { window: profile.window })) out.items.push(item(c.field, "mismatch", "C", c.text, { severity: c.severity, rule: c.id }));
+  // What the browser the profile is for can't apply on this computer (D11): imported, and said now
+  // rather than by a launch that refuses it (profiles/map.mjs buildFit).
+  for (const r of buildFit(profile, { platform: host.platform }).items) out.items.push(item(r.field, r.status, r.class, `can't start as it is: ${r.reason}`, { severity: "warning", rule: "import.build" }));
   const kept = Object.fromEntries(SETTINGS.map((k) => [k, profile[k]]));
   return { ...out, ok: true, name, settings: kept, provenance: profile.provenance, license: profile.license };
 }

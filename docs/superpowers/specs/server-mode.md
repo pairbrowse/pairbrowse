@@ -381,6 +381,19 @@ by the person. On no response: progress saved, exactly one reminder, safe stop.
     releases and keys are never dropped or reordered.
   - Header: action kind, host, countdown, Done, scope tab switcher, "That tab isn't on screen",
     connection state with automatic reconnect.
+  - Option list (T-B18, added at the Phase B criteria run): an open select list is the browser's
+    own popup and never in the screencast (measured, Linux and macOS), so after each tap the viewer
+    asks (`POST turn-options`, right `turn`) for the focused field of the scope tab on screen and,
+    when it is a single-choice select of at most 200 options, lists them in a sheet over the
+    picture (label, choice, disabled options marked). A choice (`POST turn-pick { index, count }`)
+    is checked against the same select, still focused, with the same length, and goes as the
+    person's own arrow keys then Enter while the page's list is open (Linux: a tap opens it), or,
+    while it is closed, is set on that select with the input and change events a choice fires
+    (`liveview/options.mjs` `chooseInPage`; macOS, whose list is a system menu an arrow key opens
+    and nobody sees). Enter never goes to a closed select (on Linux and Windows it sends the form).
+    The helper reads the select again and answers 409 "The page didn't take that option" when the
+    choice didn't take. Close sends Escape (the page's unseen list closes). Labels go only to that
+    request: never a log (which says "hand-off <id>: chose from a list"), an agent or another guest.
   - Card fields: a turn viewer sees its scope tabs **without** covers. The grant goes only to the
     owner's channels and the person must see the card field they type into. Other guests, recordings,
     timeline pictures and agents keep covers and masking.
@@ -1634,8 +1647,8 @@ it depends on.
    on the grant table, `tabRefusal`, `clickRule` and `decide`), the integration test of the full path
    (landed at the Phase B gate on the existing live harness, not step 46's: `test/integration/your-turn.test.mjs`
    with a loopback webhook, Away on, the person's side as plain requests to the view key, so one
-   browser; T-B18 is reported for the touch half, `dispatchTouchEvent` alone; select and autofill
-   lists in frames are not measured).
+   browser; T-B18 is reported for the touch half, `dispatchTouchEvent` alone; the select and
+   autofill lists in frames were measured at the Phase B criteria run, see step 45).
 23. `skills/pairbrowse/SKILL.md` and `core.md` text (B15). -> 22
    Landed as: SKILL.md "Hand-offs and waiting" replaces the 20-loop with: `step` on the status,
    leave the tab (the B9 refusals; the next status ends the hand-off), `browser_wait_for` with
@@ -2620,6 +2633,18 @@ it depends on.
    B-6 ("Saved payment cards") lands; the key-store row and the Tools routes row name it. Not here:
    T-B18's measurement of the autofill list in screencast frames (step 49's opt-in runs) and a live
    check that the engine's list opens on `ArrowDown` from `Input.dispatchKeyEvent`.
+   Measured at the Phase B criteria run (`test/integration/your-turn.test.mjs` "Measurement
+   (T-B18)", the driver's browser, macOS and the A13 container on Linux, through a real view key,
+   the turn stream's frames decoded with the runtime's JPEG decoder): an open select list does not
+   show in the frames on either (Linux: the page says `:open` true, the area under the select stays
+   white; macOS: a tap doesn't open it at all), so the viewer gained the option list (B8). A
+   `datalist` suggestion list, which the browser draws in the same popup as its autofill list, did
+   not open from `Input.dispatchKeyEvent` ArrowDown, after one tap or two, on either platform, and
+   nothing showed in the frames. Limit, documented: on the driver's browser "Fill saved card" can't
+   be confirmed live (the open build refuses a saved card anyway); whether the native build's
+   autofill list opens on that ArrowDown stays open for the native opt-in run (step 49), and the
+   person always has the type box to type the card by hand. The list is never in the picture: the
+   person picks blind there and checks the field afterwards.
 46. Phase A integration file, CI `xauth`, Phase A opt-in tests on the harness (A13). -> 8, 39
     Landed as: `test/integration/server-display.test.mjs`, the seven cases of section 4 on the
     driver's browser (Linux with Xvfb and xauth, `PAIRBROWSE_TEST_RUNTIME`; skipped elsewhere), its
@@ -2774,6 +2799,18 @@ binding for implementation; where a phase section above says otherwise, this sec
     fallback, with the limits above stated plainly. The server setup installs a normal desktop font set,
     and the engine step measures the result against fingerprint test pages served locally and reports
     what a strict site would see.
+
+11. **Ordinary-browser measurement, at the end (user, 2026-10-21).** After the engine builds (step 49), a
+    final step measures whether each setup looks like an ordinary browser, then closes the gaps it
+    finds at their cause (never by bypassing a check): (1) local, pinned, MIT-licensed checks served on
+    127.0.0.1 on every build: CreepJS (contradictions), BotD (bot verdict), rebrowser-bot-detector
+    (driver leaks), the engine pack's collector (values as intended); licenses re-checked before use;
+    (2) public check pages once per build, opened and read only, screenshot kept, nothing typed, a
+    challenge never solved (it is the result); (3) the real measure: challenges per 100 page loads per
+    setup (Mac, Linux with GPU, Linux without GPU) from the step 43 classification, against the
+    person's own everyday browser on the same network. Output: one table per build and a list of
+    causes fixed. Canvas noise stays on for hosts without a GPU (decision 10); the canvas bridge stays
+    removed; the GPU-less identity stays the engine's single Intel UHD 770 (no pool).
 
 Implementation conditions (from the user):
 - Keep the five phases and every agreed requirement: profile import and export, per-profile isolation,

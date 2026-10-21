@@ -9,7 +9,7 @@
 // pixels (fingerprintNoise: false), and on the helper's virtual screen the real screen. On a host
 // without one (decision 10: software rendering measured, which gets a session blocked before a
 // CAPTCHA is ever shown) the launch shows the engine's one graphics identity instead
-// (GPU_LESS_IDENTITY), consistent everywhere, with canvas noise as set, and the screen still the
+// (GPU_LESS_IDENTITY), consistent everywhere, with canvas noise only when set, and the screen still the
 // real virtual screen; validation then checks that identity for consistency, never for equality
 // with the host, and PairBrowse's own diagnostics say "software rendering, shown as <identity>". A
 // request that can't be met is an error naming it, never a partial apply. Node's standard library only.
@@ -38,10 +38,12 @@ export const MAC_REAL = Object.freeze({ fingerprintNoise: false });
 export const GPU_LESS_IDENTITY = Object.freeze({ name: "Intel UHD Graphics 770", family: "intel", renderer: /\bUHD Graphics 770\b/,
   webgpu: Object.freeze({ vendor: "intel", architecture: "gen-12-lp" }) });
 // The engine keys of the identity plan: the persona's own GPU identity (the real backend's strings
-// off) and noise as set (the engine's canvas noise and its canvas and WebGL readback noise; on by
-// default, decision 10; config.json pairbrowse.graphicsNoise, which the measurement batch of
-// decision 11 decides, so the helper keeps it switchable).
-export const identityKeys = (graphicsNoise = true) => ({ disableGpuFingerprint: false, fingerprintNoise: graphicsNoise !== false, canvasNoise: graphicsNoise !== false });
+// off) and noise as set (the engine's canvas noise and its canvas and WebGL readback noise;
+// config.json pairbrowse.graphicsNoise). Off by default since the measurement of decision 11: noise
+// cost BrowserScan's canvas check and gained nothing measured; sessions on one host then share the
+// software renderer's canvas reading, as sessions on one GPU host share theirs (D-AP2), and
+// graphicsNoise: true gives each persona its own again.
+export const identityKeys = (graphicsNoise = false) => ({ disableGpuFingerprint: false, fingerprintNoise: graphicsNoise === true, canvasNoise: graphicsNoise === true });
 // What the plan sets on Xvfb: the virtual screen as the screen pages read (E7).
 export const SCREEN_KEYS = Object.freeze(["screenWidth", "screenHeight", "availWidth", "availHeight", "colorDepth", "devicePixelRatio"]);
 // The legacy GPU keys in config.json (decision U6): another device's GPU, deprecated for one
@@ -105,7 +107,7 @@ function forcedRatio(args) {
 // (then E7 checks it against the display, compatErrors, and the plan sets none). name: the
 // profile's, for the sentences. A refusal is { field, message }, one sentence each; with any,
 // switches and engine keys are empty: the launch stops, nothing applies partly.
-export function graphicsPlan({ requested = "auto", platform = process.platform, browserKind = "pairbrowse", measured = null, userArgs = [], display = null, screenSet = false, name = "default", graphicsNoise = true } = {}) {
+export function graphicsPlan({ requested = "auto", platform = process.platform, browserKind = "pairbrowse", measured = null, userArgs = [], display = null, screenSet = false, name = "default", graphicsNoise = false } = {}) {
   const refusals = [];
   const refuse = (field, message) => refusals.push({ field, message });
   const args = Array.isArray(userArgs) ? userArgs.filter((a) => typeof a === "string") : [];

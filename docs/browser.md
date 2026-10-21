@@ -157,8 +157,10 @@ with a graphics card, pages read the real renderer's WebGL and WebGPU strings an
 fingerprint noise over its pixels; on a computer without one (a server's virtual screen renders in
 software, which sites block before any CAPTCHA), pages are shown one ordinary desktop identity the
 browser carries, an Intel UHD Graphics 770 in WebGL (and in WebGPU wherever an adapter is
-available; without a graphics card there is usually none), with canvas noise on
-unless you turn it off, while PairBrowse's own status and reports say "software rendering, shown
+available; without a graphics card there is usually none), with no canvas noise unless you
+turn it on (noise made fingerprint checks read the canvas as tampered and gained nothing measured;
+sessions on one such computer then share its canvas reading, as they do on one computer with a
+graphics card), while PairBrowse's own status and reports say "software rendering, shown
 as Intel UHD Graphics 770". On PairBrowse's virtual screen the screen pages read is that screen
 either way (`pairbrowse.graphics`, `pairbrowse.graphicsNoise` and `virtualScreen` in
 [Configuration](configuration.md); [Running on a server](server.md) for which computer to pick).

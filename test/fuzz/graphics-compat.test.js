@@ -56,7 +56,7 @@ test("for any profile, every set graphics field is applied or named in an error"
       if (browserKind === "pairbrowse" && os === "linux") {
         const shown = m?.backend?.kind === "software" && requested !== "gpu";
         assert.equal(plan.identity, shown ? GPU_LESS_IDENTITY.name : null);
-        for (const [k, v] of Object.entries(shown ? identityKeys(true) : LINUX_REAL)) assert.equal(plan.engineKeys[k], v, k);
+        for (const [k, v] of Object.entries(shown ? identityKeys() : LINUX_REAL)) assert.equal(plan.engineKeys[k], v, k);
         assert.equal(plan.engineKeys.screenWidth, xvfb && !set ? xvfb.width : undefined);
       } else if (browserKind === "pairbrowse" && os === "darwin") {
         // macOS: the host capture's own GPU, only the noise over its pixels off.

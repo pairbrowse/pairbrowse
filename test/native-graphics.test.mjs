@@ -76,21 +76,24 @@ test("Linux plan sets disableGpuFingerprint and noise off", () => {
 });
 
 // Decision 10: a host without a GPU (a software backend measured) is shown the engine's one
-// graphics identity, consistent everywhere, with canvas noise as config.json says (on by
-// default) and still the real virtual screen; a GPU host and an unmeasured launch keep the real
+// graphics identity, consistent everywhere, with canvas noise as config.json says (off by
+// default, decision 11) and still the real virtual screen; a GPU host and an unmeasured launch keep the real
 // plan; a GPU asked for over software is refused, never shown an identity.
 test("a software read on Linux shows the engine's identity (decision 10): identity keys, canvas noise switchable, screen still the virtual screen", () => {
   const software = { kind: "software", renderer: "ANGLE (Mesa/X.org, llvmpipe (LLVM 15.0.6 128 bits))" };
   const plan = graphicsPlan({ requested: "auto", platform: "linux", display: XVFB, measured: software });
   assert.equal(plan.identity, GPU_LESS_IDENTITY.name);
   assert.equal(GPU_LESS_IDENTITY.name, "Intel UHD Graphics 770");
-  assert.deepEqual(plan.engineKeys, { disableGpuFingerprint: false, fingerprintNoise: true, canvasNoise: true, screenWidth: 1366, screenHeight: 900, availWidth: 1366, availHeight: 900, colorDepth: 24, devicePixelRatio: 1 });
+  assert.deepEqual(plan.engineKeys, { disableGpuFingerprint: false, fingerprintNoise: false, canvasNoise: false, screenWidth: 1366, screenHeight: 900, availWidth: 1366, availHeight: 900, colorDepth: 24, devicePixelRatio: 1 });
   assert.deepEqual(plan.switches, []);
   for (const k of Object.keys(plan.engineKeys)) assert.ok(PAIRBROWSE_ENGINE_KEYS.includes(k), `${k} is an engine key`);
   assert.deepEqual(identityKeys(false), { disableGpuFingerprint: false, fingerprintNoise: false, canvasNoise: false });
   const quiet = graphicsPlan({ platform: "linux", measured: software, graphicsNoise: false }).engineKeys;
   assert.deepEqual([quiet.fingerprintNoise, quiet.canvasNoise], [false, false], "noise off when config.json says so");
-  assert.equal(graphicsPlan({ platform: "linux", measured: software, graphicsNoise: undefined }).engineKeys.canvasNoise, true, "on by default");
+  assert.equal(graphicsPlan({ platform: "linux", measured: software, graphicsNoise: undefined }).engineKeys.canvasNoise, false, "off by default (decision 11)");
+  assert.equal(graphicsPlan({ platform: "linux", measured: software }).engineKeys.fingerprintNoise, false, "off by default (decision 11)");
+  const noisy = graphicsPlan({ platform: "linux", measured: software, graphicsNoise: true }).engineKeys;
+  assert.deepEqual([noisy.fingerprintNoise, noisy.canvasNoise], [true, true], "on when config.json says so");
   // software asked for and measured: the identity too (the engine's software path renders in software).
   const soft = graphicsPlan({ requested: "software", platform: "linux", measured: software });
   assert.deepEqual([soft.identity, soft.switches], [GPU_LESS_IDENTITY.name, [SOFTWARE_SWITCH]]);

@@ -300,10 +300,10 @@ function readSettings(config, pack, personaPath) {
   // "combined" (the same shape at the profile's own slower speed, tremor and habits: for a more
   // careful hand) or "classic" (the engine's own). Every click still lands exactly on its point.
   // An engine pack without "combined" uses its own. formMove is PairBrowse's own (fillSettings), not the engine's.
-  // graphicsNoise: noise over the identity shown on a host without a GPU (decision 10, on by
-  // default; native/graphics.mjs identityKeys: the engine's fingerprintNoise and canvasNoise);
+  // graphicsNoise: noise over the identity shown on a host without a GPU (decisions 10 and 11, off
+  // by default; native/graphics.mjs identityKeys: the engine's fingerprintNoise and canvasNoise);
   // on a host with a GPU the real pixels get no readback noise, whatever this says.
-  const { profile: selection, profileSelect, graphics = "auto", graphicsNoise = true, humanize = true, showCursor = false, geoip = false, typingPace = TYPING_PACE, motion: motionSetting = "fast", formMove, ...given } = config.pairbrowse ?? {};
+  const { profile: selection, profileSelect, graphics = "auto", graphicsNoise = false, humanize = true, showCursor = false, geoip = false, typingPace = TYPING_PACE, motion: motionSetting = "fast", formMove, ...given } = config.pairbrowse ?? {};
   // profileSelect only steered the engine pack's persona pick, which PairBrowse no longer asks
   // for (D9 below; config-schema.mjs PROFILE_SELECT keeps it closed, D8).
   // graphics: the default profile's backend, read by profiles/map.mjs into its switches (E2).
@@ -343,7 +343,7 @@ function readSettings(config, pack, personaPath) {
   // the engine's fingerprint options pass; every other option (launch controls, switches, env,
   // extensions, agent and storage options) is named in one log line and dropped, never applied.
   const dropped = { saved: engineOnly(saved), persisted: engineOnly(persisted) };
-  return { thisComputer, graphics: chosen?.graphics ?? graphics, graphicsNoise: graphicsNoise !== false, humanize, showCursor, geoip: store ? !!chosen.geoip : chosen?.kind === "config" ? !!(geoip || chosen.geoip) : geoip, typingPace: clampPace(typingPace), motion, overrides, saved, persisted, ignored, dropped, bridgeDropped, personaName: chosen?.id ?? LEGACY_PERSONA };
+  return { thisComputer, graphics: chosen?.graphics ?? graphics, graphicsNoise: graphicsNoise === true, humanize, showCursor, geoip: store ? !!chosen.geoip : chosen?.kind === "config" ? !!(geoip || chosen.geoip) : geoip, typingPace: clampPace(typingPace), motion, overrides, saved, persisted, ignored, dropped, bridgeDropped, personaName: chosen?.id ?? LEGACY_PERSONA };
 }
 
 // Keeps only the engine's fingerprint options in a persona layer, in place: the names of the
@@ -454,7 +454,7 @@ export const DRIVER_BACKGROUND_SWITCH = "--disable-background-networking";
 // named deprecated on every platform. Returns the plan (its identity: what pages are shown, or null).
 export function applyGraphicsPlan(fingerprint, settings, { platform = process.platform, display = null, measured = null, userArgs = [], log = () => {} } = {}) {
   const set = (k) => settings.overrides[k] !== undefined || settings.saved[k] !== undefined;
-  const plan = graphicsPlan({ requested: "auto", platform, browserKind: "pairbrowse", measured, userArgs, display, screenSet: SCREEN_KEYS.slice(0, 2).some(set), graphicsNoise: settings.graphicsNoise !== false });
+  const plan = graphicsPlan({ requested: "auto", platform, browserKind: "pairbrowse", measured, userArgs, display, screenSet: SCREEN_KEYS.slice(0, 2).some(set), graphicsNoise: settings.graphicsNoise === true });
   const legacy = LEGACY_GPU_KEYS.filter((k) => fingerprint[k] !== undefined);
   if (legacy.length) log(`launch: ${legacy.join(", ")} (another device's GPU) ${legacy.length > 1 ? "are" : "is"} deprecated and go${legacy.length > 1 ? "" : "es"} in the next release (decision U6): graphics come from this computer; remove ${legacy.length > 1 ? "them" : "it"} from config.json's pairbrowse block or the saved persona`);
   if (platform === "linux") {

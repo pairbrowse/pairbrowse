@@ -471,8 +471,10 @@ user's file, readable by others), the section says why and refuses a username or
   sites block before any CAPTCHA) the browser shows pages one ordinary desktop identity it carries,
   an Intel UHD Graphics 770 in WebGL (and in WebGPU wherever an adapter is available; without a
   graphics card there is usually none), with the engine's canvas and readback
-  noise on unless `graphicsNoise` is `false` (a boolean in the `pairbrowse` block; it changes
-  nothing on a computer with a graphics card), while the helper log, `pairbrowse_status` and
+  noise off unless `graphicsNoise` is `true` (a boolean in the `pairbrowse` block, default `false`
+  since the ordinary-browser measurement: noise made fingerprint checks read the canvas as
+  tampered and gained nothing; `true` gives each session its own canvas reading again, at that
+  cost; it changes nothing on a computer with a graphics card), while the helper log, `pairbrowse_status` and
   reports say "software rendering, shown as Intel UHD Graphics 770" and a profile checked there is
   "consistent" (which `requireValidatedProfiles` takes like "validated"); a GPU asked for
   (`"gpu"`) over software rendering is refused, never shown an identity. Either way on

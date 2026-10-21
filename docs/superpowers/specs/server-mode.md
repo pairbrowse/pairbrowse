@@ -2871,7 +2871,8 @@ binding for implementation; where a phase section above says otherwise, this sec
     what a strict site would see.
     Implemented (helper side, with step 47): `native/graphics.mjs` `GPU_LESS_IDENTITY` (one identity,
     no pool) and `identityKeys` (`disableGpuFingerprint: false`, `fingerprintNoise` and `canvasNoise` as
-    `pairbrowse.graphicsNoise` says, default true, so the measurement batch can decide it); `graphicsPlan`
+    `pairbrowse.graphicsNoise` says; default true until the measurement of decision 11, which set it
+    to false, below); `graphicsPlan`
     takes the measured backend and answers `identity` on Linux over a software read (never for `gpu`,
     never off Linux or on the open build); the launch's engine config carries `measuredBackend` (the
     measurement step 4 hands over: `daemon/browser/launch.mjs`; the probe's own first read:
@@ -2895,8 +2896,8 @@ binding for implementation; where a phase section above says otherwise, this sec
     challenge never solved (it is the result); (3) the real measure: challenges per 100 page loads per
     setup (Mac, Linux with GPU, Linux without GPU) from the step 43 classification, against the
     person's own everyday browser on the same network. Output: one table per build and a list of
-    causes fixed. Canvas noise stays on for hosts without a GPU (decision 10); the canvas bridge stays
-    removed; the GPU-less identity stays the engine's single Intel UHD 770 (no pool).
+    causes fixed. Canvas noise on hosts without a GPU is the measurement's to decide (decided: off by
+    default, below); the canvas bridge stays removed; the GPU-less identity stays the engine's single Intel UHD 770 (no pool).
     Detector verdicts are read from our own check page on a PairBrowse-owned test domain, set up with
     our own site keys for reCAPTCHA v3 (its 0 to 1 score), Cloudflare Turnstile and hCaptcha (whether a
     token is issued without a challenge), under each provider's terms; a challenge that appears is

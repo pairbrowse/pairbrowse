@@ -80,13 +80,15 @@ export const probeOptions = (options, platform = process.platform) => ({ ...opti
 
 // An x64 build on an ARM kernel (a container under emulation on Apple Silicon): there the emulator
 // refuses every seccomp filter, so sandbox.on doesn't require seccomp-BPF (native/validate.mjs).
-// Read from the kernel's own CPU description; anything unread or unknown counts as not emulated,
-// which keeps the stricter rule.
+// Read from the kernel's own CPU description: an ARM one (QEMU's user emulation shows the host's),
+// or Rosetta's x86 one, whose vendor is VirtualApple (Docker Desktop and OrbStack on Apple Silicon;
+// the engine's sandbox page then shows seccomp-BPF missing). Anything unread or unknown counts as
+// not emulated, which keeps the stricter rule.
 export function runsEmulated({ platform = process.platform, arch = process.arch, cpuinfo } = {}) {
   if (platform !== "linux" || arch !== "x64") return false;
   let text = cpuinfo;
   if (text === undefined) try { text = readFileSync("/proc/cpuinfo", "utf8"); } catch { return false; }
-  return typeof text === "string" && (/^CPU implementer\s*:/m.test(text) || /^CPU architecture\s*:\s*8\b/m.test(text));
+  return typeof text === "string" && (/^CPU implementer\s*:/m.test(text) || /^CPU architecture\s*:\s*8\b/m.test(text) || /^vendor_id\s*:\s*VirtualApple\b/m.test(text));
 }
 
 // The probe page's side, run in the page one part per call (a part that hangs costs only its own

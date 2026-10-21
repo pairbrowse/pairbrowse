@@ -254,6 +254,8 @@ test("probe options: hidden on macOS, headed on Linux", () => {
 test("emulation: an x64 build on an ARM kernel; anything unread counts as not emulated", () => {
   assert.equal(runsEmulated({ platform: "linux", arch: "x64", cpuinfo: "processor\t: 0\nBogoMIPS\t: 48.00\nCPU implementer\t: 0x61\nCPU architecture: 8\n" }), true);
   assert.equal(runsEmulated({ platform: "linux", arch: "x64", cpuinfo: "processor\t: 0\nvendor_id\t: GenuineIntel\nflags\t\t: fpu vme sse2\n" }), false);
+  // Rosetta under Docker Desktop or OrbStack shows an x86 CPU of its own vendor (measured in the A13 container).
+  assert.equal(runsEmulated({ platform: "linux", arch: "x64", cpuinfo: "processor\t: 0\nvendor_id\t: VirtualApple\ncpu family\t: 6\nmodel name\t: VirtualApple @ 2.50GHz\n" }), true);
   assert.equal(runsEmulated({ platform: "linux", arch: "arm64", cpuinfo: "CPU implementer\t: 0x61\n" }), false);
   assert.equal(runsEmulated({ platform: "darwin", arch: "x64", cpuinfo: "CPU implementer\t: 0x61\n" }), false);
   assert.equal(runsEmulated({ platform: "linux", arch: "x64", cpuinfo: null }), false);

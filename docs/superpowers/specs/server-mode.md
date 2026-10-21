@@ -2393,8 +2393,10 @@ it depends on.
     Landed as: `scripts/native/probe.mjs`: the bounded steps it shares with `captureMacHost`
     (`boundedStep`, `launchWithin`: a start that answers after its bound is closed; `localSite`, a
     page on 127.0.0.1 also reached as localhost); `probeOptions` (headless on macOS, headed on
-    Linux); `runsEmulated` (an x64 process on a kernel whose `/proc/cpuinfo` is ARM's; anything
-    unread counts as not emulated, keeping `sandbox.on`'s seccomp-BPF rule); the probe page
+    Linux); `runsEmulated` (an x64 process on a kernel whose `/proc/cpuinfo` is ARM's, or Rosetta's x86
+    one, vendor `VirtualApple`, as Docker Desktop and OrbStack show it: found at the Phase A and E
+    gate, where the A13 container ran under Rosetta and its sandbox page showed seccomp-BPF missing;
+    anything unread counts as not emulated, keeping `sandbox.on`'s seccomp-BPF rule); the probe page
     (`PROBE_PARTS`: webgl, webgl2, webgpu, canvas, fonts, screen, media, locale, navigator, one
     bounded `evaluate` each, every await inside bounded; a part that answers nothing leaves the
     later ones unasked) and `runProbe(page)`; `readSandboxPage` (Linux: its lines, `"timeout"` or

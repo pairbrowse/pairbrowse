@@ -2932,6 +2932,17 @@ binding for implementation; where a phase section above says otherwise, this sec
     differences; WebRTC strict mode versus showing the exit address; Accept-Language as a real list and
     the virtual screen's keyboard layout; CPU cores and memory following the GPU identity; automation
     traces and humanized input timing (wheel notches, pointer rate, key hold) audited each build.
+    From the reference's own README (2026-10-22), also measured and fixed where it applies to us:
+    automation traffic during a page's scoring window (each snapshot, evaluate, wait or value set sends
+    protocol traffic that reCAPTCHA v3 is said to score; measure the score against the number of agent
+    calls, and prefer real keystrokes over value setting in scored forms); proxy signals at the
+    network layer (DNS, connect and TLS timing, proxy cache headers, Proxy-Connection), QUIC over a
+    SOCKS5 proxy, and a "transparent" proxy mode for providers that block ordinary proxy connects;
+    storage quota as an incognito signal (BrowserScan) against our persistent profiles; first-visit
+    HTTP/2 challenges and cookie warm-up in persistent sessions; fixed identity per profile across
+    sessions (returning visitor); Widevine availability; and signed downloads (an Ed25519 signature
+    over the published checksums, in addition to our pinned SHA-256). Where we already differ by design
+    (no debugging port, credentials never in a proxy URL, a person in the loop), the table says so.
 
 12. **Server mode needs the native PairBrowse browser (user, 2026-10-21).** The open build with the side
     panel extension stays supported on a desktop and is kept aligned with the native build wherever it

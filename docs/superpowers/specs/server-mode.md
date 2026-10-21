@@ -2879,6 +2879,13 @@ binding for implementation; where a phase section above says otherwise, this sec
     real IP, and no calls home. Each check where the reference scores better becomes a gap to fix at its
     cause. Input timing and the CPU cost of headed rendering on a host without a GPU are measured too.
 
+12. **Server mode needs the native PairBrowse browser (user, 2026-10-21).** The open build with the side
+    panel extension stays supported on a desktop and is kept aligned with the native build wherever it
+    can be (some native-only parts, such as engine identity, humanized input and the engine's own
+    pages, cannot be). In server mode (display.mjs serverMode) the launch refuses any engine other than
+    the native build, with one sentence naming the fix (install the native build; `docs/server.md`).
+    The test harness keeps running the open build where a test does not depend on server mode.
+
 Implementation conditions (from the user):
 - Keep the five phases and every agreed requirement: profile import and export, per-profile isolation,
   proxy separation, graphics validation, mobile interactive hand-off.

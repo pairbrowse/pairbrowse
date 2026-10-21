@@ -24,8 +24,11 @@ export function createIcons() {
     if (icons.has(origin)) return icons.get(origin);
     if (icons.size >= ICONS_MAX) icons.delete(icons.keys().next().value); // the oldest site goes
     icons.set(origin, null); // read once per site, also while this read waits
-    const read = page.evaluate(() => document.querySelector('link[rel~="icon"]')?.getAttribute("href") || null).catch(() => null);
-    const href = await within(ICON_TIMEOUT_MS, read);
+    let href = null;
+    try {
+      const read = page.evaluate(() => document.querySelector('link[rel~="icon"]')?.getAttribute("href") || null).catch(() => null);
+      href = await within(ICON_TIMEOUT_MS, read);
+    } catch {}
     const icon = typeof href === "string" && href.length < ICON_MAX_CHARS && ICON_DATA.test(href) ? href : null;
     icons.set(origin, icon);
     return icon;

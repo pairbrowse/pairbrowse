@@ -36,6 +36,12 @@ test("an icon linked by address, or none, is never fetched", async () => {
   assert.equal(counter.context + counter.requests, 0);
 });
 
+test("a page that can't be read gives no icon, never an error", async () => {
+  const iconFor = createIcons();
+  assert.equal(await iconFor({ url: () => "https://f.example/" }), null);
+  assert.equal(await iconFor({ url: () => "https://g.example/", evaluate: () => { throw new Error("gone"); } }), null);
+});
+
 test("a page that never answers gives no icon within its bound", async () => {
   const iconFor = createIcons();
   const page = { url: () => "https://e.example/", evaluate: () => new Promise(() => {}), context: () => { throw new Error("no"); } };

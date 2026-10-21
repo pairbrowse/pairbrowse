@@ -75,7 +75,8 @@ once, an open hand-off included: that step then stays doable in the window or on
 has the link while the hand-off is open can open it, through Cloudflare; the first to tap Take over
 gets that one tab until the hand-off ends. If the tunnel can't start, the message still goes, with
 the private-route link and a sentence saying it works only there, and you can do the step in the
-PairBrowse window.
+PairBrowse window. On a server, where every hand-off goes to your channels, see
+[Running on a server](server.md) for the setup and what the public link exposes.
 
 ## The join prompt in your tab
 

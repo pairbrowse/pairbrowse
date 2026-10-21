@@ -138,6 +138,8 @@ use it on your own accounts and accept each site's terms.
 - [The browser](docs/browser.md): where you see it, the desktop app pane, the native build
 - [Using PairBrowse](docs/using.md): remembered details, passwords, sessions, fast mode, popups, uploads
 - [Working together](docs/sharing.md): invites, join codes, several agents on one browser, your own tunnel
+- [Running on a server](docs/server.md): which computer, the service, the virtual screen, hand-offs to your phone
+- [Browser profiles](docs/profiles.md): a session's settings, import and export, checking a profile
 - [Skills](docs/skills.md)
 - [Configuration](docs/configuration.md)
 - [Troubleshooting](docs/troubleshooting.md)

@@ -46,7 +46,7 @@ export function sandboxDecision(config = {}, { platform = process.platform, uid 
   const required = sandboxRequired(config, { server });
   if (required) {
     const refused = asked ? sandboxRefusal(asked, platform, required) : null;
-    return { on: true, reason: null, refused, blocked: uid === 0 ? `${SANDBOX_ROOT} (${required}, PairBrowse never starts the browser without it: see docs/configuration.md)` : null, required };
+    return { on: true, reason: null, refused, blocked: uid === 0 ? `${SANDBOX_ROOT} (${required}, PairBrowse never starts the browser without it: see docs/server.md)` : null, required };
   }
   if (asked) return { on: false, reason: asked, refused: null, blocked: null, required: null };
   if (uid === 0) return { on: false, reason: "running as root, where the browser refuses its sandbox", refused: null, blocked: null, required: null };
@@ -102,7 +102,7 @@ export async function launchEngine(browserType, config, profile, options, log = 
     // launch without it.
     if (!sandboxOffAllowed(platform) || !SANDBOX_FAILED.test(String(e?.message || e))) throw e;
     // Required (server mode, or "required"): the failure is the error, with what to change.
-    if (sandbox.required) throw new Error(`the browser's sandbox can't start on this system (no user namespaces: a container or an AppArmor rule blocks them), and ${sandbox.required}, PairBrowse never starts the browser without it: allow user namespaces for this user (see docs/configuration.md)`, { cause: e });
+    if (sandbox.required) throw new Error(`the browser's sandbox can't start on this system (no user namespaces: a container or an AppArmor rule blocks them), and ${sandbox.required}, PairBrowse never starts the browser without it: allow user namespaces for this user (see docs/server.md)`, { cause: e });
     noteOnce(log, "The browser's sandbox is off: this system can't run it (no user namespaces: a container or an AppArmor rule blocks them); set \"browserSandbox\": false in config.json to skip the first try");
     Object.assign(SANDBOX, { on: false, reason: "this system can't run it (no user namespaces)", refused: null });
     return start(true);

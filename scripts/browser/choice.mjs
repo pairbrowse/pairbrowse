@@ -29,9 +29,9 @@ export const OPEN_BROWSER_NAME = "PairBrowse as an extension";
 // decision 12): the engine's identity work, humanized input and its WebGPU and proxy patches are
 // native only. serverRefusal(spec, { server, allowOther }): the one sentence a launch of any other
 // browser (chooseBrowser's binary "open" or "custom") is refused with, naming the fix, else null.
-// The sentence points to docs/configuration.md until docs/server.md exists (spec step 50).
+// The sentence points to docs/server.md, the server setup (spec step 50).
 // allowOther: the Phase A live tests on Playwright's build (testenv.mjs SERVER_OPEN).
-export const SERVER_NEEDS_NATIVE = 'Server mode runs only the native PairBrowse browser: install it by setting "browser": "pairbrowse" in ~/.pairbrowse/config.json (see "browser" in docs/configuration.md).';
+export const SERVER_NEEDS_NATIVE = 'Server mode runs only the native PairBrowse browser: install it by setting "browser": "pairbrowse" in ~/.pairbrowse/config.json (see docs/server.md).';
 export const serverRefusal = (spec, { server = false, allowOther = false } = {}) =>
   (server && !allowOther && spec?.binary !== "native" ? SERVER_NEEDS_NATIVE : null);
 

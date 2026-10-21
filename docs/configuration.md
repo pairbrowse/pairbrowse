@@ -21,7 +21,7 @@
   starts that. With `"pairbrowse-open"` or a path, nothing is downloaded or installed for the native browser.
   Server mode (PairBrowse's own virtual screen, or `server.keepAlive`) runs only the native browser:
   any other choice refuses the launch with `Server mode runs only the native PairBrowse browser:
-  install it by setting "browser": "pairbrowse" in ~/.pairbrowse/config.json (see "browser" in docs/configuration.md).`
+  install it by setting "browser": "pairbrowse" in ~/.pairbrowse/config.json (see docs/server.md).`
   and no browser starts. You're asked
   once: in the terminal of the by-hand install step (`node scripts/native-install.mjs <file>`; Enter
   is PairBrowse), and in the browser's Settings page. Switching takes effect when the browser next
@@ -138,7 +138,8 @@
   `"xvfb"`); elsewhere the window opens at 1366x900.
 - `server`: `{ "keepAlive": false }` (default). `true` puts the helper in server mode (a helper kept
   running on a server, even one with a screen of its own, usually by the system's service manager;
-  it runs only the native browser, see `browser` above):
+  it runs only the native browser, see `browser` above; the setup, a systemd unit and which
+  computer to pick are in [Running on a server](server.md)):
   the browser starts as soon as the helper does and its saved tabs come back (after a crash too,
   each agent whose bridge reconnects within 10 seconds is back in its own tab, as after any crash or
   reset of the browser outside server mode too); a browser closed with
@@ -333,8 +334,10 @@ user's file, readable by others), the section says why and refuses a username or
   profile's): `pairbrowse_status` shows a warning for the time zone and a note for the languages,
   and a hand-off lists them as PairBrowse's to fix. A change counts from a session's next start.
 - `requireValidatedProfiles`: `false` (default). For browser profiles, which server mode brings
-  (kept owner-only in `~/.pairbrowse/browser-profiles/`): `true` refuses to start a session on a
-  profile that hasn't been validated on the browser build in use, or one with an error in its
+  (kept owner-only in `~/.pairbrowse/browser-profiles/`; the guide is
+  [Browser profiles](profiles.md)): `true` refuses to start a session on a
+  profile that hasn't been validated on the browser build in use (`validated`, or `consistent`
+  on a computer without a graphics card: `pairbrowse.graphics` below), or one with an error in its
   consistency checks (a GPU the system pages are told about never has, unless it is the one the
   browser really renders on, a hardware GPU read over software rendering); and a proxied session
   whose browser's time zone isn't one used in the exit's country fails its start check (the fix

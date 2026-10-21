@@ -2755,6 +2755,13 @@ it depends on.
     CHANGELOG, version bump in `package.json` and both plugin manifests, annotated tag. With
     `docs/server.md` in, the refusals that point to `docs/configuration.md` meanwhile (step 7's sandbox
     errors, step 46b's `SERVER_NEEDS_NATIVE`) point to it.
+    Landed (2026-10-22): step 47's helper side (the U4 refusal gone, the probe's RFC 1929; decision 10's
+    identity on a host without a GPU, `consistent`), step 48 (`native-pack.mjs` pins the engine-tail
+    builds macOS -7, Linux -5 and engine pack -5, their SHA-256s from the local builds; publication
+    pending), step 49 (`test/optin/native-graphics`, `gpu-host`, `linux-graphics`, `graphics-recovery`,
+    `proxy-docker`, `canvas-bridge-dead`; the native proxy credential cases in
+    `test/integration/proxy.test.mjs`), step 50 (`docs/server.md`, `docs/profiles.md`, the docs above,
+    ADR 9, `.claude/CLAUDE.md`, CHANGELOG 0.17.0, the version bump and the tag `v0.17.0`, made locally).
 
 ## 12. Security implications
 

@@ -16,6 +16,8 @@
   Playwright also requires Node.js 20 or newer, so on an older Node.js parts of it may fail.
   Update Node.js instead.
 - Nothing else: PairBrowse downloads its own browser on first use (see [The PairBrowse browser](browser.md)).
+  A Linux server without a screen also needs `xvfb` and `xauth`, and a desktop font set: see
+  [Running on a server](server.md), which also says which computer to pick.
 
 ## Which browser
 

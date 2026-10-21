@@ -33,5 +33,11 @@ differ from everyday ones in ways sites notice, which brings more CAPTCHAs and r
 ## In code
 
 - `scripts/browser.mjs`: `launchOptions` (`headless: false`), `launchArgs`
-- `scripts/display.mjs`: `needsVirtualDisplay`, `startVirtualDisplay`
+- `scripts/display.mjs`: `needsVirtualDisplay`, `startVirtualDisplay`, `serverMode` (server mode:
+  the helper's own screen or `server.keepAlive`); `scripts/daemon/browser/supervise.mjs` keeps
+  that screen and, with keep-alive, brings the headed browser back after a crash
+  ([Running on a server](../server.md))
 - `scripts/native-engine.mjs`: `captureMacHost` (the hidden one-time capture)
+- `scripts/native/probe.mjs`: the graphics probe, a throwaway browser hidden on macOS and headed
+  on Linux on the screen the launch uses; never a tab of the person's browser
+- `scripts/browser-args.mjs`: `--headless` passes only in a helper the test harness started

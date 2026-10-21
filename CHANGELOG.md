@@ -5,11 +5,38 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
-## Unreleased
+## 0.17.0 (2026-10-22)
+
+PairBrowse is a plugin for Claude Code and Codex: the agent fills in forms, signs up for services
+and clicks through websites in a visible browser window on your computer, while you watch every
+step and take over the parts only a person can do. This release is **server mode**: PairBrowse can
+now run on a Linux server nobody sits at, with each session on its own browser profile and its own
+proxy, honest graphics checks, and the steps only you can do sent to your phone. The new
+[Running on a server](docs/server.md) guide leads with which computer to pick (one with a graphics
+card first) and [Browser profiles](docs/profiles.md) explains profiles. It needs the matching
+PairBrowse browser builds (macOS -7, Linux -5, engine pack -5), which carry the engine changes
+below: the plugin pins them and installs them on first use.
 
 **New**
 
-- **Proxies with a username and password, SOCKS5 included:** on a native PairBrowse browser build that reads them (the next browser release; its build says so, and PairBrowse checks before starting), a session on an HTTP, HTTPS or SOCKS5 proxy that needs a username and password starts. PairBrowse writes them to a private file only this account can read, names it to the browser for that one start and deletes it once the browser is up; the browser answers only that proxy's own password question with them (never a website's) and, on SOCKS5, signs in the standard way (username/password authentication). They never appear on the browser's command line, in a log or in its network log. The Settings test and the start check reach a SOCKS5 proxy with a username and password the same way. PairBrowse as an extension still can't take them: such a session says so and doesn't start.
+- **Run PairBrowse on a server:** set `"server": { "keepAlive": true }` and start the helper from
+  a service (a systemd unit is in [Running on a server](docs/server.md)): the browser starts with
+  the helper on PairBrowse's own virtual screen, comes back by itself after a crash with its
+  session and tabs, keeps its sandbox on with no way off, and runs only the native PairBrowse
+  browser. Every step handed to you goes to your phone through the channels you set up
+  (Telegram, Discord, Slack, a webhook or ntfy), as one message with a link that takes that one
+  tab over on the phone; the public link is off by default and the guide says what it exposes.
+- **Browser profiles:** each session's browser starts on a profile (languages, time zone, screen,
+  window, dark scheme, reduced motion, graphics request, persona seed, ad blocker, saved card),
+  made, imported, exported, checked, assigned and retired by you on the sessions page or with
+  `node scripts/profiles/cli.mjs`; agents can only list profiles and pick one for a new session.
+  Sessions keep their cookies, storage, logins and history apart whatever profile they share.
+- **Graphics measured, never assumed:** the first start of a profile on a build measures the
+  browser's graphics once in a throwaway browser of its own (the backend from the browser process
+  itself, WebGL, WebGPU, the canvas, fonts, the screen, the sandbox) and keeps the verdict with the
+  profile: "validated", "consistent" (a computer without a graphics card, below), "failed" naming
+  what disagrees, or "unverified". `pairbrowse_status` says which; a report never carries your GPU.
+- **Proxies with a username and password, SOCKS5 included:** on a native PairBrowse browser build that reads them (the builds this release pins; the build says so, and PairBrowse checks before starting), a session on an HTTP, HTTPS or SOCKS5 proxy that needs a username and password starts. PairBrowse writes them to a private file only this account can read, names it to the browser for that one start and deletes it once the browser is up; the browser answers only that proxy's own password question with them (never a website's) and, on SOCKS5, signs in the standard way (username/password authentication). They never appear on the browser's command line, in a log or in its network log. The Settings test and the start check reach a SOCKS5 proxy with a username and password the same way. PairBrowse as an extension still can't take them: such a session says so and doesn't start.
 - **Set up proxies in Settings:** Settings has a Network section (also in the Profile panel of your own live view link) where you add, edit, test and remove a proxy (HTTP, HTTPS or SOCKS5, with an optional username and password) and choose which sessions use it, or the default for all of them. The username and password are saved only in PairBrowse's private passwords file on this computer and never shown again: the page says "saved" or "not set". **Test** shows the address and country your traffic would leave from, whether it really leaves through the proxy, and a warning when your browser's time zone or languages don't fit that country. Agents and people who join your session can't open or change any of it. A proxy that needs a username and password can be saved and tested, and starts sessions on a native PairBrowse browser build that takes them from its own private file (see below).
 
 **Changed**

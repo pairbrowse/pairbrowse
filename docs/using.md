@@ -90,6 +90,18 @@ PairBrowse browser opened by hand (the Dock, Finder) goes to the running helper 
 build (the first to claim it; the default one when none did), and a tab change in one instance
 gives focus back to whatever you were using, another PairBrowse window included.
 
+## Away, and on a server
+
+On a computer you sit at, a step handed to you (a sign-in, a CAPTCHA, a code, a payment) stays in
+the PairBrowse window: the bar, the side panel and the tab. When you may be away, flip the Away
+switch (the side panel's Tools tab, Settings, or your live view's Profile panel): hand-offs then
+also go to your phone through the channels in `handoff` (Telegram, Discord, Slack, a webhook or
+ntfy), as one message with a link that takes that one tab over on the phone; whichever you use
+first completes the step. On a server the messages are always on. Which computer to pick, the
+service, the virtual screen and what a public link exposes: [Running on a server](server.md).
+Each session's settings (languages, time zone, screen, graphics) are its browser profile:
+[Browser profiles](profiles.md).
+
 ## Settings
 
 Which browser PairBrowse runs (the native PairBrowse browser, PairBrowse as an extension, or a

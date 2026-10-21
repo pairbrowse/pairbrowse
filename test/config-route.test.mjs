@@ -65,7 +65,7 @@ async function setup({ file = ON_DISK, native = true, inUse = "pairbrowse", time
 
 // The fields every answer carries besides browser, timeline, layout, native and chosen, as a
 // config with none of them set reads.
-const MORE = { name: "", downloads: null, pictures: true, cookies: "accept", maxTabs: 20, askSession: true, report: true, settingsSection: false, away: { on: false, server: false, ready: false } }; // report: on by default (PairBrowse's own address, paths.mjs)
+const MORE = { name: "", downloads: null, pictures: true, cookies: "accept", maxTabs: 20, askSession: true, report: true, settingsSection: false, away: { on: false, server: false, ready: false, publicLink: false, privateRoute: false } }; // report: on by default (PairBrowse's own address, paths.mjs)
 
 test("GET config.json: exactly its fourteen keys, the choice as browserChoice reads it", async () => {
   const { view, key } = await setup();
@@ -337,7 +337,7 @@ test("away: on only with a ready channel, written into config.json's handoff alo
   const owner = await readStream(view.port, `/${key}/events?panel=1`);
   try {
     const get = async () => JSON.parse((await request(view.port, "GET", `/${key}/config.json`)).text).away;
-    assert.deepEqual(await get(), { on: false, server: false, ready: false });
+    assert.deepEqual(await get(), { on: false, server: false, ready: false, publicLink: false, privateRoute: false });
     // No channel that can be used: refused, nothing written.
     const before = onDisk();
     let r = await request(view.port, "POST", `/${key}/config`, { body: { away: true } });
@@ -348,10 +348,10 @@ test("away: on only with a ready channel, written into config.json's handoff alo
     assert.equal((await request(view.port, "POST", `/${key}/config`, { body: { away: true } })).status, 409, "a channel but hand-offs not enabled");
     // Ready: on, remembered in the file's handoff (its own fields kept as written, no filled-in defaults).
     now.enabled = true;
-    assert.deepEqual(await get(), { on: false, server: false, ready: true });
+    assert.deepEqual(await get(), { on: false, server: false, ready: true, publicLink: false, privateRoute: false });
     r = await request(view.port, "POST", `/${key}/config`, { body: { away: true } });
     assert.equal(r.status, 200);
-    assert.deepEqual(JSON.parse(r.text).away, { on: true, server: false, ready: true });
+    assert.deepEqual(JSON.parse(r.text).away, { on: true, server: false, ready: true, publicLink: false, privateRoute: false });
     assert.deepEqual(JSON.parse(onDisk()).handoff, { ...handoff, away: true });
     assert.ok(onDisk().includes(TOKEN), "the rest of config.json as it was");
     assert.equal(config.handoff.away, true, "the running config too");
@@ -367,12 +367,43 @@ test("away: on only with a ready channel, written into config.json's handoff alo
     assert.equal((await request(view.port, "POST", `/${key}/config`, { body: { away: "yes" } })).status, 409);
     // On a server: hand-offs always go to the channels; the switch can't change that.
     now.server = true;
-    assert.deepEqual(await get(), { on: false, server: true, ready: true });
+    assert.deepEqual(await get(), { on: false, server: true, ready: true, publicLink: false, privateRoute: false });
     r = await request(view.port, "POST", `/${key}/config`, { body: { away: true } });
     assert.equal(r.status, 409);
     assert.match(JSON.parse(r.text).error, /runs on a server/);
   } finally { owner.close(); view.close(); }
   // Without the helper's state the switch reads off and not ready.
-  assert.deepEqual(readSettings({}).away, { on: false, server: false, ready: false });
+  assert.deepEqual(readSettings({}).away, { on: false, server: false, ready: false, publicLink: false, privateRoute: false });
   assert.deepEqual(applySettings({ away: true }, {}, {}).error ? "refused" : "taken", "refused");
+});
+
+// The public hand-off link (spec server-mode step 21b, handoff.publicLink): off by default, the
+// Away switch offers it while no private route is set, written into config.json's handoff alone
+// (away kept as it is), on a server too.
+test("publicLink: off by default, written into config.json's handoff alone, on a server too; privateRoute says whether a tailnet link exists", async () => {
+  const handoff = { enabled: true, away: true, channels: [{ type: "ntfy", topicSecret: "PAIRBROWSE_NTFY_TOPIC" }] };
+  const now = { server: false, enabled: true, channels: 1, privateRoute: false };
+  const { view, key, config, onDisk } = await setup({ file: { ...ON_DISK, handoff }, away: () => now });
+  config.handoff = { ...DEFAULT_CONFIG.handoff, ...handoff };
+  try {
+    const get = async () => JSON.parse((await request(view.port, "GET", `/${key}/config.json`)).text).away;
+    assert.deepEqual(await get(), { on: true, server: false, ready: true, publicLink: false, privateRoute: false });
+    let r = await request(view.port, "POST", `/${key}/config`, { body: { publicLink: true } });
+    assert.equal(r.status, 200, r.text);
+    assert.equal(JSON.parse(r.text).away.publicLink, true);
+    assert.deepEqual(JSON.parse(onDisk()).handoff, { ...handoff, publicLink: true }, "only publicLink added; away as it was");
+    assert.ok(onDisk().includes(TOKEN), "the rest of config.json as it was");
+    assert.equal(config.handoff.publicLink, true, "the running config too");
+    assert.equal(config.handoff.away, true);
+    assert.equal((await request(view.port, "POST", `/${key}/config`, { body: { publicLink: "on" } })).status, 409, "not a boolean");
+    now.privateRoute = true;
+    assert.equal((await get()).privateRoute, true);
+    // On a server: the same opt-in, and off again.
+    now.server = true;
+    r = await request(view.port, "POST", `/${key}/config`, { body: { publicLink: false } });
+    assert.equal(r.status, 200, r.text);
+    assert.equal(JSON.parse(onDisk()).handoff.publicLink, false);
+    assert.equal(config.handoff.publicLink, false);
+  } finally { view.close(); }
+  assert.equal(readSettings({}).away.publicLink, false);
 });

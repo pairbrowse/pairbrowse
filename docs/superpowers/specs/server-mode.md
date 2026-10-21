@@ -339,7 +339,8 @@ by the person. On no response: progress saved, exactly one reminder, safe stop.
   status, tab close, session switch, revoke, expiry or helper stop.
 - **B5. Reachability.** Same as invite links: `inviteBaseUrl` on a `liveViewHosts` name (a tailnet works
   on phones with the tailnet app) or loopback with the `ssh -N -L` hint (`scripts/daemon/sharing.mjs:157`).
-  Never the join-code port. A public tunnel route for phones is decision U2 (section 13).
+  Never the join-code port, except through the hand-off's own public address when
+  `handoff.publicLink` is on (decision U2, section 13; step 21b).
 - **B6. One sender interface** in `scripts/daemon/notify/`: `{ type, describe(), send(message) }`,
   built from `handoff.channels` through a table. Required channels: webhook, ntfy, Telegram, Discord,
   Slack. A new channel is one file plus one table entry. Credentials live in `secrets.env` under the
@@ -1594,6 +1595,49 @@ it depends on.
    (`handoffKind`). Security rows B-1, B-3, B-7 now say what makes and sends links and writes the
    trail; B-5 lands; B-8 (diagnostics, badge, and the invite-links limit); the settings row names `away`. Tests: `test/yourturn.test.mjs`,
    `test/config-route.test.mjs` (Away).
+21b. Public hand-off link from anywhere (U2, decision 8): `handoff.publicLink`, opt-in. -> 21
+   Landed as: `tunnel-pool.mjs` `ensureHandoff(port)`, `stopHandoff()`, `handoffHost()`: a tunnel of
+   its own to the live view's guest port (a Quick Tunnel, the user's own `sharing.tunnel`, or the
+   guest port under `TUNNEL=direct`), never idle-kept like the pool's, never saved for adoption.
+   With the user's own tunnel (one process, one address) a live pool tunnel is used as it is and a
+   hand-off's is taken into the pool when a join code needs one; on that shared name a key no live
+   grant names goes on to the join server (`handoffShared()`, `createPublicTurn`'s `publicShared`),
+   and the pool's stop (idle keep, `revoke_all`) hands it back to the hand-off while one is open
+   instead of stopping it. `sharing.handoffLink(key)` answers
+   `${tunnel url}/${key}/` when `publicLink` is on, waiting at most `HANDOFF_TUNNEL_MS` (45 s); when
+   it doesn't start it calls the start off and answers `{ link: <private link>, privateOnly: true }`.
+   The tunnel stops `handoffStopMs` (3 s, so the stream hears `turn-ended`) after the grant table's
+   `onEnd` leaves no grant open, with `stopAll`/`suspend`/`endAll`, and at once when
+   `handoff.publicLink` turns off (the settings' `onChange` calls `sharing.publicLinkChanged()`). `scripts/liveview/public-turn.mjs`
+   `createPublicTurn({ gate, routes, publicHost })`, asked first by `joiner-server.mjs` (new
+   `publicTurn` option) for each request and upgrade: on the hand-off tunnel's name (or loopback,
+   which cloudflared may pass) only a live grant's key is served, and only `PUBLIC_ROUTES` (redeem:
+   the landing page, its assets, `POST redeem`; turn: the viewer, assets, the stream, `thumb.jpg`,
+   `state.json`, `input`, `turn`, `turn-done`, `turn-options`, `turn-pick`, `turn-fill-card`), through
+   the owner port's own route table, so B-AP1, B3 and B4 hold unchanged; everything else is 404, the
+   owner, pages, invite and join keys included; a join code on loopback falls through to the join
+   server. Origin must be absent, the public address's own or loopback (else 403 and audit, as
+   `refusedOrigin`). Differs from B8: Cloudflare Quick Tunnels don't carry server-sent events (their
+   documented limit), so on the public address the stream is a WebSocket: the viewer is served with
+   `data-stream="ws"` and `connect-src 'self' wss://<host>`, `liveview-turn.js` `socketEvents(url)`
+   gives `liveview.js` an EventSource-shaped stream (a drop is CLOSED at once and goes to `lost()`),
+   and `socketStream` runs the unchanged events route on the upgrade (its 200 accepts, a 409 or 404
+   refuses the upgrade with that body), pinging every 20 s and closing after 60 s without an
+   answer. Messages gain `privateOnly` (true only with a link, never on `ended`): `messageText` adds
+   `PRIVATE_ONLY` ("The public link couldn't start, so this link works only on your private route
+   ..."), the webhook body carries `privateOnly: true` only then. `yourturn.mjs`: `linkFor` may answer
+   a string or `{ link, privateOnly }`; making the link and sending now both sit inside `REPORT_MS`
+   (a public link may take seconds to start). Away switch: GET config.json `away` gains `publicLink`
+   and `privateRoute` (`inviteBaseUrl` set), POST config `publicLink` (boolean, on a server too;
+   writes only `handoff.publicLink`), and `ui/panels.js` `awaySwitch` adds a line under the switch
+   that offers "Use a public link" with `PUBLIC_WORDS.offer` when a channel is ready and no private
+   route is set, and "Stop the public link" while it is on. Security row "A public hand-off link
+   exposes more of this computer than the hand-off" is new; B-1's port sentence names it. Tests:
+   `test/public-handoff.test.mjs`, `test/config-route.test.mjs`, `test/ui-settings.test.mjs`,
+   `test/liveview-mobile.test.mjs` (the viewer on the public port, its WebSocket stream); opt-in `test/optin/public-handoff.test.mjs`
+   (`PAIRBROWSE_TEST_REAL_TUNNEL=1` and `PAIRBROWSE_TEST_DOCKER=1`: a real Quick Tunnel, the person's
+   side from a Linux container with `tc netem` 300 ms delay and 2% loss, the turn viewer driven there,
+   the step finished, the tunnel gone after).
 22. `browser_wait_for` early wake, `handedOff` refusals, card-field refusals in every session,
     fast-mode step, `turn.json` recovery (B9, B13, B15, B16). -> 21, 8
    Landed as: B9: `yourturn.handedOff(page)` answers `"open"`, `"held"` or `""`; `tabRefusal(...,
@@ -2705,7 +2749,7 @@ that exist at that commit (`test/security-table.test.mjs`).
 |---|---|---|---|
 | A-1 | Move the "Limits" Xvfb bullet into a row | "A server's virtual screen is watched or driven by another user": private Xvfb, `-nolisten tcp`, random cookie in `~/.pairbrowse/run`; only our own dead Xvfb's lock and socket (our uid) are removed; Xvfb ended and cookie deleted on every exit | `test/display.test.mjs`, `test/security.test.mjs`, `test/integration/server-display.test.mjs` |
 | A-2 | Change the sandbox row and the Limits bullet | Server mode: sandbox always on, off requests refused, root refused, a failing sandbox stops the launch; `"required"` does the same on a Linux desktop | `test/engine.test.mjs`, `test/config-schema.test.mjs` |
-| B-1 | New | "A hand-off link reaches the wrong person or does more than meant": off unless `handoff.enabled`; links only to configured channels; GET never consumes, the tap does, once; view key holds one stream; 15 min default, 120 max; one tab of one session plus its sign-in pop-ups; no typed addresses, profile, approvals, pause or settings; private routes only | `test/grants.test.mjs`, `test/liveview-grants.test.mjs` |
+| B-1 | New | "A hand-off link reaches the wrong person or does more than meant": off unless `handoff.enabled`; links only to configured channels; GET never consumes, the tap does, once; view key holds one stream; 15 min default, 120 max; one tab of one session plus its sign-in pop-ups; no typed addresses, profile, approvals, pause or settings; private routes only, unless `handoff.publicLink` (then its own row, step 21b: the hand-off tunnel serves grant routes alone and runs only while a hand-off is open) | `test/grants.test.mjs`, `test/liveview-grants.test.mjs`, `test/public-handoff.test.mjs` |
 | B-2 | New | "A hand-off viewer's input does more than a person's hands": checked input set; `char` never carries Ctrl or Meta; type box keeps nothing | `test/input.test.mjs`, `test/fuzz/joiner-input.test.js`, `test/liveview-mobile.test.mjs` |
 | B-3 | New | "Hand-off notifications send more than meant", with per-channel exposure: webhook (your endpoint gets kind, host, expiry, link); ntfy (the server and anyone subscribed to the topic; on public ntfy.sh without a token no link); Telegram (Telegram's servers and the chat's members; bot messages are not end-to-end encrypted); Discord (Discord and the channel's members); Slack (Slack, the workspace's retention and the channel's members). Never the agent's text, codes, passwords, card data or page content; credentials are reserved secrets | `test/notify-channels.test.mjs`, `test/redaction.test.mjs` |
 | B-4 | New | "An agent finishes a step meant for a person": hands, run, navigation and closing refused in a handed-off or held tab; in every session agents never type into card fields or type a card number (B13); the Pay click rule unchanged | `test/refusals.test.mjs`, `test/shared-rules.test.mjs` |

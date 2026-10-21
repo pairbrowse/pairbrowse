@@ -14,16 +14,18 @@
 //     native: boolean,                                          a PairBrowse build is pinned for this computer
 //     chosen: boolean,                                          a person recorded the browser choice
 //     report: boolean,                                          Report a problem is relayed (a valid reportUrl is set; never the address)
-//     away: { on, server, ready } }                             handoff.away: hand-offs go to your phone while you are away (decision 8);
-//                                                               server: always on (server mode); ready: handoff.enabled with a usable channel
+//     away: { on, server, ready, publicLink, privateRoute } }   handoff.away: hand-offs go to your phone while you are away (decision 8);
+//                                                               server: always on (server mode); ready: handoff.enabled with a usable channel;
+//                                                               publicLink: handoff.publicLink (step 21b); privateRoute: inviteBaseUrl is set
 // POST config takes any subset of { browser, timeline: { on?, cap? }, layout: { left?, right?,
-// strip? }, name, downloads, pictures, cookies, maxTabs, askSession, away } and answers the same body
+// strip? }, name, downloads, pictures, cookies, maxTabs, askSession, away, publicLink } and answers the same body
 // plus restart: true while "browser" differs from the browser of the window open now (it takes
 // effect when the browser next starts; no window: false). pictures, cookies, maxTabs, downloads and
 // the timeline apply at once; name applies to joins at once and to your label in this browser from
 // the helper's next start; askSession from the next start; away at once (only handoff.away is
 // written, the rest of handoff as config.json has it; turning it on needs a ready channel, and on a
-// server it can't be changed: hand-offs always go there). Anything else in the body, or an
+// server it can't be changed: hand-offs always go there; publicLink at once, on a server too, only
+// handoff.publicLink written). Anything else in the body, or an
 // invalid value, is refused (409, { error }) and nothing is written. Tunnel tokens, join
 // addresses, the report address and every other setting are never in an answer.
 // The Network section (config.json's network and the proxies' credentials) has routes of its own:
@@ -44,7 +46,7 @@ import { readLayout, layoutFrom } from "./layout.mjs";
 import { reportUrlFrom } from "./report.mjs";
 import { createNetworkSettings, localeOf } from "./network.mjs";
 
-export const SETTINGS_KEYS = ["browser", "timeline", "layout", "name", "downloads", "pictures", "cookies", "maxTabs", "askSession", "away"];
+export const SETTINGS_KEYS = ["browser", "timeline", "layout", "name", "downloads", "pictures", "cookies", "maxTabs", "askSession", "away", "publicLink"];
 export const CAP_MIN = 1, CAP_MAX = 200;
 export const TABS_MIN = 2, TABS_MAX = 50;
 export const NAME_MAX = 40;
@@ -86,8 +88,12 @@ export async function browserProblem(path, { platform = process.platform, verify
 
 // The Away switch's state (decision 8): on (handoff.away), server (server mode: hand-offs always go
 // to the channels, the switch can't change that) and ready (handoff.enabled with at least one channel
-// that can be used). away: { server, enabled, channels } as the helper sees them now.
-export const awayState = (config, away = {}) => ({ on: config.handoff?.away === true, server: away.server === true, ready: away.enabled === true && Number(away.channels) > 0 });
+// that can be used), with the public link (step 21b: handoff.publicLink, a hand-off link through
+// the hand-off's own tunnel) and whether a private route is set (privateRoute: inviteBaseUrl, so a
+// phone on the tailnet reaches the link without it). away: { server, enabled, channels,
+// privateRoute } as the helper sees them now.
+export const awayState = (config, away = {}) => ({ on: config.handoff?.away === true, server: away.server === true, ready: away.enabled === true && Number(away.channels) > 0,
+  publicLink: config.handoff?.publicLink === true, privateRoute: away.privateRoute === true });
 
 // config: the settings with the older names as the person wrote them (context.choiceConfig()).
 // exists / executable: as applySettings. away: as awayState.
@@ -186,6 +192,10 @@ export function applySettings(given, config, { native = false, exists, executabl
     if (given.away && !st.ready) return { error: "Away needs a hand-off channel first: set handoff in config.json (enabled, and a channel with its PAIRBROWSE_ secret saved). See docs/configuration.md." };
     fields.awayOn = given.away;
   }
+  if (given.publicLink !== undefined) {
+    if (typeof given.publicLink !== "boolean") return { error: `${wrongValue("publicLink", BOOL, given.publicLink)}.` };
+    fields.publicLinkOn = given.publicLink;
+  }
   return { fields };
 }
 
@@ -213,11 +223,12 @@ export function createSettings({ config, choiceConfig = () => config, native = f
     async write(given) {
       const r = applySettings(given, choiceConfig(), { native, exists, executable, ...(folder ? { folder } : {}), ...(home ? { home } : {}), ...(user ? { user } : {}), away: away() });
       if (r.error) return r;
-      // Away: only handoff.away changes, in the file's handoff and in the running config's.
-      const { awayOn, ...rest } = r.fields;
-      if (awayOn !== undefined) {
+      // Away and the public link: only handoff.away and handoff.publicLink change, in the file's
+      // handoff and in the running config's.
+      const { awayOn, publicLinkOn, ...rest } = r.fields;
+      if (awayOn !== undefined || publicLinkOn !== undefined) {
         const saved = savedHandoff();
-        rest.handoff = { ...(saved && typeof saved === "object" && !Array.isArray(saved) ? saved : {}), away: awayOn };
+        rest.handoff = { ...(saved && typeof saved === "object" && !Array.isArray(saved) ? saved : {}), ...(awayOn !== undefined ? { away: awayOn } : {}), ...(publicLinkOn !== undefined ? { publicLink: publicLinkOn } : {}) };
       }
       r.fields = rest;
       // A path of your own: checked before anything is written (defense in depth: the route is the
@@ -233,7 +244,7 @@ export function createSettings({ config, choiceConfig = () => config, native = f
       try { save(r.fields); } catch (e) { return { error: `Couldn't write config.json: ${e?.message || e}. Check that PairBrowse's folder can be written, then save again.` }; }
       const { handoff, ...plain } = r.fields;
       Object.assign(config, plain);
-      if (handoff) config.handoff = { ...config.handoff, away: handoff.away };
+      if (handoff) config.handoff = { ...config.handoff, ...(awayOn !== undefined ? { away: awayOn } : {}), ...(publicLinkOn !== undefined ? { publicLink: publicLinkOn } : {}) };
       try { onChange(r.fields); } catch {}
       const body = read();
       const running = browserInUse();

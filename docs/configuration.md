@@ -155,8 +155,16 @@
   that can be used; on a server it isn't a switch (messages always go). With a channel the step
   still shows in the window too, and whichever you use first does it. `grantMinutes` (1 to 120) is how long a
   link works; `remindMinutes` (1 or more) when the one reminder comes (at or after `grantMinutes` it falls back
-  to two thirds of it, with a warning). `publicLink` (lets a link go through the sharing tunnel) is
-  read and kept for the hand-off link that uses it. `channels` lists where messages go, each
+  to two thirds of it, with a warning). `publicLink` (`false` by default) sends hand-off links through a
+  public address of their own, so the phone reaches them from any network: while a hand-off is open a
+  tunnel (a Cloudflare Quick Tunnel, or your own `sharing.tunnel`) reaches the live view's join-code
+  port, which then serves that hand-off's landing page and viewer and nothing else (with your own
+  `sharing.tunnel`, one address, join codes keep working on it too); it stops once no hand-off is
+  open, and at once when the public link is turned off. Use it when no private route is set (`inviteBaseUrl` on your tailnet): the line
+  under the Away switch offers it then, and turns it off again; in server mode it is the same opt-in.
+  Anyone who has the link while the hand-off is open can open it once, through Cloudflare. When the
+  tunnel can't start within 45 seconds the message goes with the private-route link and says it works
+  only there; the step stays doable in the PairBrowse window (docs/security.md). `channels` lists where messages go, each
   naming its credentials by a `PAIRBROWSE_` name you save in `secrets.env` (below), never the value:
   `{ "type": "webhook", "urlSecret": "PAIRBROWSE_WEBHOOK_URL" }` (a JSON POST of the event, id, step
   kind, site host, link and expiry to your own https address);

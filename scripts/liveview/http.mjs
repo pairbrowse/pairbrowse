@@ -155,11 +155,12 @@ const attr = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`
 
 // The viewer page. attrs go on <body> as data-* (the page hides what its link may not use; the
 // servers refuse it either way). Its files load relative to /<key>/, so that needs the slash.
-export function serveViewer(req, res, attrs) {
+// csp: the page's policy (a hand-off's public address names its wss: origin, liveview/public-turn.mjs).
+export function serveViewer(req, res, attrs, { csp = VIEWER_CSP } = {}) {
   const path = pathOf(req);
   if (!path.endsWith("/")) { res.writeHead(308, { ...SECURITY_HEADERS, location: `${path}/` }); return res.end(); }
   const data = Object.entries(attrs).map(([k, v]) => `data-${k}="${attr(v)}" `).join("");
-  res.writeHead(200, { ...SECURITY_HEADERS, "content-type": "text/html; charset=utf-8", "content-security-policy": VIEWER_CSP });
+  res.writeHead(200, { ...SECURITY_HEADERS, "content-type": "text/html; charset=utf-8", "content-security-policy": csp });
   res.end(viewerHtml.replace("<body ", `<body ${data}`));
 }
 

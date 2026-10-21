@@ -3,7 +3,9 @@
 // "ended"; id: the grant's 8-hex id; action: the step's kind, which picks a fixed sentence; host:
 // the site's host name; link: the hand-off link, or null (opened already, or none to send);
 // expiresAt: when the link stops working (epoch ms); reason: why it ended (ended), or
-// "browser-restarted" on a turn that replaces a link lost to a restart (B16). Any other field, or a
+// "browser-restarted" on a turn that replaces a link lost to a restart (B16); privateOnly: true
+// when the public link (handoff.publicLink, step 21b) couldn't start and the link is the private
+// route's, so the text says it works only there. Any other field, or a
 // value outside its rule, refuses the whole message, so the agent's own words, a password, a code,
 // card data or page text can't reach a channel by mistake: the person reads the agent's words only
 // after taking over.
@@ -40,7 +42,7 @@ const ENDINGS = {
   "browser-restarted": "the browser restarted. The step was stopped safely.",
   "helper-stopped": "PairBrowse stopped. The step was stopped safely.",
 };
-const FIELDS = new Set(["kind", "id", "action", "host", "link", "expiresAt", "reason"]);
+const FIELDS = new Set(["kind", "id", "action", "host", "link", "expiresAt", "reason", "privateOnly"]);
 const NETWORK_FIELDS = new Set(["kind", "network", "change", "paused", "at"]);
 const ID = /^[0-9a-f]{8}$/;
 // A proxy's id as config.json's network names it (net/credentials.mjs NETWORK_ID).
@@ -75,6 +77,7 @@ export function messageProblem(message) {
     if (kind === "ended") return "an ended message has no link";
   }
   if (!(Number.isInteger(expiresAt) && expiresAt > 0 && expiresAt <= TIME_MAX)) return "expiresAt is a time (epoch ms)";
+  if (message.privateOnly !== undefined && (typeof message.privateOnly !== "boolean" || (message.privateOnly && (kind === "ended" || !link)))) return "privateOnly is true or false, and true only with a link";
   if (kind === "ended" ? !END_REASONS.includes(reason) : reason !== undefined && reason !== null && !(kind === "turn" && reason === "browser-restarted")) {
     return kind === "ended" ? "reason is why the hand-off ended" : "reason is only browser-restarted, on a turn";
   }
@@ -95,6 +98,9 @@ function networkProblem(message) {
 // "14:35 UTC": the person may be anywhere, the server's own zone means nothing to them.
 export const clock = (ms) => `${new Date(ms).toISOString().slice(11, 16)} UTC`;
 
+// Said under a link that works only on the private route: the public one couldn't start (step 21b).
+export const PRIVATE_ONLY = "The public link couldn't start, so this link works only on your private route (your tailnet or an SSH tunnel to this computer); the step can also be done in the PairBrowse window.";
+
 // The message as a channel shows it: { title, text }. withheld: the channel leaves the link out
 // (a public ntfy topic, B7), so the text says where to take over instead.
 export function messageText(message, { withheld = false } = {}) {
@@ -111,7 +117,7 @@ export function messageText(message, { withheld = false } = {}) {
   lines.push(`${kind === "reminder" ? "Reminder: " : ""}${actionSentence(action, host)}.`);
   const until = clock(expiresAt);
   if (withheld) lines.push(`Take over in PairBrowse's live view before ${until} (this channel doesn't get the link).`);
-  else if (link) lines.push(`Take over before ${until}: ${link}`);
+  else if (link) { lines.push(`Take over before ${until}: ${link}`); if (message.privateOnly === true) lines.push(PRIVATE_ONLY); }
   else if (kind === "reminder") lines.push(`The link was opened already; the step stays open until ${until}.`);
   else lines.push(`Take over in PairBrowse's live view before ${until}.`);
   return { title: TITLE, text: lines.join("\n") };

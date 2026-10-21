@@ -59,6 +59,24 @@ people who have one anyway.
 Under the names in `liveViewHosts` only invite and hand-off links work; your own live view link keeps
 working on this computer and through an SSH tunnel.
 
+**Hand-off links from anywhere.** A hand-off link (a step an agent hands you, sent to your phone
+through a hand-off channel: `handoff` in [configuration](configuration.md)) uses the same private
+routes. Without one, and when you may be on another network, turn on the public link: the line
+under the Away switch offers it ("Use a public link"), or set `handoff.publicLink` to `true`. While
+a hand-off is open, its link then goes through a tunnel of its own (a free Cloudflare Quick Tunnel,
+or your own `sharing.tunnel`) that serves that hand-off's landing page and viewer and nothing else:
+not your own live view or invite links, and join codes only where they share the address. With your
+own `sharing.tunnel` (one address) the hand-off and join codes share that one tunnel: join codes
+and the people in your session keep working on it while a hand-off is open, and the hand-off keeps
+it up while it is open even after the last code ends. The tunnel starts with the first link and stops
+a few seconds after the last hand-off ends (unless join codes still use it), so nothing is reachable
+between hand-offs. "Stop the public link" (or `handoff.publicLink` set to `false`) stops it at
+once, an open hand-off included: that step then stays doable in the window or on the private route. Anyone who
+has the link while the hand-off is open can open it, through Cloudflare; the first to tap Take over
+gets that one tab until the hand-off ends. If the tunnel can't start, the message still goes, with
+the private-route link and a sentence saying it works only there, and you can do the step in the
+PairBrowse window.
+
 ## The join prompt in your tab
 
 When someone asks to join, the side panel always lists the request with **Allow** and **Deny**.

@@ -32,6 +32,33 @@ const NAMED = new Set(["Backspace", "Enter", "Tab", "Escape", "ArrowLeft", "Arro
 const hex = (bytes) => [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
 
+// The event stream over a WebSocket, shaped as the EventSource liveview.js uses (addEventListener,
+// onopen, onerror, readyState, close): a hand-off link's public address goes through a relay that
+// doesn't carry server-sent events (liveview/public-turn.mjs; the page says so with
+// data-stream="ws"). Each message holds one or more events as the stream writes them. A dropped or
+// refused socket is CLOSED at once and onerror runs, so liveview.js hands it to lost() (which asks
+// whether the hand-off still runs and reopens, or ends): EventSource's own retry has no
+// counterpart here.
+export function socketEvents(url) {
+  const ws = new WebSocket(url.replace(/^http/, "ws"));
+  const listeners = new Map();
+  const es = {
+    readyState: 0, onopen: null, onerror: null,
+    addEventListener(name, fn) { if (!listeners.has(name)) listeners.set(name, []); listeners.get(name).push(fn); },
+    close() { es.readyState = 2; try { ws.close(); } catch {} },
+  };
+  ws.onopen = () => { es.readyState = 1; es.onopen?.(); };
+  ws.onmessage = (m) => {
+    for (const block of String(m.data).split("\n\n")) {
+      const name = /^event: (.+)$/m.exec(block)?.[1];
+      const data = /^data: (.*)$/m.exec(block)?.[1];
+      if (name && data !== undefined) for (const fn of listeners.get(name) || []) fn({ data });
+    }
+  };
+  ws.onclose = () => { if (es.readyState === 2) return; es.readyState = 2; es.onerror?.(); };
+  return es;
+}
+
 // base: the viewer's /<viewKey>/; img, stage: the picture and its pane; on(event, fn): the stream's
 // events (liveview.js, before the stream opens); frame(): the picture's
 // { w, h } in page pixels; reopen(): opens the event stream again; end(): the hand-off is over.

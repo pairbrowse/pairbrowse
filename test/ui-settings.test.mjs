@@ -679,6 +679,24 @@ both({ fixtures: { ...fixtures, config: { ...fixtures.config, away: { on: false,
   assert.deepEqual(errors, []);
 });
 
+// 13b. The public hand-off link (spec server-mode step 21b): with a ready channel and no private
+// route, a line under the switch offers it, its exposure in one sentence; a click writes POST
+// config { publicLink: true }, and the line then turns it off. A private route keeps it out of sight.
+both({ fixtures: { ...fixtures, config: { ...fixtures.config, away: { on: true, server: false, ready: true, publicLink: false, privateRoute: false } } }, viewport: VIEW }, async ({ page, helper, until, inPage, errors }) => {
+  await until("the offer", () => document.querySelector("#away .away-offer") && !document.querySelector("#away .away-offer").hidden);
+  assert.match(await inPage(() => document.querySelector("#away .away-offer").textContent), /free relay \(Cloudflare\) carries that one tab to whoever opens the link first/);
+  await page.click("#away .away-offer button");
+  await posted(helper, page, "the public link", "config", { publicLink: true });
+  await until("on", () => /^Public link on/.test(document.querySelector("#away .away-offer").textContent) && /Stop the public link/.test(document.querySelector("#away .away-offer button").textContent));
+  // A private route set, the link off: no offer.
+  helper.push("config", { ...helper.fixtures.config, away: { on: true, server: false, ready: true, publicLink: false, privateRoute: true } });
+  await until("no offer", () => document.querySelector("#away .away-offer").hidden);
+  // On a server, without a private route: the same offer.
+  helper.push("config", { ...helper.fixtures.config, away: { on: false, server: true, ready: true, publicLink: false, privateRoute: false } });
+  await until("offered on a server", () => !document.querySelector("#away .away-offer").hidden);
+  assert.deepEqual(errors, []);
+});
+
 // 14. Network (spec server-mode C14): the section renders the helper's proxies, the default and
 // each session's choice; add and edit write POST network with the password only as typed (the
 // field is write-only: emptied after each save or test, the row says "saved", never the value);

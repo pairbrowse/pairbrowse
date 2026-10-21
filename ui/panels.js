@@ -268,31 +268,59 @@ export function profilePanel(base) {
 // handoff.away), and only with a channel set up (the line says so if none is); on a server always
 // on, and not a switch there. btn: a role="switch" button; note: its line; base(): the live view
 // address (null: not yet). Real clicks only. Returns draw(away), with config.json's away
-// ({ on, server, ready }; anything else: an older helper, the switch stays off and disabled).
+// ({ on, server, ready, publicLink, privateRoute }; anything else: an older helper, the switch
+// stays off and disabled).
+// The public link (step 21b, handoff.publicLink): with a channel set up and no private route (no
+// inviteBaseUrl, so a phone elsewhere can't reach the link), a line under the switch offers it, its
+// exposure in one sentence; once on, the same line says so and turns it off. On a server too.
 export const AWAY_WORDS = {
   server: "This browser runs on a server: steps handed to you always go to your phone.",
   none: "Set up a hand-off channel first (handoff in config.json), then turn this on.",
   on: "On: steps handed to you also go to your phone. They stay here too.",
   off: "Off: steps handed to you stay in this window.",
 };
+export const PUBLIC_WORDS = {
+  offer: "Away from this network, the link needs a public address: while a step is handed over, a free relay (Cloudflare) carries that one tab to whoever opens the link first, until it ends.",
+  on: "Public link on: while a step is handed over, its link works from anywhere through a free relay (Cloudflare).",
+  turnOn: "Use a public link",
+  turnOff: "Stop the public link",
+};
 export function awaySwitch(btn, note, base) {
   let st = null;
   const say = (text, kind = "") => { note.textContent = text; note.dataset.kind = kind; };
+  // The public link's line, under the switch's own.
+  const pubText = el("span");
+  const pubBtn = el("button", { className: "mini", type: "button" });
+  const pub = el("small", { className: "away-offer", hidden: true }, pubText, " ", pubBtn);
+  note.after(pub);
   function draw(away) {
     st = away && typeof away === "object" && typeof away.on === "boolean" ? away : null;
     const on = !!st && (st.server === true || st.on);
     btn.setAttribute("aria-checked", String(on));
     btn.disabled = !st || st.server === true || (!st.on && st.ready !== true);
     say(!st ? "" : st.server === true ? AWAY_WORDS.server : st.ready !== true ? AWAY_WORDS.none : on ? AWAY_WORDS.on : AWAY_WORDS.off);
+    const pubOn = st?.publicLink === true;
+    pub.hidden = !st || (!pubOn && (st.ready !== true || st.privateRoute === true));
+    pubText.textContent = pubOn ? PUBLIC_WORDS.on : PUBLIC_WORDS.offer;
+    pubBtn.textContent = pubOn ? PUBLIC_WORDS.turnOff : PUBLIC_WORDS.turnOn;
+    pubBtn.disabled = false;
   }
-  btn.addEventListener("click", async (ev) => {
-    if (!ev.isTrusted || !st || btn.disabled || !base()) return;
-    const was = st;
-    btn.disabled = true;
-    const r = await postJson(base() + "config", { away: !st.on }).then(async (x) => ({ ok: x.ok, body: await x.json().catch(() => null) }), () => null);
+  // One setting posted; the answer's away drawn, or the error said.
+  async function post(body, was) {
+    const r = await postJson(base() + "config", body).then(async (x) => ({ ok: x.ok, body: await x.json().catch(() => null) }), () => null);
     if (r?.ok && r.body?.away) return draw(r.body.away);
     draw(was);
     say(r?.body?.error ? String(r.body.error) : UNREACHABLE_RETRY, "error");
+  }
+  btn.addEventListener("click", async (ev) => {
+    if (!ev.isTrusted || !st || btn.disabled || !base()) return;
+    btn.disabled = true;
+    await post({ away: !st.on }, st);
+  });
+  pubBtn.addEventListener("click", async (ev) => {
+    if (!ev.isTrusted || !st || pubBtn.disabled || !base()) return;
+    pubBtn.disabled = true;
+    await post({ publicLink: st.publicLink !== true }, st);
   });
   return { draw };
 }

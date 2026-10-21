@@ -6,7 +6,7 @@ import { startLiveView, createInvites, liveViewHostsFrom, inviteBaseFrom } from 
 import { roleOf } from "../liveview/invites.mjs";
 import { createApprovals, encodeJoinCode, cleanName } from "../sharing/join.mjs";
 import { savedName, saveParticipantName, paths } from "../paths.mjs";
-import { readJson, writeJsonAtomic } from "../util.mjs";
+import { readJson, writeJsonAtomic, within } from "../util.mjs";
 import { rmSync } from "node:fs";
 import { adoptTunnel, helperAlive } from "../tunnels/quick.mjs";
 import { randomBytes } from "node:crypto";
@@ -14,6 +14,8 @@ import { createDevShare, devAddress, validPort, DEV_PORTS_MAX } from "../sharing
 import { where } from "./where.mjs";
 import { createTunnelPool } from "./tunnel-pool.mjs";
 
+// How long a hand-off link waits for its public address (step 21b) before going out on the private route.
+export const HANDOFF_TUNNEL_MS = 45_000;
 const formatTime = (t) => new Date(t).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
 
 // host: the host's name. view: what a new live view starts with ({ getContext, currentUrl,
@@ -23,7 +25,9 @@ const formatTime = (t) => new Date(t).toLocaleString("en-GB", { dateStyle: "medi
 // next result. joinAlert(entry): tells the user someone asks to join (the bottom bar in their tab
 // or a notification, one at a time: daemon/joinprompt.mjs).
 // startLive: starts the live view (tests pass a stand-in).
-export function createSharing({ config, log, host, view, notify, hostNote, joinAlert = () => {}, startLive = startLiveView }) {
+// startHandoff(port): the hand-off tunnel's start (tests; tunnel-pool.mjs). handoffStopMs: how long
+// after the last hand-off ends its tunnel stops (tests).
+export function createSharing({ config, log, host, view, notify, hostNote, joinAlert = () => {}, startLive = startLiveView, startHandoff = null, handoffStopMs = 3000 }) {
   let liveView = null;
   // Invite links last as long as the helper (the live view itself restarts with the browser).
   const invites = createInvites();
@@ -35,7 +39,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
   for (const p of inviteProblems) log(p);
 
   // The sharing tunnels (daemon/tunnel-pool.mjs): tun.pool, tun.wanted, tun.guestPortWanted and its functions.
-  const tun = createTunnelPool({ config, log, hostNote, save: () => save() });
+  const tun = createTunnelPool({ config, log, hostNote, save: () => save(), startHandoff });
 
   // Dev servers shared with joiners (devshare.mjs): each with its own tunnel, ended with the
   // last join code, revoke_all, or the helper.
@@ -125,7 +129,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
       timeline: view.timeline, mask: view.mask, layoutDefaults: view.layoutDefaults, settings: view.settings, reporter: view.reporter || null, clickApprovals: view.clickApprovals || null,
       sessionOps: view.sessionOps || null, outlines: view.outlines || null, tools: view.tools || null, capture: view.capture || null, covers: view.covers || null,
       onPagesKey: view.onPagesKey || (() => {}), onPersonInput: view.onPersonInput || (() => {}), activityLog: view.activityLog || null,
-      grants: view.grants || null,
+      grants: view.grants || null, publicHost: () => tun.handoffHost(), publicShared: () => tun.handoffShared(),
     });
     await restoring;
     // Keep the sharing tunnel's port when the live view restarts with the browser.
@@ -153,12 +157,43 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
   // invite links reach it (inviteBaseUrl on a liveViewHosts name, else loopback, which a phone
   // reaches through the person's SSH tunnel), never the join-code port. Its new tabs are watched
   // from now on (a sign-in pop-up joins the hand-off). null when the live view can't start.
+  // With handoff.publicLink (step 21b, U2): the hand-off tunnel's public address instead, started
+  // now if it isn't up (at most HANDOFF_TUNNEL_MS), which serves the grant's routes alone
+  // (liveview/public-turn.mjs). Answers the link, or { link, privateOnly: true } when the public
+  // address couldn't start, so the message says the link works only on the private route (the step
+  // stays doable in the window either way).
   async function handoffLink(key) {
     if (typeof key !== "string" || !/^[0-9a-f]{64}$/.test(key)) return null;
     let lv;
     try { lv = await ensureLiveView(); } catch (e) { log(`hand-off link: ${e?.message || e}`); return null; }
     lv.watchGrants?.();
-    return `${inviteBase || `http://127.0.0.1:${new URL(lv.url).port}`}/${key}/`;
+    const link = `${inviteBase || `http://127.0.0.1:${new URL(lv.url).port}`}/${key}/`;
+    if (config.handoff?.publicLink !== true) return link;
+    let t = null, failed = false;
+    try { t = await within(HANDOFF_TUNNEL_MS, tun.ensureHandoff(lv.guestPort)); } catch (e) { failed = true; log(`hand-off link: the public address didn't start (${e?.message || e})`); }
+    // Not up: a start still under way is called off (it stops as soon as it is up), so no public
+    // address serves this hand-off unannounced.
+    if (!t?.url) { if (!failed) log("hand-off link: the public address didn't start in time"); tun.stopHandoff(); return { link, privateOnly: true }; }
+    return `${t.url}/${key}/`;
+  }
+  // The hand-off tunnel stops once no hand-off is open (a moment after the last ends, so its
+  // stream hears why it ended); nothing of this computer stays reachable between hand-offs.
+  let handoffStop = null;
+  function stopHandoffSoon() {
+    clearTimeout(handoffStop);
+    handoffStop = setTimeout(() => { handoffStop = null; if (!view.grants?.open().length) tun.stopHandoff(); }, handoffStopMs);
+    handoffStop.unref?.();
+  }
+  view.grants?.onEnd?.(() => { if (!view.grants.open().length) stopHandoffSoon(); });
+  // The public link turned off (Settings: "Stop the public link", config.handoff.publicLink false):
+  // its tunnel stops now, open hand-offs or not, so the public address is gone at once; an open
+  // hand-off stays doable in the window (and on the private route), and its reminder carries the
+  // private link.
+  function publicLinkChanged() {
+    if (config.handoff?.publicLink === true) return;
+    clearTimeout(handoffStop); handoffStop = null;
+    if (tun.handoffHost()) log("hand-off link: the public link was turned off; its address stops now");
+    tun.stopHandoff();
   }
 
   // pairbrowse_liveview. Returns { text }.
@@ -408,13 +443,16 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
   }
 
   // On shutdown: the join tunnel and every shared dev server.
-  const stopAll = () => { tun.stopTunnel(); devShare.stopAll(); clearInterval(devTimer); };
+  const stopAll = () => { tun.stopTunnel(); tun.stopHandoff(); devShare.stopAll(); clearInterval(devTimer); };
   // The helper is going away but sharing isn't over (a restart): codes, yeses and tunnels stay
   // for its next run. Dev servers' tunnels end (sharing one again is a click). A tunnel kept only
   // in case of a new code (no code out: releaseTunnel) ends now, keeper and all: the idle keep is
   // for a running helper, never for processes left behind one.
-  const suspend = () => { if (!tun.wanted) tun.stopTunnel(); save(); devShare.stopAll(); clearInterval(devTimer); };
+  const suspend = () => { if (!tun.wanted) tun.stopTunnel(); tun.stopHandoff(); save(); devShare.stopAll(); clearInterval(devTimer); };
   // The host ended it (closed the browser window): every code, yes and tunnel, and the saved state.
   const endAll = () => { invites.revokeAll(); stopAll(); rmSync(stateFile, { force: true }); };
-  return { approvals, liveView: () => liveView, ensureLiveView, closeLiveView, liveViewCommand, handoffLink, inviteCommand, stopTunnel: stopAll, suspend, endAll, devPanel };
+  // Whether hand-off links have a private route of their own (inviteBaseUrl on a liveViewHosts
+  // name): without one the Away switch offers the public link (step 21b).
+  const privateRoute = () => !!inviteBase;
+  return { approvals, liveView: () => liveView, ensureLiveView, closeLiveView, liveViewCommand, handoffLink, publicLinkChanged, privateRoute, handoffHost: () => tun.handoffHost(), inviteCommand, stopTunnel: stopAll, suspend, endAll, devPanel };
 }

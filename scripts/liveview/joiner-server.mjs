@@ -46,7 +46,9 @@ const joinerOf = (req) => ({
 // live: the coordinator's { tabsFor(j), openStream(j, conn), applyTabs(body, j, heardAt), pointersFor(body, j), say(body, j), screen(body, j),
 // stopScreens(j), changed, approval(body, j) } (changed: the participant list changed; screen: shared browser mode, invites with mode "shared" only;
 // approval: an answer to one of the host's approval cards, the approve role only, its role read again there).
-export function createJoinerServer({ key, invites, approvals, joiners, tunnelHost, live, onJoinRequest, log }) {
+// publicTurn: a hand-off link's public address (liveview/public-turn.mjs), asked first; it answers
+// only requests on the hand-off tunnel's name or with a live grant's key, and leaves the rest here.
+export function createJoinerServer({ key, invites, approvals, joiners, tunnelHost, live, onJoinRequest, log, publicTurn = null }) {
   // Answers to the tunnels' public names (tunnelHost(): one or a list), or to loopback
   // (cloudflared may pass either).
   const joinerHostOk = (host) => {
@@ -175,6 +177,7 @@ export function createJoinerServer({ key, invites, approvals, joiners, tunnelHos
   const server = http.createServer(async (req, res) => {
     const answer = (code, body = {}) => { res.writeHead(code, HEADERS); res.end(JSON.stringify(body)); };
     try {
+      if (publicTurn && await publicTurn.request(req, res)) return;
       const c = check(req);
       if (!c.invite) return answer(c.code, c.body);
       const { invite, route, who } = c;
@@ -200,6 +203,7 @@ export function createJoinerServer({ key, invites, approvals, joiners, tunnelHos
   // joiner's changes come back on it, each answered with its request number.
   server.on("upgrade", (req, socket, head) => {
     try {
+      if (publicTurn?.upgrade(req, socket, head)) return;
       const c = check(req);
       if (!c.invite) return refuseUpgrade(socket, c.code, c.body);
       if (c.route !== "events") return refuseUpgrade(socket, 404, { error: "Unknown request." });

@@ -5,6 +5,7 @@ import { hiddenFromLiveView } from "../../../ui/urls.js";
 import { PAGE_KINDS as PAGE_KIND_LIST } from "../../../ui/vocab.js";
 import { serveViewer, serveAsset, json, plain, sse, readJsonBody, NOT_JSON, BODY_MAX, SECURITY_HEADERS } from "../http.mjs";
 import { withoutIcons } from "../tabs.mjs";
+import { publicCsp } from "../public-turn.mjs";
 
 const THUMB_QUALITY = { min: 20, max: 80, default: 50 };
 const STATE_ACTIVITY = 4; // activity lines in state.json
@@ -142,8 +143,10 @@ export function createViewerRoutes(lv) {
   }
 
   return [
-    // The page; a hand-off link before its tap (role redeem) gets its landing page instead.
-    { method: "GET", path: "", right: "page", handler: ({ req, res, role, invite }) => (role === "redeem" ? lv.turn.landing(req, res, invite) : serveViewer(req, res, { role })) },
+    // The page; a hand-off link before its tap (role redeem) gets its landing page instead. On a
+    // hand-off's public address (pub: its host, liveview/public-turn.mjs) the stream is a WebSocket.
+    { method: "GET", path: "", right: "page", handler: ({ req, res, role, invite, pub }) => (role === "redeem" ? lv.turn.landing(req, res, invite)
+      : pub ? serveViewer(req, res, { role, stream: "ws" }, { csp: publicCsp(pub) }) : serveViewer(req, res, { role })) },
     { method: "GET", path: "assets", right: "page", handler: ({ res, rest }) => serveAsset(res, rest) },
     { method: "GET", path: "events", right: "events", handler: events },
     // A small still of the page and a status summary, for panes that can't hold a live stream

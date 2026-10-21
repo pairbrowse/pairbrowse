@@ -110,19 +110,19 @@ async function relay(port) {
 
 // A live view with a grant on the first tab (a payment on shop.example), frames flowing from
 // whichever tab is shown, and a phone in the runtime's browser.
-async function phone(t, { action = "payment" } = {}) {
+async function phone(t, { action = "payment", publicHost = null } = {}) {
   const tabs = fakeTabs(["https://shop.example/pay", "https://other.example/"]);
   const audit = createAudit({ file: join(mkdtempSync(join(tmpdir(), "pb-lvmobile-")), "audit.jsonl") });
   const grants = createGrants({ audit });
   const invites = createInvites();
-  const view = await startLiveView({ getContext: async () => tabs.ctx, currentUrl: async () => tabs.pages[1].url(), invites, grants, covers: { want: () => {}, picture: async (_p, img) => img } });
+  const view = await startLiveView({ getContext: async () => tabs.ctx, currentUrl: async () => tabs.pages[1].url(), invites, grants, covers: { want: () => {}, picture: async (_p, img) => img }, publicHost: () => publicHost });
   view.setSession({ name: "default", where: "Local" });
   const g = grants.mint({ session: "default", page: tabs.pages[0], action });
   const frames = setInterval(() => {
     const s = tabs.sessions.at(-1);
     s?.emit("Page.screencastFrame", { data: PIXEL, metadata: { deviceWidth: FRAME.w, deviceHeight: FRAME.h }, sessionId: 1 });
   }, 150);
-  const link = await relay(view.port);
+  const link = await relay(publicHost ? view.guestPort : view.port); // a public link: the hand-off tunnel's port (step 21b)
   const browser = await patchright(runtime).chromium.launch();
   const context = await browser.newContext(PHONE);
   const page = await context.newPage();
@@ -314,6 +314,30 @@ test("setOffline for 20 s then back: the stream reconnects with the same view ke
   assert.ok(await until(() => typedIn(s.input()) === "123456"), typedIn(s.input()));
   await wait(1500);
   assert.equal(typedIn(s.input()), "123456", "nothing repeated");
+  assert.deepEqual(s.errors, []);
+});
+
+// A hand-off link from anywhere (step 21b): the viewer on the hand-off tunnel's port, its stream over
+// a WebSocket (a Quick Tunnel carries no server-sent events): live, taps reach the tab, a dropped
+// link reconnects with the same view key, and Done ends it.
+test("on the public address the viewer's stream is a WebSocket: live, a tap reaches the tab, a drop reconnects, Done ends it", { skip: !runtime, timeout: 90_000 }, async (t) => {
+  const s = await phone(t, { publicHost: "words-like-these.trycloudflare.com" });
+  await s.takeOver();
+  assert.equal(await s.page.evaluate(() => document.body.dataset.stream), "ws");
+  const p = await s.at(640, 400);
+  await s.page.touchscreen.tap(p.x, p.y);
+  assert.ok(await until(() => mouseCalls(s.input()).length >= 3), "the tap reached the tab");
+  s.cut(true);
+  await s.page.waitForSelector('#turn-conn:not([data-s="live"])', { timeout: 10_000 });
+  await wait(1000);
+  s.cut(false);
+  await s.page.waitForSelector('#turn-conn[data-s="live"]', { timeout: 70_000 });
+  const before = mouseCalls(s.input()).length;
+  await s.page.touchscreen.tap(p.x, p.y);
+  assert.ok(await until(() => mouseCalls(s.input()).length >= before + 3, 10_000), "input after the reconnect");
+  await s.page.tap("#turn-done");
+  assert.ok(await until(() => !s.grants.open().length, 10_000), "Done ended the hand-off");
+  await s.page.waitForFunction(() => document.getElementById("overlay-title")?.textContent === "This hand-off ended", null, { timeout: 10_000 });
   assert.deepEqual(s.errors, []);
 });
 

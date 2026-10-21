@@ -479,7 +479,7 @@ const sharing = createSharing({
     // The browser's Settings page: which browser runs, the timeline, the docks' default layout
     // (liveview/settings.mjs; written into config.json and the running config).
     settings: createSettings({ config, choiceConfig: () => context.choiceConfig(), native: !!pinnedAsset(), settingsSection: () => !!context.nextShell().settingsSection, browserInUse: () => context.browserInUse(),
-      away: () => ({ server: context.isServer(), enabled: config.handoff?.enabled === true, channels: notifier.usable().length }), secrets, log }), // the Away switch (decision 8); secrets: the Network section's (liveview/network.mjs)
+      away: () => ({ server: context.isServer(), enabled: config.handoff?.enabled === true, channels: notifier.usable().length, privateRoute: sharing.privateRoute() }), secrets, log, onChange: () => sharing.publicLinkChanged() }), // the Away switch (decision 8) and its public link offer (step 21b; turned off, its tunnel stops at once); secrets: the Network section's (liveview/network.mjs)
     // Report a problem: relayed to config.json's reportUrl on the person's click (liveview/report.mjs).
     reporter: createReporter({ url: () => config.reportUrl, mask: output.mask, log }),
     // Refs go stale when a person there did something (elsewhere() says so) or a tab changed there;

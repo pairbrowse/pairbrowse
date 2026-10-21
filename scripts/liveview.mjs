@@ -41,6 +41,7 @@ import { createViewerRoutes } from "./liveview/routes/viewer.mjs";
 import { createTurnRoutes } from "./liveview/routes/turn.mjs";
 import { createNetworkRoutes } from "./liveview/routes/network.mjs";
 import { createTurnGate, TURN_ROLES } from "./liveview/grants.mjs";
+import { createPublicTurn } from "./liveview/public-turn.mjs";
 import { NO_CAPTURE_SHARE, targetIdOf } from "./daemon/capture.mjs";
 import { STRICT_SHARE } from "./daemon/screenshare.mjs";
 import { createActivityLog } from "./daemon/activitylog.mjs";
@@ -126,8 +127,8 @@ const sharedDefaults = { readForm: async () => null, applyForm: async () => {}, 
 // passed its checks, but the pages' own reports (OWN_REPORTS) and the live view's input (replayed
 // into a tab, heard there through onHumanInput).
 // covers: card fields covered in what guests see (liveview/guest-frames.mjs), or null.
-// grants: hand-off grants (daemon/grants.mjs; their keys, landing page and stream: liveview/grants.mjs), or null.
-export async function startLiveView({ grants = null, covers = null, activityLog = null, reporter = null, tools = null, onPagesKey = () => {}, onPersonInput = () => {}, sessionOps = null, outlines = null, mask = (t) => t, timeline = null, layoutDefaults = null, settings = null, extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
+// grants: hand-off grants (daemon/grants.mjs; their keys, landing page and stream: liveview/grants.mjs), or null. publicHost(): the hand-off tunnel's public name, or null; publicShared(): join codes use that name too (liveview/public-turn.mjs).
+export async function startLiveView({ grants = null, publicHost = () => null, publicShared = () => false, covers = null, activityLog = null, reporter = null, tools = null, onPagesKey = () => {}, onPersonInput = () => {}, sessionOps = null, outlines = null, mask = (t) => t, timeline = null, layoutDefaults = null, settings = null, extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
   guestPort: wantGuestPort = 0, tunnelHost = () => null, approvals = createApprovals(), onJoinRequest = () => {}, tabMeta = () => ({}), secretDomains = () => [], onJoinerPerson = () => {}, onJoinerActivity = () => {}, shared: sharedGiven = {},
   onPause = () => ({}), pauseState = () => null, onRecord = async () => ({}), recordState = () => null, picker = null, devShare = null, devPanel = null, joinHost = null, relays = () => [], screens = null, remoteAgents = null, onReplay = () => () => {}, journal = null, makeInvite = null,
   clickApprovals = null, capture = null }) {
@@ -636,7 +637,7 @@ export async function startLiveView({ grants = null, covers = null, activityLog 
     push.changed();
   }
   const joinerServer = createJoinerServer({
-    key, invites, approvals, joiners, tunnelHost, onJoinRequest, log,
+    key, invites, approvals, joiners, tunnelHost, onJoinRequest, log, publicTurn: createPublicTurn({ gate: turnGate, routes: ROUTES, publicHost, publicShared, log }), // a hand-off link's public address: its routes alone
     live: { tabsFor, applyTabs, screen, agent: agentRelay.remoteAgent, file: agentRelay.remoteFile,
       stopScreens: stopJoiner, openStream: (j, conn) => { watchPages(); return push.open(j, conn).then(() => { agentRelay.resend(joinerKey(j)); approvalShare?.opened(j); }).catch((e) => log("push", e?.message || e)); },
       approval: (body, j) => (approvalShare ? approvalShare.answer(body, j) : { code: 404, body: { error: "Unknown request." } }), pointersFor: (body, j) => push.fromJoiner(body, j), say: (body, j) => shared.onJoinerSay(body, j, joinerKey(j)), changed: () => { collaborationChanged(); push.changed(); } },

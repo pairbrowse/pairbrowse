@@ -95,7 +95,8 @@ const entryOf = (e) => (e && typeof e === "object" && /^[0-9a-f]{8}$/.test(e.id)
 // (handoffSends with server mode). handoffs: the Tools tab's hand-offs (toolstab.mjs). journal: the
 // goal log. saveTabs(): the session's tabs written now. hostNote(text): for the host's agent's next
 // result. audit: the trail (audit.mjs) or null. hud: the badge. sessionName(): the session open now.
-// linkFor(redeemKey): the hand-off link (the live view's address), or null. agentBy(p, color): an
+// linkFor(redeemKey): the hand-off link (the live view's address, or the public one: step 21b), or
+// { link, privateOnly: true } when the public link couldn't start, or null. agentBy(p, color): an
 // agent's { label, color } for the Tools tab. log(line): ids and words only. turnMs(): a grant's
 // life in ms for tests (PAIRBROWSE_TEST_TURN_MS; its reminder at two thirds), 0 for config's minutes.
 // timers, now: tests (now: the wall clock grants read too). turnFile(session): the session's
@@ -178,15 +179,23 @@ export function createYourTurn({ config, grants, notifier, sends, handoffs, jour
     return handoffTimes({ grantMinutes: Number(h.grantMinutes) || 15, remindMinutes: Number(h.remindMinutes) || 10 }).remindMinutes * MINUTE_MS;
   };
 
+  // The link for a redeem key: { link (or null), privateOnly } (linkFor answers a link, or that
+  // with privateOnly when the public link couldn't start, step 21b).
+  const linkOf = async (key) => {
+    const got = await Promise.resolve().then(() => linkFor(key)).catch(() => null);
+    if (typeof got === "string") return { link: got, privateOnly: false };
+    return { link: typeof got?.link === "string" ? got.link : null, privateOnly: got?.privateOnly === true && typeof got?.link === "string" };
+  };
+
   // The one reminder: the link again while it is unused, else "opened already".
   async function remind(t) {
     if (!turns.has(t.id) || t.reminded) return;
     t.reminded = true;
     if (kept.has(t.id)) { kept.get(t.id).entry.reminded = true; persist(t.session); }
     const key = grants.redeemKey(t.id);
-    const link = key ? await Promise.resolve().then(() => linkFor(key)).catch(() => null) : null;
+    const { link, privateOnly } = key ? await linkOf(key) : { link: null, privateOnly: false };
     if (!turns.has(t.id)) return;
-    const r = await send({ kind: "reminder", id: t.id, action: t.action, host: t.host, link, expiresAt: t.expiresAt });
+    const r = await send({ kind: "reminder", id: t.id, action: t.action, host: t.host, link, expiresAt: t.expiresAt, ...(privateOnly ? { privateOnly } : {}) });
     audited("reminded", t, r, [...(key ? [] : ["already-opened"]), ...(key && (!link || r?.withheld?.length) ? ["no-link"] : [])]);
     log(`hand-off ${t.id}: reminder ${r?.sent?.length ? "sent" : "not sent"}`);
   }
@@ -223,15 +232,17 @@ export function createYourTurn({ config, grants, notifier, sends, handoffs, jour
       t.timer = timers.set(() => { remind(t).catch((e) => log(`hand-off reminder: ${e?.message || e}`)); }, Math.max(0, Math.min(remindMs(), g.expiresAt - now() - 1000)));
       t.timer?.unref?.();
     }
-    const link = await Promise.resolve().then(() => linkFor(g.redeemKey)).catch(() => null);
-    const message = { kind: "turn", id: t.id, action, host: t.host, link, expiresAt: t.expiresAt, ...(expiresAt ? { reason: "browser-restarted" } : {}) };
-    const sending = send(message).then((r) => {
+    // The link (a public one may take a while to start, step 21b) and the message, all inside the
+    // result's wait: past REPORT_MS the result says the message is on its way.
+    const sending = linkOf(g.redeemKey).then(({ link, privateOnly }) => send({ kind: "turn", id: t.id, action, host: t.host, link, expiresAt: t.expiresAt,
+      ...(expiresAt ? { reason: "browser-restarted" } : {}), ...(privateOnly ? { privateOnly } : {}) }).then((r) => ({ r, link })));
+    const recorded = sending.then(({ r, link }) => {
       t.sent = typesSent(r);
       if (kept.has(t.id)) { kept.get(t.id).entry.sent = [...t.sent]; persist(t.session); }
       audited("notified", t, r, !link || r?.withheld?.length ? ["no-link"] : []);
       return r;
     });
-    const r = await within(REPORT_MS, sending);
+    const r = await within(REPORT_MS, recorded);
     return { id: t.id, line: sentLine(t, r) };
   }
 

@@ -6,7 +6,9 @@ import { tunnelConfig } from "../tunnels/config.mjs";
 import { startOwnTunnel } from "../tunnels/start.mjs";
 import { testMs, testValue } from "../testenv.mjs";
 
-export function createTunnelPool({ config, log, hostNote, save }) {
+// startHandoff(port): starts the hand-off's own tunnel (tests pass a stand-in; by default as the
+// pool's: Quick Tunnel, the user's own, or the guest port itself under the test switch).
+export function createTunnelPool({ config, log, hostNote, save, startHandoff = null }) {
   // Quick Tunnels to the live view's guest port (which takes join code keys and nothing else),
   // while join codes are out: two at once. Codes carry the first's address; approved joiners learn
   // every address (sharing/join-client.mjs), so when one tunnel goes down their PairBrowse moves to the other
@@ -31,6 +33,9 @@ export function createTunnelPool({ config, log, hostNote, save }) {
   // Which way sharing goes, for the user and the agent ("your own ngrok address share.example.com").
   const via = () => (tunnelSpec && own ? tunnelSpec.describe(tun.pool[0]?.host || "") : "a free relay");
   let generation = 0; // bumped by stopTunnel
+  // The hand-off's own tunnel (ensureHandoff, below) and the one its links are on now (it or a
+  // shared pool tunnel).
+  let handoff = null, handoffStarting = null, handoffGen = 0, handoffUsing = null;
   const alive = (t, port) => t.port === port && !tunnelEnded(t);
 
   // Cloudflare lets a computer open only so many Quick Tunnels in a while: when the last code
@@ -47,6 +52,9 @@ export function createTunnelPool({ config, log, hostNote, save }) {
     idleTimer.unref?.();
     if (tun.pool.length) log(`sharing tunnel kept for ${TUNNEL_IDLE_MS / 60_000} min in case of a new code`);
   }
+  // A pool tunnel an open hand-off's link is on (the user's own tunnel, shared: ensureHandoff) leaves
+  // the pool instead of stopping, and is the hand-off's own from then on: it stops with the last
+  // hand-off (stopHandoff), never with the idle keep or the last code while a hand-off is open.
   function stopTunnel() {
     tun.wanted = false;
     clearTimeout(idleTimer); idleTimer = null;
@@ -54,8 +62,10 @@ export function createTunnelPool({ config, log, hostNote, save }) {
     generation++; // a tunnel still starting when this runs is stopped as soon as it's up
     const was = tun.pool;
     tun.pool = [];
-    for (const t of was) { t.unwatch?.(); try { t.stop(); } catch {} }
-    if (was.length) log("sharing tunnels stopped");
+    const keep = handoffUsing && was.includes(handoffUsing) && !tunnelEnded(handoffUsing) ? handoffUsing : null;
+    for (const t of was) { t.unwatch?.(); if (t !== keep) try { t.stop(); } catch {} }
+    if (keep) { handoff = keep; if (keep.child || keep.adopted) onTunnelExit(keep, () => { if (handoff === keep) handoff = null; if (handoffUsing === keep) handoffUsing = null; }); log("sharing tunnel kept for the open hand-off"); }
+    if (was.length > (keep ? 1 : 0)) log("sharing tunnels stopped");
   }
 
   async function startOne(port) {
@@ -120,11 +130,52 @@ export function createTunnelPool({ config, log, hostNote, save }) {
     return filling;
   }
 
+  // A hand-off link from anywhere (spec server-mode step 21b, handoff.publicLink): a tunnel of its
+  // own to the guest port, up only while a hand-off is open. Started by the first link made for it
+  // (ensureHandoff), stopped when the last hand-off ends (stopHandoff), never kept idle the way the
+  // pool's is and never kept across a restart of the helper (a keeper left behind a helper that
+  // died stops once no helper beats, KEEP_GRACE_MS). Its public name serves a grant's routes alone
+  // (liveview/public-turn.mjs). With the user's own tunnel (one address, one process) a live pool
+  // tunnel is used as it is, and a hand-off's tunnel is taken into the pool when a join code needs one;
+  // on that shared name join codes keep working (handoffShared), and the pool lets it go back to the
+  // hand-off rather than stop it while a hand-off is open (stopTunnel).
+  async function ensureHandoff(port) {
+    if (handoffUsing && alive(handoffUsing, port)) return handoffUsing;
+    const shared = own ? tun.pool.find((t) => alive(t, port)) : null;
+    if (shared) return (handoffUsing = shared);
+    handoffStarting ??= (async () => {
+      const gen = handoffGen;
+      const t = await (startHandoff ? startHandoff(port) : direct ? { url: `http://127.0.0.1:${port}`, host: `127.0.0.1:${port}`, stop() {} } : own ? startOwnTunnel(tunnelSpec, port, { log }) : startQuickTunnel(port, { log }));
+      t.port = port;
+      if (gen !== handoffGen) { try { t.stop(); } catch {} throw new Error("the hand-off ended while its public address was starting"); }
+      handoff = t;
+      if (t.child || t.adopted) onTunnelExit(t, () => { if (handoff === t) handoff = null; if (handoffUsing === t) handoffUsing = null; });
+      log(`hand-off tunnel up: ${t.host}`);
+      return (handoffUsing = t);
+    })().finally(() => { handoffStarting = null; });
+    return handoffStarting;
+  }
+  function stopHandoff() {
+    handoffGen++;
+    const t = handoff;
+    handoff = null; handoffUsing = null;
+    if (!t || tun.pool.includes(t)) return; // taken into the pool: join codes use it
+    try { t.stop(); } catch {}
+    log("hand-off tunnel stopped");
+  }
+  // The public name a hand-off link is on now, or null.
+  const handoffHost = () => (handoffUsing && !tunnelEnded(handoffUsing) ? handoffUsing.host : null);
+  // Whether that name is the join codes' too (the user's own tunnel, shared with the pool): then a
+  // request on it that no grant's key names is the join server's (liveview/public-turn.mjs).
+  const handoffShared = () => !!handoffUsing && tun.pool.includes(handoffUsing);
+
   // The tunnel new codes carry: the first live one (started now if there's none).
   async function ensureTunnel(live) {
     tun.wanted = true;
     clearTimeout(idleTimer); idleTimer = null;
     tun.pool = tun.pool.filter((t) => alive(t, live.guestPort));
+    // The user's own tunnel already up for a hand-off: the same one carries the codes.
+    if (own && !tun.pool.length && handoff && alive(handoff, live.guestPort)) tun.pool.unshift(wire(handoff, live.guestPort));
     if (!tun.pool.length) {
       tunnelStarting ??= startOne(live.guestPort).then((t) => { tun.pool.unshift(t); save(); return t; }).finally(() => { tunnelStarting = null; });
       await tunnelStarting;
@@ -135,5 +186,5 @@ export function createTunnelPool({ config, log, hostNote, save }) {
 
   // Read by sharing.mjs: the setting (tunnelSpec, own, pinnedPort, tunnelProblem: a bad one, said
   // by create), the pool's size, and its parts.
-  return Object.assign(tun, { tunnelSpec, own, pinnedPort, tunnelProblem, POOL, via, alive, wire, fill, ensureTunnel, releaseTunnel, stopTunnel });
+  return Object.assign(tun, { tunnelSpec, own, pinnedPort, tunnelProblem, POOL, via, alive, wire, fill, ensureTunnel, releaseTunnel, stopTunnel, ensureHandoff, stopHandoff, handoffHost, handoffShared });
 }

@@ -13,6 +13,7 @@ const canDrive = role !== "watch";
 // are liveview-turn.js, loaded for it alone; the desktop's own input handlers below stand aside.
 const turnView = role === "turn";
 let turnUi = null;
+let socketEvents = null; // a hand-off's public address: the stream over a WebSocket (liveview-turn.js)
 // Only the host resizes the page: an invited viewer's pane never changes it.
 const mayResize = role === "owner";
 if (!canDrive) { stage.setAttribute("aria-label", "Live view of the PairBrowse browser (watch only)"); $("url-input").disabled = true; }
@@ -126,7 +127,7 @@ const handlers = [];
 const on = (event, fn) => { handlers.push([event, fn]); es?.addEventListener(event, (e) => fn(JSON.parse(e.data))); };
 function openStream() {
   if (es || ended) return;
-  es = new EventSource(base + "events");
+  es = socketEvents && document.body.dataset.stream === "ws" ? socketEvents(new URL(base + "events", location.href).href) : new EventSource(base + "events");
   for (const [event, fn] of handlers) es.addEventListener(event, (e) => fn(JSON.parse(e.data)));
   es.onopen = () => { setState("live"); fit(); };
   es.onerror = () => {
@@ -151,7 +152,7 @@ on("turn-ended", endTurn);
 // The turn viewer is loaded before the stream opens, so it hears the stream's first turn event.
 if (turnView) {
   import("./liveview-turn.js")
-    .then((m) => { turnUi = m.startTurn({ base, img, stage, on, frame: () => frame, reopen: openStream, end: endTurn }); openStream(); })
+    .then((m) => { socketEvents = m.socketEvents; turnUi = m.startTurn({ base, img, stage, on, frame: () => frame, reopen: openStream, end: endTurn }); openStream(); })
     .catch(() => setState("closed"));
 } else openStream();
 let hiddenTimer = null;

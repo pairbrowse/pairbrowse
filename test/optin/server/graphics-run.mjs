@@ -19,7 +19,7 @@ import { session } from "../../helpers/live.mjs";
 import { sleep, text, until } from "../../helpers/util.mjs";
 import { browserPid, logCount, logText, pidAlive, processes, sandboxOf, serverHome, signalHelper, startServerHelper } from "../../helpers/server.mjs";
 import { installNativeLinux } from "./native-linux.mjs";
-import { GRAPHICS_PAGE, parseGraphics, servePage } from "./graphics-page.mjs";
+import { GRAPHICS_PAGE, parseGraphics, parseWheel, servePage } from "./graphics-page.mjs";
 import { MEASURING_BUSY } from "../../../scripts/daemon/browser/graphics.mjs";
 import { GRAPHICS_STOP_MS, GRAPHICS_TIMEOUT_MS } from "../../../scripts/native/check.mjs";
 
@@ -84,6 +84,14 @@ try {
 
   const h = await start(home, { PAIRBROWSE_TEST_RELAUNCH_MS: "1000" });
   result.page = await readPage(h, site.url);
+  // The wheel as an agent's scroll turns it: the events a tall page saw after one
+  // pairbrowse_scroll down (whole notches of the platform pages are told about).
+  if (which === "graphics") {
+    await h.tool("browser_navigate", { url: site.wheelUrl });
+    await h.tool("browser_wait_for", { text: "wheel:" });
+    result.scroll = text(await h.tool("pairbrowse_scroll", { direction: "down" }));
+    result.wheel = parseWheel(text(await h.tool("browser_snapshot", {})));
+  }
   result.status = text(await h.tool("pairbrowse_status", { kind: "claude", text: "Checking" }));
   const pid = browserPid(h.daemon.pid);
   result.sandbox = pid ? sandboxOf(pid) : null;

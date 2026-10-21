@@ -8,7 +8,7 @@ import "../helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fc from "fast-check";
-import { graphicsPlan, compatErrors, SOFTWARE_SWITCH, LINUX_REAL, MAC_REAL, GPU_LESS_IDENTITY, identityKeys } from "../../scripts/native/graphics.mjs";
+import { graphicsPlan, compatErrors, SOFTWARE_SWITCH, LINUX_REAL, MAC_REAL, GPU_LESS_IDENTITY, LINUX_IDENTITY, identityKeys, identityFor } from "../../scripts/native/graphics.mjs";
 import { parseSystemInfo } from "../../scripts/native/backend.mjs";
 import { screenBrowserArgs } from "../../scripts/browser-args.mjs";
 import { PAIRBROWSE_ENGINE_KEYS } from "../../scripts/config-schema.mjs";
@@ -33,14 +33,15 @@ const require = fc.option(fc.record({ webgl: fc.constantFrom(null, 1, 2), webgpu
 
 test("for any profile, every set graphics field is applied or named in an error", () => {
   check(fc.property(backend, platform, kind, args, display, screen, measured, require, (requested, os, browserKind, userArgs, xvfb, set, m, req) => {
-    const plan = graphicsPlan({ requested, platform: os, browserKind, measured: m?.backend ?? null, userArgs, display: xvfb, screenSet: !!set, name: "p" });
-    assert.deepEqual(Object.keys(plan).sort(), ["engineKeys", "identity", "refusals", "switches"]);
-    if (plan.refusals.length) assert.deepEqual([plan.switches, plan.engineKeys], [[], {}], "a refused plan applies nothing");
+    const gpuPool = m?.webgl?.available === true; // any bit of the record: a build with the pool switch or without
+    const plan = graphicsPlan({ requested, platform: os, browserKind, measured: m?.backend ?? null, userArgs, display: xvfb, screenSet: !!set, name: "p", gpuPool });
+    assert.deepEqual(Object.keys(plan).sort(), ["engineKeys", "identity", "identitySwitches", "refusals", "switches"]);
+    if (plan.refusals.length) assert.deepEqual([plan.switches, plan.identitySwitches, plan.engineKeys], [[], [], {}], "a refused plan applies nothing");
     for (const r of plan.refusals) assert.ok(typeof r.field === "string" && /^[^\n]+\.$/.test(r.message), r.message);
     assert.deepEqual(screenBrowserArgs(plan.switches, os, { harness: false }), { kept: plan.switches, dropped: [], refused: [] });
     for (const [k, v] of Object.entries(plan.engineKeys)) {
       assert.ok(PAIRBROWSE_ENGINE_KEYS.includes(k), k);
-      assert.ok(typeof v === "number" || typeof v === "boolean", k);
+      assert.ok(typeof v === "number" || typeof v === "boolean" || (k === "platform" && v === "windows"), k);
     }
     // The backend: applied (software's switch, auto's nothing, gpu checked) or refused.
     if (!plan.refusals.length) {
@@ -55,13 +56,18 @@ test("for any profile, every set graphics field is applied or named in an error"
       // none set.
       if (browserKind === "pairbrowse" && os === "linux") {
         const shown = m?.backend?.kind === "software" && requested !== "gpu";
-        assert.equal(plan.identity, shown ? GPU_LESS_IDENTITY.name : null);
+        const identity = shown ? identityFor({ gpuPool }) : null;
+        assert.equal(plan.identity, identity ? identity.name : null);
+        assert.equal(plan.identity, shown ? (gpuPool ? GPU_LESS_IDENTITY.name : LINUX_IDENTITY.name) : null);
+        assert.deepEqual(plan.identitySwitches, identity ? [...identity.switches] : []);
+        assert.equal(plan.engineKeys.platform, identity && identity.platform !== "linux" ? identity.platform : undefined, "the identity's platform, never the build's");
         for (const [k, v] of Object.entries(shown ? identityKeys() : LINUX_REAL)) assert.equal(plan.engineKeys[k], v, k);
         assert.equal(plan.engineKeys.screenWidth, xvfb && !set ? xvfb.width : undefined);
+        if (xvfb && !set) assert.equal(plan.engineKeys.availHeight, xvfb.height - (identity && xvfb.height > 2 * identity.taskbar ? identity.taskbar : 0), "the taskbar off the available height under the identity");
       } else if (browserKind === "pairbrowse" && os === "darwin") {
         // macOS: the host capture's own GPU, only the noise over its pixels off.
         assert.deepEqual(plan.engineKeys, MAC_REAL); assert.equal(plan.identity, null);
-      } else { assert.deepEqual(plan.engineKeys, {}); assert.equal(plan.identity, null); }
+      } else { assert.deepEqual(plan.engineKeys, {}); assert.equal(plan.identity, null); assert.deepEqual(plan.identitySwitches, []); }
     }
     // compatErrors: the plan's refusals and every other set field it can't meet, never thrown.
     const errors = compatErrors({ name: "p", graphics: { backend: requested, require: req }, platform: os, browserKind, measured: m, userArgs, display: xvfb, screen: set });

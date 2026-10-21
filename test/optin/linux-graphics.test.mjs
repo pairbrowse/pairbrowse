@@ -49,6 +49,12 @@ test("Linux without a GPU: backend software, the engine's identity shown in WebG
   assert.equal(p.canvas.first, p.canvas.second, "the canvas scene draws the same pixels twice (noise is per site, stable within it)");
   assert.ok(p.fonts.found.length >= 2, `fonts resolve: ${JSON.stringify(p.fonts)}`);
   assert.deepEqual(p.fonts.controlFound, [], "no made-up font is found");
+  assert.ok(p.fonts.colorEmojiPixels > 0, `emoji draw in colour (the engine pack lists the computer's font folders): ${JSON.stringify(p.fonts)}`);
+  assert.equal(r.validation?.items.find((i) => i.rule === "fonts.emoji")?.status, "matched", "the probe saw colour emoji too");
+  // The wheel: an agent's scroll is whole notches of the identity's platform (Windows: 100 px),
+  // each deltaY paired with wheelDeltaY as a real mouse's, never a pixel-sized event (gap 9).
+  assert.ok(Array.isArray(r.wheel) && r.wheel.length >= 2, `wheel events recorded: ${JSON.stringify(r.wheel)} (${r.scroll})`);
+  for (const [deltaY, wheelDeltaY] of r.wheel) assert.deepEqual([deltaY, wheelDeltaY], [100, -120], `one whole Windows notch: ${JSON.stringify(r.wheel)}`);
   assert.deepEqual([p.screen.width, p.screen.height, p.screen.availHeight], [SCREEN.width, SCREEN.height, SCREEN.height - GPU_LESS_IDENTITY.taskbar], "the screen pages read is the virtual screen, less the identity's taskbar");
   // PairBrowse's own diagnostics stay honest.
   assert.ok(new RegExp(`Graphics: software \\(.+\\), shown as ${NAME}, requested auto, consistent on \\d+\\.\\d+\\.\\d+\\.\\d+`).test(r.status), r.status);

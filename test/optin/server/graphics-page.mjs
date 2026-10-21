@@ -36,7 +36,8 @@ export const GRAPHICS_PAGE = `<!doctype html><title>graphics</title><p id=g>grap
   const width = (f) => { x.font = "72px " + f; return x.measureText("mmmmmmmmmmlli1WQ@#").width; };
   const bases = ["monospace", "serif", "sans-serif"]; const base = bases.map(width);
   const has = (n) => bases.some((b, i) => width('"' + n + '", ' + b) !== base[i]);
-  out.fonts = { found: ["DejaVu Sans", "Liberation Sans", "Noto Sans", "Arial", "Helvetica", "Times New Roman"].filter(has), controlFound: ["PairBrowse Control Sans 7f3a", "Zq Control Mono 4be1"].filter(has) };
+  const emoji = (() => { const c = document.createElement("canvas"); c.width = 48; c.height = 48; const g = c.getContext("2d"); g.font = "32px sans-serif"; g.textBaseline = "top"; g.fillText("\u{1F600}", 4, 4); const d = g.getImageData(0, 0, 48, 48).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 0 && (d[i] !== d[i + 1] || d[i + 1] !== d[i + 2])) n++; return n; })();
+  out.fonts = { found: ["DejaVu Sans", "Liberation Sans", "Noto Sans", "Arial", "Helvetica", "Times New Roman", "Segoe UI", "Verdana"].filter(has), controlFound: ["PairBrowse Control Sans 7f3a", "Zq Control Mono 4be1"].filter(has), colorEmojiPixels: emoji };
   out.screen = { width: screen.width, height: screen.height, availWidth: screen.availWidth, availHeight: screen.availHeight, colorDepth: screen.colorDepth, dpr: devicePixelRatio };
   out.navigator = { platform: navigator.platform, cores: navigator.hardwareConcurrency, memory: navigator.deviceMemory === undefined ? null : navigator.deviceMemory };
   try {
@@ -58,10 +59,25 @@ export const GRAPHICS_PAGE = `<!doctype html><title>graphics</title><p id=g>grap
 })();
 </script>`;
 
-// The page on this computer's loopback: { url, close() }.
+// A tall page that records every wheel event it gets (deltaY, wheelDeltaY, the time) and prints
+// them as "wheel: [...] end", so an agent's pairbrowse_scroll can be read back: whole notches of
+// the platform pages are told about, each deltaY paired with wheelDeltaY as a real device's.
+export const WHEEL_PAGE = `<!doctype html><title>wheel</title><style>body{margin:0}#tall{height:6000px}</style><p id=w>wheel: [] end</p><div id=tall></div><script>
+const events = [];
+addEventListener("wheel", (e) => { events.push([e.deltaY, e.wheelDeltaY, Math.round(performance.now())]); document.getElementById("w").textContent = "wheel: " + JSON.stringify(events) + " end"; }, { passive: true });
+</script>`;
+
+// The pages on this computer's loopback: { url, wheelUrl, close() }; "/" is html, "/wheel" the wheel page.
 export function servePage(html = GRAPHICS_PAGE) {
-  const server = createServer((req, res) => { res.writeHead(200, { "content-type": "text/html", "cache-control": "no-store" }); res.end(html); });
-  return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve({ url: `http://127.0.0.1:${server.address().port}/`, close: () => server.close() })));
+  const server = createServer((req, res) => { res.writeHead(200, { "content-type": "text/html", "cache-control": "no-store" }); res.end(req.url === "/wheel" ? WHEEL_PAGE : html); });
+  return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve({ url: `http://127.0.0.1:${server.address().port}/`, wheelUrl: `http://127.0.0.1:${server.address().port}/wheel`, close: () => server.close() })));
+}
+
+// The wheel events the wheel page printed, from a snapshot's text: [[deltaY, wheelDeltaY, ms]], or null.
+export function parseWheel(shown) {
+  const m = /wheel: (\[.*?\]) end/s.exec(String(shown));
+  if (!m) return null;
+  try { return JSON.parse(m[1].replace(/\\"/g, '"')); } catch { return null; }
 }
 
 // What the page printed, from an agent's snapshot text (its quotes come back escaped), or null.

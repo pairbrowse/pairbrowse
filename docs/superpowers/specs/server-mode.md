@@ -2891,6 +2891,10 @@ binding for implementation; where a phase section above says otherwise, this sec
     Settings choice say so plainly, lead with the native build, list what the open build lacks (server
     mode, the engine's identity work, humanized input, the WebGPU and proxy patches, so more blocks),
     and drop "everything else works the same in both".
+    Licenses (user, 2026-10-21): the plugin (this repo) stays MIT; the native browser stays private, a
+    binary under `BINARY-LICENSE.md` with commercial use through Pro; the open build stays open source.
+    The README gets one short license section stating each, with links; the open build's licence is a
+    fact there, never presented as a reason to choose it.
 
 Implementation conditions (from the user):
 - Keep the five phases and every agreed requirement: profile import and export, per-profile isolation,

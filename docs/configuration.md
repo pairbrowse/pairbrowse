@@ -264,7 +264,10 @@
   the `bypass` entries. With `strict` `true`, the browser looks up no name itself except the
   proxy's own and `localhost` (every other one goes to the proxy) and sends no WebRTC traffic
   outside the proxy; a `--host-resolver-rules` of yours in `browserArgs` is dropped for such a
-  session (one helper log line says so). With `strict` `false` through an `http:` or `https:`
+  session (one helper log line says so). A proxied session's pages see the proxy's exit as their
+  one WebRTC address on a native build whose manifest says `webrtcExit` (older builds: no
+  address), and a session without a proxy keeps the browser's everyday WebRTC (an mDNS name for
+  the local address, the public address through STUN). With `strict` `false` through an `http:` or `https:`
   proxy, the browser also looks names up itself (the leak test reads pages' names and its own
   background services' in the browser's network log), though the pages still load through the
   proxy. A SOCKS5 session gets the same name rule even with `strict` `false`. A proxy with `auth`

@@ -160,6 +160,33 @@ test("forLaunch: the file read at each launch, the auth file owner-only and gone
   assert.deepEqual(readdirSync(runDir).filter((f) => f.startsWith(PROXY_AUTH_PREFIX)), []);
 });
 
+test("forLaunch's exit(): the proxy's exit as the helper's probe read it, null for a direct session, a failed probe or one out of time", async () => {
+  const cfg = join(dir, "config-exit.json");
+  writeFileSync(cfg, JSON.stringify({ network: net({ "eu": { server: "http://203.0.113.10:3128" } }) }));
+  const probes = [];
+  const make = (answer, ms = 0) => createNetwork({ configFile: cfg, runDir: join(dir, "run-exit"), probe: async (o) => { probes.push(o); await new Promise((r) => setTimeout(r, ms)); return answer(o); } });
+  const ok = (o) => (o.proxy ? { ok: true, ip: "198.51.100.7", loc: "DE" } : { ok: true, ip: "192.0.2.1", loc: "NL" });
+  const lp = make(ok).forLaunch("shop", { shell: PAGES_SHELL });
+  assert.equal(await lp.exit(), "198.51.100.7", "the proxy's exit, never this computer's own");
+  assert.equal(await lp.exit(), "198.51.100.7", "asked twice: the same probe");
+  assert.ok(probes.some((o) => o.proxy) && probes.some((o) => !o.proxy), "both probes run as before");
+  const failed = make((o) => (o.proxy ? { ok: false, problem: "refused", timedOut: false } : ok(o))).forLaunch("shop", { shell: PAGES_SHELL });
+  assert.equal(await failed.exit(), null);
+  const direct = make(ok).forLaunch("other", { shell: PAGES_SHELL });
+  assert.equal(direct.source, "direct");
+  assert.equal(await direct.exit(), null);
+  // One out of time answers null without holding the launch past the probe's own bound.
+  const slow = createNetwork({ configFile: cfg, runDir: join(dir, "run-exit"), probe: () => new Promise(() => {}) });
+  const was = process.env.PAIRBROWSE_TEST_NET_CHECK;
+  process.env.PAIRBROWSE_TEST_NET_CHECK = JSON.stringify({ ms: 100 });
+  try {
+    const lateHandle = slow.forLaunch("shop", { shell: PAGES_SHELL });
+    const t0 = Date.now();
+    assert.equal(await lateHandle.exit(), null);
+    assert.ok(Date.now() - t0 < 5000);
+  } finally { if (was === undefined) delete process.env.PAIRBROWSE_TEST_NET_CHECK; else process.env.PAIRBROWSE_TEST_NET_CHECK = was; }
+});
+
 test("writeProxyAuthFile never reuses a name and writes only the three fields", () => {
   const runDir = join(dir, "run-w");
   const a = writeProxyAuthFile({ server: "http://h:1", username: USER, password: PASS, extra: "x" }, runDir);
@@ -248,7 +275,11 @@ test("launch wiring follows section 3.2: screen, profile, network, then the brow
   const engine = src.indexOf("ctx = await launchEngine(");
   assert.ok(screen > 0 && chosen > screen && network > chosen && engine > network, "ensureScreen, profiles.forLaunch, network.forLaunch, launchEngine");
   // The session's network applied to the launch options, then (a test run only) the NetLog switch.
-  assert.match(src.slice(engine), /^ctx = await launchEngine\(browserType\(\), \{ \.\.\.next, browserProfile: chosen\.engine, virtualDisplay: screen\?\.geometry \?\? null, measuredBackend: graphicsPlan\?\.measured\?\.backend \?\? null \}, profile\(\), withNetLog\(net \? net\.apply\(options\) : options\),/);
+  assert.match(src.slice(engine), /^ctx = await launchEngine\(browserType\(\), \{ \.\.\.next, browserProfile: chosen\.engine, virtualDisplay: screen\?\.geometry \?\? null, measuredBackend: graphicsPlan\?\.measured\?\.backend \?\? null, webrtcExit \}, profile\(\), withNetLog\(net \? net\.apply\(options\) : options\),/);
+  // The proxy's exit (the probe forLaunch started) is read after the graphics step and before the
+  // browser starts: the launch's WebRTC address, never a wait before the graphics probe.
+  const exit = src.indexOf("const webrtcExit = net ? await net.exit() : null;");
+  assert.ok(exit > src.indexOf('step("graphics");') && exit < engine, "exit() between the graphics step and launchEngine");
   assert.match(src, /finally \{ net\?\.drop\(\);/);
   // forLaunch inside the try that drops its auth file; the network recorded only once the browser is up.
   assert.ok(src.lastIndexOf("try {", network) > src.indexOf("let ctx, net = null;"), "forLaunch inside the try");

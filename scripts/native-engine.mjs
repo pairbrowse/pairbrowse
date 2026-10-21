@@ -140,6 +140,12 @@ export const safeStorageKeyFile = (manifest) => Number.isInteger(manifest?.safeS
 // the auth challenges of the proxy --proxy-server names (same host and port), never a site's.
 // Absent (every build so far, and always the open build): a proxy with credentials is refused at launch.
 export const proxyAuthFile = (manifest) => Number.isInteger(manifest?.proxyAuthFile) && manifest.proxyAuthFile >= 1;
+// The build manifest's `webrtcExit` field (1 and up, engine patch 971): under the engine's
+// --webrtc-ip=<address> a renderer's UDP sockets send nothing, so the one server-reflexive
+// candidate the engine fabricates at that address (without a STUN request, and no host candidate)
+// is the only address a page can learn, and nothing leaves outside the proxy. The helper passes
+// the proxy's exit as that address only on such a build; an older one keeps the deny policy alone.
+export const webrtcExit = (manifest) => Number.isInteger(manifest?.webrtcExit) && manifest.webrtcExit >= 1;
 export const adBlocker = (manifest) => Number.isInteger(manifest?.adBlocker) && manifest.adBlocker >= 1;
 // The build manifest's `adBlockerCrx` ({ path, version }): the ad blocker shipped with the build, a
 // CRX under Contents/Resources on macOS, under the binary's directory on Linux (a relative path
@@ -569,6 +575,15 @@ export async function launchNative(chromium, config, directory, options, pack, l
   // Each launch step's time (plans/555 item 4): what a slow first launch spent where.
   log(`launch: fingerprint ${Date.now() - fingerprintAt} ms${steps.length ? ` (${steps.join(", ")})` : ""}`);
   savePersona(pack, personaPath, fingerprint, settings.geoip, settings.personaName);
+  // A proxied session's WebRTC address: the proxy's exit as the helper read it before this launch
+  // (config.webrtcExit, daemon/network.mjs forLaunch exit()), on a build whose manifest says
+  // webrtcExit (above), as an everyday browser behind that proxy shows its exit; a webrtcIp a
+  // setting or geoip gives wins. After the persona is saved: a measurement of this launch's
+  // network, never kept with the persona. A direct session shows the browser's everyday
+  // candidates (no policy switch below); an older build shows a proxied session no address.
+  const exitKnown = typeof config.webrtcExit === "string" && config.webrtcExit !== "" && !!options.proxy;
+  if (exitKnown && webrtcExit(metadata) && fingerprint.webrtcIp === undefined) fingerprint.webrtcIp = config.webrtcExit;
+  else if (exitKnown && !webrtcExit(metadata)) log("launch: this build shows a proxied session no WebRTC address (its manifest lacks webrtcExit): pages see no candidate");
   const zoneSet = settings.geoip || settings.overrides.timezone !== undefined || settings.saved.timezone !== undefined;
   const onServer = !!config.virtualDisplay || config.server?.keepAlive === true;
   const zoneNote = onServer && !zoneSet ? clockZoneNote(fingerprint.timezone) : null;
@@ -580,13 +595,16 @@ export async function launchNative(chromium, config, directory, options, pack, l
   const { portableProfile, encryptionKey, extensions, disablePrivacySandbox = true, ...personaRest } = rest;
   const { agent, rest: launchOptions } = pack.splitAgentOptions(personaRest);
   const merged = { ...launchOptions, ...options };
-  // The browser's WebRTC IP handling is PairBrowse's: web pages never get this computer's local
-  // or public addresses outside a proxy (the engine's default deny below). A policy in the
-  // config's browserArgs that would loosen it is dropped here, whatever it says; the browser's own
-  // capture page keeps its direct connections through the build's own exemption, not a switch.
-  // Every spelling the engine reads ("-webrtc-ip-handling-policy=...", "/..." on Windows) counts.
-  // A strict proxied session's own switch (net/config.mjs STRICT_WEBRTC, the same policy as the
-  // default deny) is the one kept: the engine pack then adds none of its own.
+  // The browser's WebRTC IP handling is PairBrowse's, never browserArgs': a proxied session denies
+  // non-proxied UDP (the engine's default deny below, and strict mode's own switch, net/config.mjs
+  // STRICT_WEBRTC, the same policy, which the pack then doesn't double), so web pages never get
+  // this computer's addresses outside the proxy; what they see is the exit, when the build shows
+  // one (webrtcIp above). A direct session gets no policy switch: the browser's everyday default,
+  // local addresses hidden behind mDNS names by the browser's own feature and the public address
+  // through STUN, the address the site sees anyway. A policy in the config's browserArgs is
+  // dropped either way, whatever it says; the browser's own capture page keeps its direct
+  // connections through the build's own exemption, not a switch. Every spelling the engine reads
+  // ("-webrtc-ip-handling-policy=...", "/..." on Windows) counts.
   const webrtcPolicy = (a) => a !== STRICT_WEBRTC && ["webrtc-ip-handling-policy", "force-webrtc-ip-handling-policy"].includes(switchName(a));
   const dropped = (merged.args ?? []).filter(webrtcPolicy);
   if (dropped.length) log("launch: a WebRTC IP handling switch in browserArgs was dropped: PairBrowse keeps WebRTC from showing this computer's addresses");
@@ -607,7 +625,7 @@ export async function launchNative(chromium, config, directory, options, pack, l
     ...(disablePrivacySandbox ? pack.privacySandboxArgs() : []),
     ...pack.portableArgs(portableProfile, encryptionKey),
     ...pack.extensionArgs(extensionPaths), ...proxyArgs,
-    ...pack.webrtcDefaultDenyArgs(givenArgs, fingerprint.webrtcIp),
+    ...(merged.proxy ? pack.webrtcDefaultDenyArgs(givenArgs, fingerprint.webrtcIp) : []),
     ...pack.gpuBlocklistArgs(merged.headless === false, process.platform, givenArgs),
     // The identity's own engine switches (native/graphics.mjs: the GPU pool entry, WebGPU's
     // software adapter by name with the service on), the helper's, never from browserArgs.

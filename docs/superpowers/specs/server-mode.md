@@ -3164,9 +3164,22 @@ binding for implementation; where a phase section above says otherwise, this sec
     page carrying a verification or scoring widget and for a field in a sign-in, sign-up or payment
     form, both read by structure; `"fast"` and `"human"` fix one pace); the live view's tab icons cost no
     request outside the browser; a server's UTC clock is named at launch and `docs/server.md` sets
-    the exit's zone. WebRTC's default deny for a session without a proxy (no candidates, where an
-    everyday browser shows a hidden local and a public address) stays until the person decides
-    whether to relax it: the deny is a stated security property (`docs/security.md`).
+    the exit's zone. WebRTC (decided with the third measurement pass, 2026-10-22, gap 12): a
+    session without a proxy keeps the browser's everyday default (an mDNS name for the local
+    address, the public address through STUN, which the site sees anyway; the earlier deny showed
+    no candidate, a mark detectors read, and hid nothing a direct session's pages don't know), so
+    the helper passes no policy switch there and the pack's default deny applies to proxied
+    sessions only; a proxied session shows the proxy's exit as its one candidate, as the reference
+    does, through the engine's `--webrtc-ip` with the exit the helper's own probe read before the
+    launch (`daemon/network.mjs` `forLaunch` `exit()`, `native-engine.mjs` `launchNative`), and only
+    on a build whose manifest says `webrtcExit`: engine patch 971 makes a renderer's UDP sockets
+    send nothing under that switch, because the engine's own `--webrtc-ip` (patch 100) fabricates
+    the candidate without a STUN request but turns non-proxied UDP on for the port allocator, so an
+    ICE connectivity check toward a candidate a page offers (its own server) would have left from
+    the real interface, the packet-level leak the reference's own users reported. No host candidate
+    is shown with a proxy (an everyday browser shows an mDNS name; a page with camera or microphone
+    permission would see the real LAN address through it). An older build keeps the deny alone.
+    `docs/security.md` rows "browserArgs" and "A session's proxy leaks" say so.
 
 12. **Server mode needs the native PairBrowse browser (user, 2026-10-21).** The open build with the side
     panel extension stays supported on a desktop and is kept aligned with the native build wherever it
@@ -3353,7 +3366,8 @@ extension shell:
   "failed" on `webgpu.device` until patch 961, as recorded above.
 - WebRTC: the native build denies non-proxied UDP with no switch at all, so the egress check's
   leak half needs the policy set back to the engine's default there (a switch the helper never
-  passes).
+  passes). Since the third measurement pass a direct session gets no deny from the helper (the
+  pack's default deny is added for proxied sessions only; decision 11).
 - Co-browsing: a card field the person filled carries their name (`o`, never the value) when the
   form is read within a few seconds of the edit (`fields.mjs` `OWN_MS`); the test accepts it on
   either build.

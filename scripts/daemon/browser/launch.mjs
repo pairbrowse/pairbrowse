@@ -255,6 +255,10 @@ export function createLaunch(st, deps, api) {
       graphicsPlan = await graphics.before({ chosen, native, build: chosen.build, pack: NATIVE.engine.sha256, screen, session: st.session,
         probeLaunch: native ? probeLauncher({ chromium: browserType(), engine: { ...next, browserProfile: { ...chosen.engine, geoip: false } }, config, shell: st.shell, screen, env: process.env, executablePath: next.executablePath, profileArgs: chosen.switches, server: api.isServer(), log }) : null });
       step("graphics");
+      // The proxy's exit (the helper's probe, started with the network above and bounded by its own
+      // time): the WebRTC address pages see in a proxied session, on a build that shows one
+      // (native-engine.mjs launchNative; docs/security.md). Null for a direct session.
+      const webrtcExit = net ? await net.exit() : null;
       // The profile settings PairBrowse needs (blank start tab, pinned and enabled side panel,
       // colors; see prepareProfile in browser.mjs), written before each launch. The ad blocker: the
       // profile's choice, else config.json's. A saved card (spec server-mode B12): payment autofill
@@ -298,7 +302,7 @@ export function createLaunch(st, deps, api) {
       // under; and the virtual screen, which on Linux is the screen pages read (spec E7).
       // measuredBackend: the measurement's backend (step 4), which on a host without a GPU makes
       // the native launch show the engine's identity (decision 10; native-engine.mjs applyGraphicsPlan).
-      ctx = await launchEngine(browserType(), { ...next, browserProfile: chosen.engine, virtualDisplay: screen?.geometry ?? null, measuredBackend: graphicsPlan?.measured?.backend ?? null }, profile(), withNetLog(net ? net.apply(options) : options), launchLog, undefined, { server: api.isServer() }); // in server mode the sandbox is required (spec server-mode A10)
+      ctx = await launchEngine(browserType(), { ...next, browserProfile: chosen.engine, virtualDisplay: screen?.geometry ?? null, measuredBackend: graphicsPlan?.measured?.backend ?? null, webrtcExit }, profile(), withNetLog(net ? net.apply(options) : options), launchLog, undefined, { server: api.isServer() }); // in server mode the sandbox is required (spec server-mode A10)
     } catch (e) { dropHelperKey(keyFile, captureKeyFile); throw e; } // a failed launch leaves no key file
     finally { net?.drop(); launchLog.done(hud.badge()); } // the proxy's auth file: read by now, or the launch failed
     // The screen ended while the browser started (supervise.mjs lost() cleared it): this browser has

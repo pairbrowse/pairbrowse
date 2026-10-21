@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync, statSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { launchNative, launchEnv, applyGraphicsPlan, DRIVER_BLINK_SWITCH, DRIVER_BACKGROUND_SWITCH, nativeManifest, declaresOwnPages, macHostProfile, hostFonts, captureMacHost, MEASURING, hostCachePath, screenInfoArg, CANVAS_BRIDGE_DROPPED, isCanvasBridgeSwitch, personaProxyRefusal, PROXY_CREDENTIALS_REFUSAL, proxyCredentials, withoutAddresses, proxyAuthFile, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE, paceSets, flatWebgpuProfile, personaBindingRefusal, droppedLine, clockZoneNote } from "../scripts/native-engine.mjs";
+import { launchNative, launchEnv, applyGraphicsPlan, DRIVER_BLINK_SWITCH, DRIVER_BACKGROUND_SWITCH, nativeManifest, declaresOwnPages, macHostProfile, hostFonts, captureMacHost, MEASURING, hostCachePath, screenInfoArg, CANVAS_BRIDGE_DROPPED, isCanvasBridgeSwitch, personaProxyRefusal, PROXY_CREDENTIALS_REFUSAL, proxyCredentials, withoutAddresses, proxyAuthFile, webrtcExit, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE, paceSets, flatWebgpuProfile, personaBindingRefusal, droppedLine, clockZoneNote } from "../scripts/native-engine.mjs";
 import { PAIRBROWSE_ENGINE_KEYS } from "../scripts/config-schema.mjs";
 import { loadEngine } from "../scripts/native/pack.mjs";
 import { normalizeWebgpu, GRAPHICS } from "../scripts/native/graphics.mjs";
@@ -835,19 +835,60 @@ packTest("native launch refuses options this engine can't honour", async () => {
     { executablePath: app.executablePath }, pack), /does not support pairbrowse\.socks5Udp/);
 });
 
-packTest("a WebRTC IP policy in browserArgs never loosens the default deny, in any spelling", async () => {
+packTest("a WebRTC IP policy in browserArgs is never the launch's: a proxied session denies non-proxied UDP, a direct one keeps the browser's everyday default", async () => {
   const pack = await loadPack();
   const app = appFixture();
-  const directory = mkdtempSync(join(tmpdir(), "pairbrowse-profile-"));
   const chromium = fakeBrowserType();
   const lines = [];
-  await launchNative(chromium, { pairbrowse: { fingerprint: "rtc-seed", humanize: false } }, directory,
-    { executablePath: app.executablePath, headless: false, args: ["--webrtc-ip-handling-policy=default", "--force-webrtc-ip-handling-policy", "-webrtc-ip-handling-policy=default", "--WebRTC-IP-Handling-Policy=default", ...(process.platform === "win32" ? ["/webrtc-ip-handling-policy=default"] : []), "--lang=en"] }, pack, (l) => lines.push(l));
+  const policies = ["--webrtc-ip-handling-policy=default", "--force-webrtc-ip-handling-policy", "-webrtc-ip-handling-policy=default", "--WebRTC-IP-Handling-Policy=default", ...(process.platform === "win32" ? ["/webrtc-ip-handling-policy=default"] : [])];
+  await launchNative(chromium, { pairbrowse: { fingerprint: "rtc-seed", humanize: false } }, mkdtempSync(join(tmpdir(), "pairbrowse-profile-")),
+    { executablePath: app.executablePath, headless: false, proxy: { server: "http://127.0.0.1:3128" }, args: [...policies, "--lang=en"] }, pack, (l) => lines.push(l));
   const args = chromium.calls[0].options.args;
-  const rtc = args.filter((a) => /webrtc-ip-handling-policy/i.test(a));
+  const rtc = args.filter((a) => /webrtc-ip/i.test(a));
   assert.deepEqual(rtc, ["--webrtc-ip-handling-policy=disable_non_proxied_udp"], rtc.join(" "));
   assert.ok(args.includes("--lang=en"), "other switches pass");
   assert.ok(lines.some((l) => /WebRTC IP handling switch in browserArgs was dropped/.test(l)));
+  // Direct: no policy switch at all (local addresses stay behind mDNS names, the public address is
+  // the one the site sees anyway), and a policy from browserArgs is still dropped.
+  lines.length = 0;
+  await launchNative(chromium, { pairbrowse: { fingerprint: "rtc-seed", humanize: false } }, mkdtempSync(join(tmpdir(), "pairbrowse-profile-")),
+    { executablePath: app.executablePath, headless: false, args: [...policies, "--lang=en"] }, pack, (l) => lines.push(l));
+  const direct = chromium.calls[1].options.args;
+  assert.deepEqual(direct.filter((a) => /webrtc/i.test(a)), [], direct.join(" "));
+  assert.ok(lines.some((l) => /WebRTC IP handling switch in browserArgs was dropped/.test(l)));
+});
+
+// A proxied session's WebRTC address is the proxy's exit as the helper read it (config.webrtcExit,
+// daemon/network.mjs), on a build whose manifest says webrtcExit (engine patch 971); it is this
+// launch's measurement, never the persona's; a setting's own webrtcIp wins; an older build shows
+// no address and says so once; a direct session is never given one.
+test("the proxy's exit is the WebRTC address pages see, on a build that shows one, and never reaches the persona", async () => {
+  const chromium = fakeBrowserType();
+  const launch = async (metadata, config, options) => {
+    const pack = { ...recordingPack(), collector: "" };
+    const app = appFixture(metadata);
+    const directory = mkdtempSync(join(tmpdir(), "pairbrowse-exit-"));
+    const lines = [];
+    await launchNative(chromium, config, directory, { executablePath: app.executablePath, headless: false, ...options }, pack, (l) => lines.push(l));
+    return { given: pack.given.at(-1), persona: readFileSync(join(directory, "pairbrowse-persona.json"), "utf8"), lines };
+  };
+  const shows = { product: "PairBrowse", version: "150.0.7871.114", arch: "arm64", webrtcExit: 1 };
+  const older = { product: "PairBrowse", version: "150.0.7871.114", arch: "arm64" };
+  const proxy = { server: "http://127.0.0.1:3128" };
+  const a = await launch(shows, { pairbrowse: {}, webrtcExit: "203.0.113.9" }, { proxy });
+  assert.equal(a.given.webrtcIp, "203.0.113.9");
+  assert.ok(!a.persona.includes("203.0.113.9"), "the exit is this launch's, never kept with the persona");
+  assert.ok(!a.lines.some((l) => /203\.0\.113/.test(l)), "no log line names the address");
+  const b = await launch(older, { pairbrowse: {}, webrtcExit: "203.0.113.9" }, { proxy });
+  assert.equal(b.given.webrtcIp, undefined);
+  assert.ok(b.lines.some((l) => /shows a proxied session no WebRTC address \(its manifest lacks webrtcExit\)/.test(l)));
+  const c = await launch(shows, { pairbrowse: { webrtcIp: "198.51.100.1" }, webrtcExit: "203.0.113.9" }, { proxy });
+  assert.equal(c.given.webrtcIp, "198.51.100.1", "a setting's own address wins");
+  const d = await launch(shows, { pairbrowse: {}, webrtcExit: "203.0.113.9" }, {});
+  assert.equal(d.given.webrtcIp, undefined, "a direct session is never given an exit");
+  const e = await launch(shows, { pairbrowse: {}, webrtcExit: null }, { proxy });
+  assert.equal(e.given.webrtcIp, undefined, "no exit read: nothing shown, the deny policy alone");
+  assert.deepEqual([webrtcExit(shows), webrtcExit(older), webrtcExit({ webrtcExit: "1" }), webrtcExit(null)], [true, false, false, false]);
 });
 
 // A strict proxied session (net/config.mjs launchPart): its WebRTC switch is the default deny's
@@ -980,8 +1021,8 @@ function recordingPack({ saved = {} } = {}) {
     given, Profile, DEFAULT_IGNORED_ARGS: [],
     resolveProfileOptions: () => structuredClone(saved),
     splitFingerprintOptions: (options) => {
-      const { fingerprintProfile, fingerprint, timezone, acceptLanguage, platform, brandVersion, ...rest } = options;
-      return { fingerprint: Object.fromEntries(Object.entries({ fingerprintProfile, fingerprint, timezone, acceptLanguage, platform, brandVersion }).filter(([, v]) => v !== undefined)), rest };
+      const { fingerprintProfile, fingerprint, timezone, acceptLanguage, platform, brandVersion, webrtcIp, ...rest } = options;
+      return { fingerprint: Object.fromEntries(Object.entries({ fingerprintProfile, fingerprint, timezone, acceptLanguage, platform, brandVersion, webrtcIp }).filter(([, v]) => v !== undefined)), rest };
     },
     // D9: never called; a call fails the launch it came from.
     measureHost: async () => { throw new Error("measureHost called"); },

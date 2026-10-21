@@ -110,7 +110,7 @@ export function createNetwork({ log = () => {}, notify = () => {}, pause = () =>
   // (which of the two geoip supplies), C13;
   // shell: the browser's, browser/choice.mjs; native: a native build, which reads strict mode's
   // WebRTC switch in its own spelling). Throws the refusal sentence; else { id, source,
-  // strict, proxy, apply(options), drop(), started() }: apply adds the proxy and switches to the
+  // strict, proxy, apply(options), drop(), exit(), started() }: apply adds the proxy and switches to the
   // launch options (the user's --host-resolver-rules dropped and logged where the helper sets its
   // own), drop removes the auth file (once the browser is up, or its launch failed), started records
   // this network as the running browser's (called once the browser is up); checkAtLaunch takes it
@@ -158,6 +158,17 @@ export function createNetwork({ log = () => {}, notify = () => {}, pause = () =>
         return out;
       },
       drop: () => { dropProxyAuthFile(authPath); authPath = null; },
+      // The proxy's exit as the helper's own probe read it (started above, so usually done by the
+      // time the launch asks), for the launch's WebRTC address (native-engine.mjs: the one
+      // candidate pages see, on a build that shows it): null for a direct session or a probe that
+      // failed or ran out of time (the check after the launch then fails the start as before).
+      // Bounded by the probe's own time, so a slow proxy never holds the launch longer than it
+      // would hold the check.
+      exit: async () => {
+        if (!net.proxy || !own.early) return null;
+        const [helper] = (await within(own.targets.timeoutMs + 1000, own.early)) || [null];
+        return helper?.ok && typeof helper.ip === "string" && helper.ip ? helper.ip : null;
+      },
       // The browser is up: its network is the running one, and its rechecks start (C8).
       started: () => { last = record; start(handle); },
     };

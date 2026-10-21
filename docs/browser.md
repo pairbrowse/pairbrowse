@@ -195,15 +195,18 @@ actions, for testing):
 { "pairbrowse": { "humanize": false } }
 ```
 
-Typing speed: `typingPace` from 0.2 (fastest) to 1 (slowest, about 60 words a minute). The
-default, 0.2 (0.3 in earlier versions), types with a fast typist's rollover: the gaps between keys
-and the short pauses scale with it; how long each key is held doesn't. A slower pace (0.3 to 0.5) is
-the setting for a more careful, slower hand. A `browser_type` goes the way a
-form field does (below): the field focused by the engine's own reach and click (none when it has the
-focus already), what it held cleared, the text key by key with a quick typist's rhythm, read back; 41
-characters take about 3.5 s (6 s before 0.15.39), 200 characters into a textarea about 10 s (24 s).
-`slowly: true` types at about 90 ms a key, at the caret, next to what the field holds, and brings a
-snapshot (a list of suggestions shows up); `submit: true` presses Enter once the text is in.
+Typing speed: `typingPace` from 0.2 (fastest) to 1 (an everyday typist). The default, 1 (0.2 up to
+0.17.0), types as an everyday typist does: about 150 ms between keys (the median), each key
+held about 100 ms, so about one key in five is still down when the next goes down, with now and then
+a quick pair or a slow one, a beat after each word and a short thought now and then. The ordinary-
+browser measurement read the old default as about 23 ms a key with nine keys in ten overlapping, a
+rhythm no person keeps up, so the default changed. The gaps between keys scale with `typingPace`;
+how long each key is held doesn't. A lower pace (0.2 to 0.5) is quicker, and looks less like a
+person. A `browser_type` goes the way a form field does (below): the field focused by the engine's
+own reach and click (none when it has the focus already), what it held cleared, the text key by key,
+read back; at the default pace 41 characters take about 7 s. `slowly: true` types at the default
+pace or slower (also when `typingPace` is quicker), at the caret, next to what the field holds, and
+brings a snapshot (a list of suggestions shows up); `submit: true` presses Enter once the text is in.
 
 ```json
 { "pairbrowse": { "typingPace": 0.35 } }
@@ -212,13 +215,12 @@ snapshot (a list of suggestions shows up); `submit: true` presses Enter once the
 A form (`browser_fill_form`) is filled the way a person fills one, field by field in the order
 given: into the first field, then on to the next with the Tab key when it is the next field in the
 page's own order (the mouse reaches for it otherwise, and for any field Tab didn't land on), the value
-typed key by key at `typingPace` with a quick typist's rhythm (the next key often down before the
+typed key by key at `typingPace` with the same rhythm (now and then the next key down before the
 last is up, a beat after each word), a closed select picked by typing its option's first letters, a
 box ticked with Space, a date or time field set at once in its turn (its exact shape, YYYY-MM-DD).
 Every field is read back, and a value that didn't stay is said so in the result. A form never types
-quicker than `typingPace` 0.2 allows (lower counts as 0.2 there). An
-11-field form takes about 9 s this way (the first fill after the browser starts a little longer),
-against 25 s with a mouse reach and a full key hold for every field. `formMove` picks how
+quicker than `typingPace` 0.2 allows (lower counts as 0.2 there). How long a form takes follows
+what is typed: about 150 ms a character at the default pace, plus a moment per field. `formMove` picks how
 PairBrowse goes from field to field:
 
 ```json

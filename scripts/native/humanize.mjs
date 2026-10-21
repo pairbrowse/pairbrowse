@@ -3,11 +3,14 @@
 // every engine by daemon/serve.mjs; the engine pack's own humanize covers mouse moves.
 import { within, sleep } from "../util.mjs";
 
-// typingPace: how fast humanized typing goes, 0.2 (fastest) to 1 (the engine's own, about 60 words a
-// minute); the gaps between keys scale, how long each key is held doesn't. The default, 0.2, is a
-// fast typist's rollover (measured: 0.3 is about 104 words a minute, 0.5 is 80); a slower pace is
-// the config's for a more careful hand. A form fill (humanFill) has its own rhythm at the same pace.
-export const TYPING_PACE = 0.2;
+// typingPace: how fast humanized typing goes, 0.2 (fastest) to 1 (an everyday typist's: about 150 ms
+// between keys, measured as the median, with about one key in five still down when the next goes
+// down, and the engine's own rhythm for the keys it types itself); the gaps between keys scale, how
+// long each key is held doesn't. The default, 1, is that everyday hand: the ordinary-browser
+// measurement (server-mode spec, decision 11) read the old default, 0.2, as about 23 ms a key with
+// nine keys in ten overlapping, a rhythm no person keeps up. A quicker pace is the config's choice.
+// A form fill (humanFill) has its own rhythm at the same pace.
+export const TYPING_PACE = 1;
 export const clampPace = (pace, floor = 0.2) => Math.min(1, Math.max(floor, Number(pace) || TYPING_PACE));
 
 // What a form fill (browser_fill_form) in the native browser follows. typingPace as above, floored at
@@ -20,14 +23,23 @@ export function fillSettings(config) {
   return { typingPace: clampPace(typingPace, FILL_PACE_FLOOR), formMove: formMove === "mouse" ? "mouse" : "tab" };
 }
 
-// Typing a value in a form fill: key by key with a person's rhythm. The next key often goes down
-// before the last one comes up (rollover), as a quick typist's do; Shift is held for capitals and
-// signs; a beat after a word or a sign, now and then a thought. The gaps scale with pace, the hold of
-// each key doesn't. Returns [{ at, type: "down" | "up", key }], at in ms from the first key, in order.
+// Typing a value in a form fill: key by key with a person's rhythm. The gaps between keys and the
+// time each key is held are skewed as people's are (log-normal: mostly near the middle, now and then
+// a quick pair or a slow one), so a quick pair often goes down before the last key comes up
+// (rollover); Shift is held for capitals and signs; a beat after a word or a sign, now and then a
+// thought. The gaps scale with pace, the hold of each key doesn't. Returns
+// [{ at, type: "down" | "up", key }], at in ms from the first key, in order.
 const SHIFTED = /^[A-Z~!@#$%^&*()_+{}|:"<>?]$/;
+const KEY_GAP_MS = 135, KEY_GAP_SPREAD = 0.42, KEY_GAP_RANGE = [55, 480]; // at pace 1
+const KEY_HOLD_MS = 100, KEY_HOLD_SPREAD = 0.25, KEY_HOLD_RANGE = [45, 170];
 export function keystrokeSchedule(text, pace = TYPING_PACE, rng = Math.random) {
   const p = clampPace(pace, FILL_PACE_FLOOR);
   const between = (a, b) => a + (b - a) * rng();
+  // A log-normal draw around median, its spread in natural log units, kept inside range.
+  const skewed = (median, spread, [lo, hi]) => {
+    const z = Math.sqrt(-2 * Math.log(1 - rng())) * Math.cos(2 * Math.PI * rng());
+    return Math.min(hi, Math.max(lo, median * Math.exp(spread * z)));
+  };
   const chars = Array.from(String(text ?? ""));
   const events = [];
   const upAt = new Map(); // key -> when it last came up: a key goes down again only after that
@@ -37,7 +49,7 @@ export function keystrokeSchedule(text, pace = TYPING_PACE, rng = Math.random) {
     const key = ch === "\n" ? "Enter" : ch === "\t" ? "Tab" : ch;
     const needsShift = SHIFTED.test(ch);
     if (i > 0) {
-      let gap = between(55, 160);
+      let gap = skewed(KEY_GAP_MS, KEY_GAP_SPREAD, KEY_GAP_RANGE);
       if (/[\s.,;:!?@\-_/]/.test(chars[i - 1])) gap += between(15, 80);
       if (rng() < 0.03) gap += between(150, 350);
       at += gap * p;
@@ -50,7 +62,7 @@ export function keystrokeSchedule(text, pace = TYPING_PACE, rng = Math.random) {
       at += between(40, 110) * p;
     }
     if (upAt.has(key)) at = Math.max(at, upAt.get(key) + between(8, 30));
-    const dwell = between(40, 95);
+    const dwell = skewed(KEY_HOLD_MS, KEY_HOLD_SPREAD, KEY_HOLD_RANGE);
     events.push({ at, type: "down", key });
     lastUp = at + dwell;
     upAt.set(key, lastUp);
@@ -60,8 +72,9 @@ export function keystrokeSchedule(text, pace = TYPING_PACE, rng = Math.random) {
   return events.sort((a, b) => a.at - b.at || (a.type === b.type ? 0 : a.type === "down" ? -1 : 1));
 }
 
-// browser_type with slowly: a slower hand, about 90 ms a key (a slower typingPace stays slower).
-export const SLOW_TYPE_PACE = 0.7;
+// browser_type with slowly: never quicker than the everyday hand (pace 1), also when typingPace is
+// set quicker.
+export const SLOW_TYPE_PACE = 1;
 const defaultWait = sleep;
 
 // Types text on the page's keyboard: each key down and up when the schedule says.

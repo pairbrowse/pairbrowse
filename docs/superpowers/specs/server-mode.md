@@ -2754,6 +2754,21 @@ binding for implementation; where a phase section above says otherwise, this sec
    SOCKS client, reading the same 0600 credential file as HTTP and HTTPS proxies; never on argv or in
    logs), with its tests in step 49 on macOS and Linux. The U4 refusal is removed when it lands.
 
+10. **Graphics on a host without a GPU (user, 2026-10-21; changes D-AP2 and step 41 for that case).**
+    PairBrowse is a person's own browser that an agent works in; the person stays in control and does
+    every real check themselves. Pages must not see a software renderer, which gets a session blocked
+    before a CAPTCHA is ever shown. So: on a host with a real GPU, graphics are the real, measured
+    values (D-AP2 unchanged). On a host without one (software rendering measured, E2/E3), the launch
+    uses one consistent graphics identity the engine already carries (the seed persona's Intel UHD 770
+    on Linux Mesa), with WebGL strings, extensions, limits and WebGPU vendor, architecture, features
+    and limits all matching that identity (patch 961 makes WebGPU follow it) and the screen taken from
+    the real virtual screen. Validation then checks that identity for internal consistency and against
+    the profile and the proxy's exit country (coherence, E13), not for equality with the host, and the
+    result is "consistent", never a mismatch. PairBrowse's own diagnostics stay honest: "software
+    rendering, shown as <identity>", so the person can see why a site may still be wary (rendering
+    speed and exact pixels stay software). Recommended deployment for the fewest blocks: a host with a
+    real GPU (`docs/server.md`).
+
 Implementation conditions (from the user):
 - Keep the five phases and every agreed requirement: profile import and export, per-profile isolation,
   proxy separation, graphics validation, mobile interactive hand-off.

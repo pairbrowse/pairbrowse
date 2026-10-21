@@ -166,6 +166,8 @@ test("virtualScreen bounds and server.keepAlive: good values kept, others refuse
   assert.deepEqual(CONFIG_WARNINGS, []);
   assert.deepEqual(good.virtualScreen, { width: 800, height: 4320, depth: 16 });
   assert.deepEqual(good.server, { keepAlive: true });
+  assert.deepEqual(loadConfig(file({ server: { keepAlive: true, acceptMsCoreFontsEula: true } })).server, { keepAlive: true, acceptMsCoreFontsEula: true }, "the owner's recorded EULA acceptance (native/fontsetup.mjs)");
+  assert.match(loadConfig(file({ server: { acceptMsCoreFontsEula: "yes" } })) && CONFIG_WARNINGS.join("\n"), /server\.acceptMsCoreFontsEula is true or false, not "yes"/);
   const f = file({ virtualScreen: { width: 7681, height: 599, depth: 30, colors: 3 }, server: { keepAlive: "yes" } });
   const config = loadConfig(f);
   const w = CONFIG_WARNINGS.join("\n");

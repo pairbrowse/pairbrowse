@@ -59,7 +59,9 @@ export const CONFIG_SCHEMA = {
   display: { values: ["auto", "xvfb", "none"] },
   // Depth 30 stays out until measured on a server's Xvfb.
   virtualScreen: { type: "object", fields: { width: { type: "integer", min: 800, max: 7680 }, height: { type: "integer", min: 600, max: 4320 }, depth: { values: [16, 24] } } },
-  server: { type: "object", fields: { keepAlive: { type: "boolean" } } },
+  // acceptMsCoreFontsEula: the owner's recorded acceptance of Microsoft's licence for the core
+  // fonts for the web, for a server set up without a terminal (native/fontsetup.mjs; docs/server.md).
+  server: { type: "object", fields: { keepAlive: { type: "boolean" }, acceptMsCoreFontsEula: { type: "boolean" } } },
   // Hand-off to a person away from the window (spec server-mode B1, B6, B11, decisions U2 and 8).
   // channels: each an object whose own fields daemon/notify/ checks (a channel it can't use is
   // skipped with a warning naming it); remindMinutes at or above grantMinutes falls back

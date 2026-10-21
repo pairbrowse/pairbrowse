@@ -13,7 +13,7 @@ import { deflateRawSync } from "node:zlib";
 import { createHash } from "node:crypto";
 import { REPORT_FONTS, STAND_INS, SWITCHED_STAND_INS, WINDOWS_FONTS, fontGroups, fontGroupsLine, fontStatus, parseFontList, readFontFamiliesAsync } from "../scripts/native/winfonts.mjs";
 import { SYSTEM_CONF, browserFontEnv, fontSource, fontStandInsOf, fontsConf, fontsReport, writeFontsConf } from "../scripts/native/fontconf.mjs";
-import { CORE_PACKAGE, EULA_FILE, FREE_FAMILIES, PACKAGES, SELAWIK, USAGE, distroOf, eulaAnswer, freeFamiliesLacking, freePackages, installSelawik, parseCandidate, parseDpkgStatus, parseOsRelease, runFontSetup, selawikInstalled, zipEntries, zipRead } from "../scripts/native/fontsetup.mjs";
+import { EULA_CONFIG_KEY, EULA_FLAG, UBUNTU_EULA_PRESEED, eulaPreset, CORE_PACKAGE, EULA_FILE, FREE_FAMILIES, PACKAGES, SELAWIK, USAGE, distroOf, eulaAnswer, freeFamiliesLacking, freePackages, installSelawik, parseCandidate, parseDpkgStatus, parseOsRelease, runFontSetup, selawikInstalled, zipEntries, zipRead } from "../scripts/native/fontsetup.mjs";
 import { configProblem } from "../scripts/config-schema.mjs";
 
 const root = new URL("../", import.meta.url).pathname;
@@ -233,15 +233,36 @@ test("Microsoft's EULA: shown in full and accepted only by a typed yes; recorded
   const ubuntu = await run("yes", { distro: "ubuntu" });
   assert.deepEqual(ubuntu.r, { accepted: true, how: "package" });
   assert.ok(!ubuntu.printed.includes("GRANT OF LICENSE"));
-  // Nothing in the setup answers the package's question or accepts for the person.
+  // The owner's acceptance set beforehand (an unattended server): accepted without a question, the
+  // text not shown but named, where it came from recorded; a recorded acceptance still comes first.
+  const preset = await run(null, { preset: "server.acceptMsCoreFontsEula in config.json" });
+  assert.deepEqual(preset.r, { accepted: true, how: "preset", source: "server.acceptMsCoreFontsEula in config.json", sha256: sha(text) });
+  assert.deepEqual(preset.questions, []);
+  assert.ok(!preset.printed.includes("GRANT OF LICENSE") && preset.printed.includes(EULA_FILE) && preset.printed.includes("accepted by the owner beforehand (server.acceptMsCoreFontsEula in config.json)"));
+  assert.deepEqual((await run(null, { preset: "the --accept-ms-corefonts-eula flag", record: { coreFonts: { eula: { sha256: sha(text) } } } })).r, { accepted: true, how: "recorded" });
+  assert.deepEqual((await run("yes", { distro: "ubuntu", preset: "the --accept-ms-corefonts-eula flag" })).r, { accepted: true, how: "preset", source: "the --accept-ms-corefonts-eula flag", sha256: sha(text) });
+  // Where the owner's acceptance comes from: the flag, else config.json's server block, else nowhere.
+  assert.equal(eulaPreset({}, []), null);
+  assert.equal(eulaPreset({ server: { acceptMsCoreFontsEula: true } }, []), `${EULA_CONFIG_KEY} in config.json`);
+  assert.equal(eulaPreset({ server: { acceptMsCoreFontsEula: "yes" } }, []), null, "true itself, never a truthy value");
+  assert.equal(eulaPreset({ server: { acceptMsCoreFontsEula: true } }, [EULA_FLAG]), `the ${EULA_FLAG} flag`);
+  assert.equal(EULA_CONFIG_KEY, "server.acceptMsCoreFontsEula");
+  assert.equal(EULA_FLAG, "--accept-ms-corefonts-eula");
+  assert.equal(UBUNTU_EULA_PRESEED, `${CORE_PACKAGE} msttcorefonts/accepted-mscorefonts-eula select true\n`);
+  // Nothing in the setup answers the package's question or accepts for the person: no -y, no
+  // noninteractive front end, and debconf is given an answer only from the owner's preset
+  // (the one place the preseed text exists is its constant, used only after how === "preset").
   const src = readFileSync(join(root, "scripts", "native", "fontsetup.mjs"), "utf8");
-  assert.doesNotMatch(src, /debconf-set-selections|accepted-mscorefonts-eula\s+(select|boolean)|--accept|apt-get[^"\n]*-y\b|"-y"/);
+  assert.doesNotMatch(src, /apt-get[^"\n]*-y\b|"-y"|DEBIAN_FRONTEND=/);
   assert.match(src, /delete env\.DEBIAN_FRONTEND/);
+  assert.equal(src.split("accepted-mscorefonts-eula").length - 1, 1, "the preseed text once, in its constant");
+  assert.match(src, /if \(answer\.how === "preset" && s\.distro === "ubuntu"\) \{\s*preseeded = deps\.preseed\(UBUNTU_EULA_PRESEED\) === 0;/);
+  assert.equal(src.split("deps.preseed(").length - 1, 1);
 });
 
 // A computer for runFontSetup: its distribution, dpkg's answers, apt's candidate, the person's
 // answers; what ran interactively is kept.
-function machine({ os = "ID=debian\nPRETTY_NAME=\"Debian GNU/Linux 12 (bookworm)\"\n", installed = [], candidate = "3.8.1", answers = [], fc = "Arial:style=Regular\n", aptStatus = 0, hasSudo = true, uid = 1001 } = {}) {
+function machine({ os = "ID=debian\nPRETTY_NAME=\"Debian GNU/Linux 12 (bookworm)\"\n", installed = [], candidate = "3.8.1", answers = [], fc = "Arial:style=Regular\n", aptStatus = 0, hasSudo = true, uid = 1001, preseedStatus = 0 } = {}) {
   const home = scratch("setup");
   const calls = [], ran = [];
   const state = { installed: new Set(installed) };
@@ -261,6 +282,7 @@ function machine({ os = "ID=debian\nPRETTY_NAME=\"Debian GNU/Linux 12 (bookworm)
       return aptStatus;
     },
     ask: async () => answers.shift() ?? null,
+    preseed: (selections) => { ran.push(["sudo", "debconf-set-selections", selections]); return preseedStatus; },
     installSelawik: async ({ dir }) => { mkdirSync(dir, { recursive: true }); return { installed: true }; },
     now: () => Date.parse("2026-10-22T10:00:00Z"),
     exec: null,
@@ -322,6 +344,46 @@ test("install: no answer or no yes skips the core fonts and installs the rest; n
   assert.equal(await runFontSetup(["install"], { deps: root.deps, config: {}, print: (l) => rootSaid.push(l) }), 2);
   assert.match(rootSaid[0], /not as root/);
   assert.deepEqual(root.ran, []);
+});
+
+test("install with the owner's preset acceptance: no question, the core fonts installed, the source recorded; Ubuntu preseeded first; a preseed that fails skips them", async () => {
+  // Debian, config.json: nobody at a terminal (ask answers null), the fonts still go in.
+  const debian = machine({ answers: [] });
+  const printed = [];
+  assert.equal(await runFontSetup(["install"], { deps: debian.deps, config: { server: { acceptMsCoreFontsEula: true } }, print: (l) => printed.push(l) }), 0, printed.join("\n"));
+  assert.ok(debian.ran.some((r) => r.includes(CORE_PACKAGE)), "installed on the owner's acceptance");
+  assert.ok(!debian.ran.some((r) => r[1] === "debconf-set-selections"), "Debian's package asks nothing: no preseed");
+  const record = JSON.parse(readFileSync(debian.deps.record, "utf8"));
+  assert.deepEqual(record.coreFonts.eula, { acceptedAt: "2026-10-22T10:00:00.000Z", how: "preset", source: "server.acceptMsCoreFontsEula in config.json", sha256: sha(readFileSync(EULA_FILE, "utf8")), user: "pb" });
+  assert.ok(printed.some((l) => /accepted by the owner beforehand \(server\.acceptMsCoreFontsEula in config\.json\)/.test(l)));
+  assert.ok(!printed.some((l) => /GRANT OF LICENSE/.test(l)), "the text is named, not shown");
+  // Ubuntu, the flag: debconf is given the owner's answer before the package installs.
+  const ubuntu = machine({ os: "ID=ubuntu\nID_LIKE=debian\n", installed: freePackages(PACKAGES.ubuntu), answers: [] });
+  assert.equal(await runFontSetup(["install", "--accept-ms-corefonts-eula"], { deps: ubuntu.deps, config: {}, print: () => {} }), 0);
+  const at = ubuntu.ran.findIndex((r) => r[1] === "debconf-set-selections");
+  assert.ok(at >= 0, "preseeded");
+  assert.deepEqual(ubuntu.ran[at], ["sudo", "debconf-set-selections", `${CORE_PACKAGE} msttcorefonts/accepted-mscorefonts-eula select true\n`]);
+  assert.ok(ubuntu.ran.findIndex((r) => r.includes(CORE_PACKAGE)) > at, "the package after the preseed");
+  assert.equal(JSON.parse(readFileSync(ubuntu.deps.record, "utf8")).coreFonts.eula.source, "the --accept-ms-corefonts-eula flag");
+  // The preseed fails: the package would ask in a terminal nobody is at, so it is skipped and the
+  // run says so (exit 1); no acceptance recorded.
+  const failed = machine({ os: "ID=ubuntu\nID_LIKE=debian\n", installed: freePackages(PACKAGES.ubuntu), preseedStatus: 1 });
+  const said = [];
+  assert.equal(await runFontSetup(["install", "--accept-ms-corefonts-eula"], { deps: failed.deps, config: {}, print: (l) => said.push(l) }), 1);
+  assert.ok(!failed.ran.some((r) => r.includes(CORE_PACKAGE)));
+  assert.ok(said.some((l) => /debconf didn't take the owner's acceptance/.test(l)));
+  assert.equal(JSON.parse(readFileSync(failed.deps.record, "utf8")).coreFonts, undefined);
+  // Without a preset nothing changes: no answer skips them and names the config key as the way for a server.
+  const quiet = machine({ answers: [] });
+  const told = [];
+  await runFontSetup(["install"], { deps: quiet.deps, config: { server: { keepAlive: true } }, print: (l) => told.push(l) });
+  assert.ok(!quiet.ran.some((r) => r.includes(CORE_PACKAGE)) && !quiet.ran.some((r) => r[1] === "debconf-set-selections"));
+  assert.ok(told.some((l) => /record your acceptance as server\.acceptMsCoreFontsEula in config\.json/.test(l)));
+  // The flag belongs to install only.
+  const usage = [];
+  assert.equal(await runFontSetup(["check", "--accept-ms-corefonts-eula"], { deps: quiet.deps, config: {}, print: (l) => usage.push(l) }), 2);
+  assert.deepEqual(usage, [USAGE]);
+  assert.match(USAGE, /install \[--accept-ms-corefonts-eula\]/);
 });
 
 test("install elsewhere names the packages; check reports; off Linux and a wrong command say so", async () => {

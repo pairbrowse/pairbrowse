@@ -11,8 +11,11 @@
 //      licence's text (corefonts-eula.txt: the text Ubuntu's own package shows, its debconf note
 //      msttcorefonts/present-mscorefonts-eula) and installs only on a typed "yes"; on Ubuntu the
 //      package shows it and asks itself. The acceptance is recorded once (setup.json, with the
-//      text's SHA-256); nothing here ever answers for the person (no flag, no preseeded debconf
-//      answer, no "yes" without someone typing it).
+//      text's SHA-256). Nothing here answers for the person: the one way past the question is the
+//      owner's own recorded acceptance for an unattended server, "server": { "acceptMsCoreFontsEula":
+//      true } in config.json or `install --accept-ms-corefonts-eula`, each the owner's act (the
+//      licence's text sits beside this file); only then is Ubuntu's own question preseeded, as
+//      the distribution itself provides for an unattended install.
 //   2. Colour emoji and CJK (fonts-noto-color-emoji, fonts-noto-cjk).
 //   3. The open stand-ins: Carlito, Caladea and Liberation from the distribution's packages, and
 //      Selawik from Microsoft's own release (SELAWIK: the archive and each font pinned by SHA-256,
@@ -175,11 +178,17 @@ export async function installSelawik({ dir, downloads = paths.downloads, pin = S
 // The person's answer to Microsoft's EULA for the core fonts: { accepted, how } where how is
 // "recorded" (accepted before, same text), "typed" (the text shown, "yes" typed), "package" (the
 // distribution's package asks, Ubuntu: the person goes ahead with "yes" and answers its own
-// question there), or why not ("declined", "no answer"). ask(question): one line the person
-// typed, or null when nobody can answer (no terminal, input closed): never taken as yes.
-export async function eulaAnswer({ distro, ask, print, record = null, text = readFileSync(EULA_FILE, "utf8") }) {
+// question there), "preset" (the owner accepted beforehand for an unattended server: `preset`
+// names where, config.json's key or the flag; the text isn't shown, its path is named once, and
+// `source` carries where), or why not ("declined", "no answer"). ask(question): one line the
+// person typed, or null when nobody can answer (no terminal, input closed): never taken as yes.
+export async function eulaAnswer({ distro, ask, print, record = null, text = readFileSync(EULA_FILE, "utf8"), preset = null }) {
   const textSha = sha256(text);
   if (record?.coreFonts?.eula?.sha256 === textSha) return { accepted: true, how: "recorded" };
+  if (preset) {
+    print(`Microsoft's licence (EULA) for the core fonts for the web: accepted by the owner beforehand (${preset}); its text is in ${EULA_FILE}.`);
+    return { accepted: true, how: "preset", source: preset, sha256: textSha };
+  }
   if (distro === "ubuntu") {
     print("Microsoft's core fonts for the web come with Microsoft's licence (EULA). Ubuntu's package shows it and asks whether you accept; PairBrowse never answers for you.");
     const a = await ask('Install them now and read the licence there? Type "yes" to go ahead, anything else to skip them: ');
@@ -241,10 +250,23 @@ export function stateLines(s) {
 
 const apt = (deps, args) => deps.interactive("sudo", ["apt-get", ...args]);
 
+// Ubuntu's package asks its EULA question through debconf: the owner's preset acceptance is
+// given to debconf beforehand, the distribution's own way for an unattended install, so the
+// package installs without a terminal. Never without the preset (deps.preseed runs it with sudo).
+export const UBUNTU_EULA_PRESEED = `${CORE_PACKAGE} msttcorefonts/accepted-mscorefonts-eula select true\n`;
+export const EULA_FLAG = "--accept-ms-corefonts-eula";
+export const EULA_CONFIG_KEY = "server.acceptMsCoreFontsEula";
+// Where the owner accepted the licence beforehand, or null: config.json's server block or the flag.
+export function eulaPreset(config, argv = []) {
+  if (argv.includes(EULA_FLAG)) return `the ${EULA_FLAG} flag`;
+  if (config?.server?.acceptMsCoreFontsEula === true) return `${EULA_CONFIG_KEY} in config.json`;
+  return null;
+}
+
 // install: the packages (apt with sudo, interactive: apt's own confirmation, and on Ubuntu the
 // core fonts package's EULA question, go to the person), Selawik, the setup's record and the
 // browser's font configuration. Answers the exit code (0: the set is in place; 1: a part is not).
-async function install({ deps, config, print }) {
+async function install({ deps, config, print, preset = null }) {
   if (deps.uid === 0) {
     print("Run this as the user PairBrowse runs as, not as root: it asks sudo for the packages and keeps its fonts in that user's ~/.pairbrowse.");
     return 2;
@@ -266,12 +288,17 @@ async function install({ deps, config, print }) {
           print(s.distro === "ubuntu" ? `Microsoft's core fonts are in Ubuntu's multiverse, which this computer's package sources don't include: run sudo add-apt-repository multiverse, then this again.`
             : `Microsoft's core fonts are in Debian's contrib section, which this computer's package sources don't include: add contrib to the Components of your Debian entries (/etc/apt/sources.list.d/debian.sources, or the lines in /etc/apt/sources.list), run sudo apt-get update, then this again.`);
         } else {
-          const answer = await eulaAnswer({ distro: s.distro, ask: deps.ask, print, record });
-          if (!answer.accepted) print(`Microsoft's core fonts: skipped (${answer.how === "no answer" ? "nobody answered: run this in a terminal to read and accept the licence" : "not accepted"}).`);
+          const answer = await eulaAnswer({ distro: s.distro, ask: deps.ask, print, record, preset });
+          if (!answer.accepted) print(`Microsoft's core fonts: skipped (${answer.how === "no answer" ? `nobody answered: run this in a terminal to read and accept the licence, or, on a server set up without one, record your acceptance as ${EULA_CONFIG_KEY} in config.json (docs/server.md)` : "not accepted"}).`);
           else {
-            const status = apt(deps, ["install", "--no-install-recommends", s.plan.core]);
-            if (status !== 0) { print("The core fonts package didn't install (declined in its own question, or apt-get stopped): they stay absent."); ok = false; }
-            else if (answer.how !== "recorded") record.coreFonts = { eula: { acceptedAt: new Date(deps.now()).toISOString(), how: answer.how, sha256: sha256(readFileSync(EULA_FILE, "utf8")), user: deps.user } };
+            let preseeded = true;
+            if (answer.how === "preset" && s.distro === "ubuntu") {
+              preseeded = deps.preseed(UBUNTU_EULA_PRESEED) === 0;
+              if (!preseeded) { print("debconf didn't take the owner's acceptance (sudo debconf-set-selections): the package would ask in a terminal, so it is skipped."); ok = false; }
+            }
+            const status = preseeded ? apt(deps, ["install", "--no-install-recommends", s.plan.core]) : null;
+            if (status !== 0) { if (preseeded) { print("The core fonts package didn't install (declined in its own question, or apt-get stopped): they stay absent."); ok = false; } }
+            else if (answer.how !== "recorded") record.coreFonts = { eula: { acceptedAt: new Date(deps.now()).toISOString(), how: answer.how, ...(answer.source ? { source: answer.source } : {}), sha256: sha256(readFileSync(EULA_FILE, "utf8")), user: deps.user } };
           }
         }
       }
@@ -300,7 +327,7 @@ async function install({ deps, config, print }) {
   return ok ? 0 : 1;
 }
 
-export const USAGE = "Usage: node scripts/native/fontsetup.mjs [check|install]";
+export const USAGE = `Usage: node scripts/native/fontsetup.mjs [check|install [${EULA_FLAG}]]`;
 
 // The person's terminal: one line, or null when stdin isn't one or closes first.
 function askTerminal(question) {
@@ -324,6 +351,8 @@ export function defaultDeps() {
     run: spawnSync,
     // apt's prompts and the package's questions go to the person's terminal; DEBIAN_FRONTEND is
     // left out so a noninteractive setting in this shell can't answer the EULA question for them.
+    // The owner's preset acceptance, given to debconf before the package asks (Ubuntu).
+    preseed: (selections) => spawnSync("sudo", ["debconf-set-selections"], { input: selections, stdio: ["pipe", "inherit", "inherit"] }).status,
     interactive: (cmd, args) => {
       const env = { ...process.env };
       delete env.DEBIAN_FRONTEND;
@@ -341,10 +370,11 @@ export function defaultDeps() {
 
 export async function runFontSetup(argv, { deps = defaultDeps(), config = readJson(paths.config, {}), print = (l) => process.stdout.write(`${l}\n`) } = {}) {
   const [command = "check", ...rest] = argv;
-  if (rest.length || !["check", "install"].includes(command)) { print(USAGE); return 2; }
+  const flags = rest.filter((a) => a === EULA_FLAG);
+  if (rest.length !== flags.length || !["check", "install"].includes(command) || (flags.length && command !== "install")) { print(USAGE); return 2; }
   if (deps.platform !== "linux") { print("The font setup is for a Linux server (docs/server.md); this computer's own fonts are what its browser uses."); return command === "check" ? 0 : 2; }
   if (command === "check") { for (const l of stateLines(fontState({ deps, config }))) print(l); return 0; }
-  return install({ deps, config, print });
+  return install({ deps, config, print, preset: eulaPreset(config, rest) });
 }
 
 if (process.argv[1] && existsSync(process.argv[1]) && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

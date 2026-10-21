@@ -83,7 +83,13 @@ On Debian and Ubuntu it installs:
    installs the package only when you type `yes` (Debian's package asks nothing itself); on Ubuntu
    the package shows it and asks you. Your answer is recorded with the licence text's SHA-256, so a
    later run doesn't ask again. Without a terminal to answer in, or without a `yes`, the core fonts
-   are skipped and the rest is installed. The package is in Debian's `contrib` section (Ubuntu's
+   are skipped and the rest is installed. A server you set up without a terminal (a provisioning
+   script, a container image): read the licence (`scripts/native/corefonts-eula.txt`) and record
+   your acceptance yourself, either as `"server": { "acceptMsCoreFontsEula": true }` in
+   `~/.pairbrowse/config.json` or with `install --accept-ms-corefonts-eula`; the setup then names
+   where it found your acceptance, installs without asking (on Ubuntu it gives the package's own
+   question your answer first, through `debconf-set-selections`, the distribution's way for an
+   unattended install) and records it as before. Nothing else ever answers for you. The package is in Debian's `contrib` section (Ubuntu's
    `multiverse`): if your package sources don't include it, the setup says how to add it and leaves
    your sources as they are (Debian: add `contrib` to the `Components:` of the Debian entries in
    `/etc/apt/sources.list.d/debian.sources`, or to the lines in `/etc/apt/sources.list`, then

@@ -136,7 +136,8 @@
   corner; a `--window-size` or `--window-position` in `browserArgs` still wins. Used only when
   PairBrowse runs its own virtual screen (`display` `"auto"` on a machine without a screen, or
   `"xvfb"`); elsewhere the window opens at 1366x900.
-- `server`: `{ "keepAlive": false }` (default). `true` puts the helper in server mode (a helper kept
+- `server`: `{ "keepAlive": false, "acceptMsCoreFontsEula": false }` (defaults). `keepAlive`
+  `true` puts the helper in server mode (a helper kept
   running on a server, even one with a screen of its own, usually by the system's service manager;
   it runs only the native browser, see `browser` above; the setup, a systemd unit and which
   computer to pick are in [Running on a server](server.md)):
@@ -152,6 +153,9 @@
   say the browser runs on a server; and the crash-loop limit above and the server-mode sandbox rule
   (`browserSandbox`) apply. `pairbrowse_status` says "keep-alive on", or when the browser starts
   again. With `false`, a helper started over SSH keeps today's lifetime.
+  `acceptMsCoreFontsEula` `true` records that you, the owner, accepted Microsoft's licence for the
+  core fonts for the web, so the server's font setup installs them without asking (see
+  [server.md](server.md), Fonts); it stands in for your typed `yes` and nothing else.
 - `handoff`: hand-off messages to your phone, for when the browser runs on a server or you are away
   from it: `{ "enabled": false, "away": false, "publicLink": false, "grantMinutes": 15,
   "remindMinutes": 10, "channels": [] }` (default). On a computer you sit at, a step handed to you

@@ -42,7 +42,7 @@ test("today's layout migrates with cookies kept; undo then the previous layout l
     agent = await session(helper.socketPath, "b");
     assert.match(text(await agent.tool("pairbrowse_session", { action: "use", name: "shop" })), /Now using session "shop"/);
     assert.deepEqual(await probe(agent, `${site.base}/p`), { cookies: "login=kept", ls: "kept", idb: "kept" }, "the login and storage kept through the move");
-    assert.match(text(await agent.tool("pairbrowse_status", { kind: "agent", text: "checking" })), /Profile: default \(rev 1, unverified on the open build\)/);
+    assert.match(text(await agent.tool("pairbrowse_status", { kind: "agent", text: "checking" })), /Profile: default \(rev 1, unverified on PairBrowse as an extension\)/);
     agent.sock.destroy();
     await helper.stop();
     helper = null;

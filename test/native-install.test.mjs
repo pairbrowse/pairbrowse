@@ -390,12 +390,15 @@ test("the first-setup question: asked once, Enter is PairBrowse, 2 is the open b
     let asked = "";
     assert.equal(await askBrowserChoice({ config: {}, native: true, ask: async (q) => { asked = q; return "2"; } }), "pairbrowse-open");
     assert.equal(asked, BROWSER_QUESTION);
-    assert.match(asked, /1\. PairBrowse \(recommended\)/);
+    assert.match(asked, /1\. The PairBrowse browser \(recommended\)/, "the native browser leads");
+    assert.match(asked, /2\. PairBrowse as an extension: .*no server mode/s, "the fallback, with what it lacks");
+    assert.doesNotMatch(asked, /open build|open-source/);
     assert.deepEqual(JSON.parse(readFileSync(configFile, "utf8")), { browserDriver: "patchright", participantName: "Ann", browser: "pairbrowse-open" });
     assert.equal(await askBrowserChoice({ config: {}, native: true, ask: async () => "" }), "pairbrowse");
     assert.deepEqual(JSON.parse(readFileSync(configFile, "utf8")), { browserDriver: "patchright", participantName: "Ann", browser: "pairbrowse" });
     assert.equal(await askBrowserChoice({ config: {}, native: true, ask: async () => " Chromium " }), "pairbrowse-open", "the older word");
     assert.equal(await askBrowserChoice({ config: {}, native: true, ask: async () => "open" }), "pairbrowse-open");
+    assert.equal(await askBrowserChoice({ config: {}, native: true, ask: async () => "extension" }), "pairbrowse-open");
     // No terminal and no stand-in: PairBrowse, recorded.
     rmSync(configFile, { force: true });
     assert.equal(await askBrowserChoice({ config: {}, native: true, input: { isTTY: false }, output: { isTTY: false } }), "pairbrowse");

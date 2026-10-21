@@ -60,6 +60,7 @@ export const SWITCHES = {
   RESTART_MS: "the tunnel pool's restart pause (daemon/tunnel-pool.mjs)",
   RESUME_GRACE_MS: "how long a closed agent connection's label, color and tab wait for the same app session (daemon/serve/departures.mjs)",
   SCREEN: "pairbrowse_test_screen: the shared browser picture page",
+  SERVER_OPEN: "server mode may launch a browser other than the native build (the Phase A live tests on Playwright's build: browser/choice.mjs serverRefusal)",
   SILENT_MS: "when a joiner's stream counts as silent (liveview/push.mjs)",
   TAB_ORDER: "pairbrowse_test_tab_order: read and move tabs in the strip",
   TUNNEL: "\"direct\": the guest port stands in for a tunnel",

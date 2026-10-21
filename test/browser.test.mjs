@@ -440,11 +440,11 @@ test("the browser setting: pairbrowse, pairbrowse-open (or chromium), a path of 
   assert.deepEqual(pick({ browser: "chromium" }), { browser: "pairbrowse-open", set: true, executablePath: null, problem: null }, "the older name");
   assert.deepEqual(pick({ browser: "/opt/brave/brave" }), { browser: "/opt/brave/brave", set: true, executablePath: "/opt/brave/brave", problem: null });
   // A missing or non-executable path, a relative path or another word: the open build, with a line for the log.
-  for (const [given, line] of [["/nowhere/chromium", "browser: /nowhere/chromium isn't an executable file; using PairBrowse (open build) instead"],
-    ["/opt/notes.txt", "browser: /opt/notes.txt isn't an executable file; using PairBrowse (open build) instead"],
-    ["brave", 'browser must be "pairbrowse", "pairbrowse-open" or an absolute path; using PairBrowse (open build)'],
-    ["../x", 'browser must be "pairbrowse", "pairbrowse-open" or an absolute path; using PairBrowse (open build)'],
-    ["Chromium", 'browser must be "pairbrowse", "pairbrowse-open" or an absolute path; using PairBrowse (open build)']]) {
+  for (const [given, line] of [["/nowhere/chromium", "browser: /nowhere/chromium isn't an executable file; using PairBrowse as an extension instead"],
+    ["/opt/notes.txt", "browser: /opt/notes.txt isn't an executable file; using PairBrowse as an extension instead"],
+    ["brave", 'browser must be "pairbrowse", "pairbrowse-open" or an absolute path; using PairBrowse as an extension'],
+    ["../x", 'browser must be "pairbrowse", "pairbrowse-open" or an absolute path; using PairBrowse as an extension'],
+    ["Chromium", 'browser must be "pairbrowse", "pairbrowse-open" or an absolute path; using PairBrowse as an extension']]) {
     assert.deepEqual(pick({ browser: given }), { browser: "pairbrowse-open", set: true, executablePath: null, problem: line }, given);
   }
   // Unset: PairBrowse where a build is pinned, the open build elsewhere; nobody chose.

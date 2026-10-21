@@ -80,7 +80,7 @@ export function savedCardFor({ asked = false, native = false, storage = null, pl
   if (!asked) return { asked: false, on: false, store: "", line: "" };
   const store = native ? keyStoreOf(storage, platform) : "";
   if (!store) {
-    const why = !native ? "the open build" : !["darwin", "linux"].includes(platform) ? "no key store on this system" : "only the browser's fixed key: the key file ~/.pairbrowse/safe-storage-key failed a check, or this build can't read one";
+    const why = !native ? "PairBrowse as an extension" : !["darwin", "linux"].includes(platform) ? "no key store on this system" : "only the browser's fixed key: the key file ~/.pairbrowse/safe-storage-key failed a check, or this build can't read one";
     return { asked: true, on: false, store: "", line: `${SAVED_CARD_REFUSED} (${why}); payment autofill stays off` };
   }
   return { asked: true, on: true, store, line: `Saved card: on (encrypted with ${store === "keychain" ? "the macOS Keychain" : "this install's key file"}); only you fill it, during a hand-off` };

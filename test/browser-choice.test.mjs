@@ -4,7 +4,7 @@
 import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EventEmitter } from "node:events";
@@ -13,7 +13,7 @@ import { EventEmitter } from "node:events";
 // project's modules are imported only after this line.
 const home = mkdtempSync(join(tmpdir(), "pb-choice-"));
 process.env.PAIRBROWSE_HOME = home;
-const { chooseBrowser, engineConfig, shellFrom, shellOf, EXTENSION_SHELL } = await import("../scripts/browser/choice.mjs");
+const { chooseBrowser, engineConfig, shellFrom, shellOf, serverRefusal, SERVER_NEEDS_NATIVE, OPEN_BROWSER_NAME, EXTENSION_SHELL } = await import("../scripts/browser/choice.mjs");
 const { launchOptions } = await import("../scripts/browser.mjs");
 const { paths } = await import("../scripts/paths.mjs");
 
@@ -157,6 +157,44 @@ test("a launch keeps its choice to itself, and a native profile alone is somethi
   assert.equal(launched[0].options.executablePath, "/fake/chrome");
   assert.equal(context.choiceConfig(), config);
   await context.close();
+});
+
+// Server mode runs only the native build (spec server-mode decision 12).
+test("server mode refuses every browser but the native build, in one sentence naming the fix", () => {
+  for (const config of [{ browser: "pairbrowse" }, { browserEngine: "pairbrowse", executablePath: "/my/native/pairbrowse" }, {}]) {
+    assert.equal(serverRefusal(chooseBrowser(config, { native: true, pinnedExec: () => PINNED }), { server: true }), null, JSON.stringify(config));
+  }
+  for (const config of [{ browser: "pairbrowse-open" }, { browser: "chromium" }, { browser: "/opt/brave" }, { browserEngine: "chromium", executablePath: "/fake/chrome" }, {}]) {
+    const spec = chooseBrowser(config, { native: false, pinnedExec: () => PINNED, exists: yes, executable: yes });
+    assert.notEqual(spec.binary, "native");
+    assert.equal(serverRefusal(spec, { server: true }), SERVER_NEEDS_NATIVE, JSON.stringify(config));
+    assert.equal(serverRefusal(spec, { server: false }), null, "a desktop runs any of them");
+    assert.equal(serverRefusal(spec, { server: true, allowOther: true }), null, "the Phase A live tests' knob");
+  }
+  // One sentence: what is needed, how to get it, where it's explained.
+  assert.equal(SERVER_NEEDS_NATIVE.split(/[.:] (?=[A-Z])/).length, 1, "one sentence");
+  assert.match(SERVER_NEEDS_NATIVE, /native PairBrowse browser/);
+  assert.match(SERVER_NEEDS_NATIVE, /"browser": "pairbrowse"/);
+  // Every doc the sentence names exists (docs/server.md only from spec step 50).
+  const docs = SERVER_NEEDS_NATIVE.match(/docs\/[\w./-]+\.md/g) || [];
+  assert.ok(docs.length > 0, "names where it's explained");
+  for (const doc of docs) assert.ok(existsSync(new URL(`../${doc}`, import.meta.url)), doc);
+  assert.equal(OPEN_BROWSER_NAME, "PairBrowse as an extension");
+});
+
+test("server mode: a launch of the extension's browser is refused before anything starts, and nothing is written", { timeout: 30_000 }, async () => {
+  writeFileSync(join(home, "config.json"), "{}");
+  mkdirSync(join(home, "run"), { recursive: true });
+  const config = { browserEngine: "chromium", executablePath: "/fake/chrome", display: "none", server: { keepAlive: true }, sessionPicker: false };
+  const { context, launched } = await fakeContext(config);
+  await assert.rejects(context.getContext(), (e) => e.message === SERVER_NEEDS_NATIVE);
+  assert.equal(launched.length, 0, "no browser started");
+  assert.equal(config.browser, undefined, "the choice is never written into config");
+  // A desktop (no keep-alive, a screen of its own) launches the same browser.
+  const desktop = await fakeContext({ ...config, server: { keepAlive: false } });
+  await desktop.context.getContext();
+  assert.equal(desktop.launched.length, 1);
+  await desktop.context.close();
 });
 
 test("the Safe Storage key: this install's own file and no mock keychain, the Keychain, or the mock (594)", { skip: process.platform !== "darwin" && "macOS only" }, async () => {

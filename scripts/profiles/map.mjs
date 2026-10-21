@@ -36,7 +36,7 @@ export const THIS_COMPUTER_NOTE = "PairBrowse no longer picks another device's p
 // Every switch the mapper can add, and every engine key it can set (D6); the fuzz test holds it to these.
 export const SWITCHES = Object.freeze(["lang", "window-size", "force-dark-mode", "force-prefers-reduced-motion", "use-angle"]);
 export const ENGINE_KEYS = Object.freeze(["acceptLanguage", "timezone", "screenWidth", "screenHeight", "availWidth", "availHeight", "colorDepth", "devicePixelRatio", "fingerprint"]);
-const BUILD_NAMES = { pairbrowse: "native PairBrowse build", "pairbrowse-open": "open build" };
+const BUILD_NAMES = { pairbrowse: "the native PairBrowse browser", "pairbrowse-open": "PairBrowse as an extension" };
 // config.json's pairbrowse keys this module reads into a profile.
 const READ_KEYS = ["acceptLanguage", "timezone", "geoip", "screenWidth", "screenHeight", "availWidth", "availHeight", "colorDepth", "devicePixelRatio", "fingerprint", "profile", "graphics"];
 // Another device's hardware and the build's identity: config.json-only legacy (decision U6).
@@ -121,7 +121,7 @@ export function readConfig(config = {}, { native = false, platform = process.pla
   const kind = browserKindOf(cfg, { native });
   settings.browser = { kind };
   if (typeof cfg.browser === "string" && isAbsolute(cfg.browser)) {
-    report("browser", "not-applied", "C", "a browser of your own by its path stays in config.json; it starts like the open build");
+    report("browser", "not-applied", "C", "a browser of your own by its path stays in config.json; it starts like PairBrowse as an extension");
   }
 
   // The switches that pass the screen, as the launch passes them; one read only when every copy agrees.
@@ -145,7 +145,7 @@ export function readConfig(config = {}, { native = false, platform = process.pla
   // The pairbrowse block is the native build's: on the open build it is read by nothing, as today.
   const block = plainObject(cfg.pairbrowse) ? cfg.pairbrowse : {};
   const pb = kind === "pairbrowse" ? block : {};
-  if (kind !== "pairbrowse" && Object.keys(block).length) report("pairbrowse", "not-applied", "C", "the native build's settings; config.json starts the open build, which reads none of them");
+  if (kind !== "pairbrowse" && Object.keys(block).length) report("pairbrowse", "not-applied", "C", "the native build's settings; config.json starts PairBrowse as an extension, which reads none of them");
 
   // Locale: the pairbrowse block's languages, else --lang; its time zone; geoip.
   let languages = null;
@@ -242,7 +242,7 @@ export function toLaunch(profile, { browserKind, platform = process.platform, us
   const derived = (field, cls, reason) => add(field, "derived", cls, reason);
   const refuse = (field, cls, reason, status = "unsupported") => add(field, status, cls, reason, { severity: "error" });
 
-  if (p.browser.kind !== browserKind) refuse("browser.kind", "C", `the profile is for the ${BUILD_NAMES[p.browser.kind]}, and this launch starts the ${build}`, "mismatch");
+  if (p.browser.kind !== browserKind) refuse("browser.kind", "C", `the profile is for ${BUILD_NAMES[p.browser.kind]}, and this launch starts ${build}`, "mismatch");
 
   // Locale (matrix: acceptLanguage and --lang; the timezone key; geoip on the native build only).
   const { languages, timezone, source } = p.locale;
@@ -254,20 +254,20 @@ export function toLaunch(profile, { browserKind, platform = process.platform, us
       applied("locale.languages", "C", "sent as Accept-Language and navigator.languages", languages);
       if (takesLang) switches.push(langSwitch);
       else add("locale.languages", "not-applied", "C", "the first language isn't one --lang takes, so the browser's own interface language stays; pages still get the languages", { severity: "warning" });
-    } else if (!takesLang) refuse("locale.languages", "C", "the first language isn't one --lang takes, and the open build sets languages only through it");
+    } else if (!takesLang) refuse("locale.languages", "C", "the first language isn't one --lang takes, and PairBrowse as an extension sets languages only through it");
     else {
       switches.push(langSwitch);
       applied("locale.languages", "C", "the first language as the browser's language (--lang)", languages.slice(0, 1));
-      if (languages.length > 1) add("locale.languages", "not-applied", "C", `the open build takes only the first language; ${languages.length - 1} more aren't sent`, { severity: "warning" });
+      if (languages.length > 1) add("locale.languages", "not-applied", "C", `PairBrowse as an extension takes only the first language; ${languages.length - 1} more aren't sent`, { severity: "warning" });
     }
   } else derived("locale.languages", "C", source === "geoip" && native ? "from the exit address at each launch (geoip)" : "this computer's at each launch");
   if (timezone) {
-    if (native) { engineKeys.timezone = timezone; applied("locale.timezone", "C", "the time zone pages read", timezone); } else refuse("locale.timezone", "C", "the open build can't set a time zone");
+    if (native) { engineKeys.timezone = timezone; applied("locale.timezone", "C", "the time zone pages read", timezone); } else refuse("locale.timezone", "C", "PairBrowse as an extension can't set a time zone");
   } else derived("locale.timezone", "C", source === "geoip" && native ? "from the exit address at each launch (geoip)" : "this computer's at each launch");
   const geoip = source === "geoip";
   if (geoip) {
     if (native) applied("locale.source", "C", "time zone and languages not set here follow the exit address (geoip), looked up at each launch and never kept");
-    else refuse("locale.source", "C", "the open build has no geoip");
+    else refuse("locale.source", "C", "PairBrowse as an extension has no geoip");
   }
 
   // Screen (the screen engine keys, native only) and window (--window-size).
@@ -276,7 +276,7 @@ export function toLaunch(profile, { browserKind, platform = process.platform, us
       const s = p.screen;
       Object.assign(engineKeys, { screenWidth: s.width, screenHeight: s.height, availWidth: s.availWidth, availHeight: s.availHeight, colorDepth: s.colorDepth, devicePixelRatio: s.devicePixelRatio });
       applied("screen", "C", "the screen pages read", { ...s });
-    } else refuse("screen", "C", "the open build can't set a screen (null: this computer's)");
+    } else refuse("screen", "C", "PairBrowse as an extension can't set a screen (null: this computer's)");
   } else derived("screen", "C", "this computer's (on a virtual screen, its size)");
   if (p.window) {
     switches.push(`--window-size=${p.window.width},${p.window.height}`);
@@ -308,10 +308,10 @@ export function toLaunch(profile, { browserKind, platform = process.platform, us
   // Persona (D3, D9): a pinned seed, the host's own values, or a seed per session.
   const { seed } = p.persona;
   if (seed) {
-    if (native) { engineKeys.fingerprint = seed; applied("persona.seed", "C", "a pinned seed: one device wherever it runs"); } else refuse("persona.seed", "C", "the open build has no persona");
-  } else if (p.persona.source === "host") derived("persona.source", "D", native && platform === "darwin" ? "this Mac's own values (host capture)" : native ? "the seed persona with this computer's graphics (host capture is macOS only)" : "the open build reports this computer's own");
+    if (native) { engineKeys.fingerprint = seed; applied("persona.seed", "C", "a pinned seed: one device wherever it runs"); } else refuse("persona.seed", "C", "PairBrowse as an extension has no persona");
+  } else if (p.persona.source === "host") derived("persona.source", "D", native && platform === "darwin" ? "this Mac's own values (host capture)" : native ? "the seed persona with this computer's graphics (host capture is macOS only)" : "PairBrowse as an extension reports this computer's own");
   else if (native) derived("persona.seed", "D", "a seed of the session's own");
-  else add("persona.seed", "not-applied", "D", "the open build has no persona");
+  else add("persona.seed", "not-applied", "D", "PairBrowse as an extension has no persona");
 
   // A saved card (B12): the preference the launch writes, honored only with a real key store,
   // which only the launch knows (browser/safe-storage.mjs savedCardFor; it says so in the status
@@ -320,7 +320,7 @@ export function toLaunch(profile, { browserKind, platform = process.platform, us
   if (p.payments.savedCard) {
     prefs.savedCard = true;
     if (native) applied("payments.savedCard", "C", "payment autofill on when this launch has a real key store (the Keychain or this install's key file); only the person fills it, during a hand-off", true);
-    else add("payments.savedCard", "not-applied", "C", "the open build has no key store for saved cards: payment autofill stays off", { requested: true, severity: "warning" });
+    else add("payments.savedCard", "not-applied", "C", "PairBrowse as an extension has no key store for saved cards: payment autofill stays off", { requested: true, severity: "warning" });
   }
   if (p.network) applied("network", "C", "the session's proxy, unless config.json's network.sessions names one", p.network);
   else derived("network", "C", "config.json's network default, if any");
@@ -332,7 +332,7 @@ export function toLaunch(profile, { browserKind, platform = process.platform, us
   const errors = results.filter((r) => r.severity === "error");
   if (errors.length) {
     const list = errors.map((r) => `${r.field} (${r.reason})`).join("; ");
-    return empty(`Browser profile "${p.name}" can't start on the ${build}: ${list}. Change the profile or the browser; nothing was started.`);
+    return empty(`Browser profile "${p.name}" can't start on ${build}: ${list}. Change the profile or the browser; nothing was started.`);
   }
   return { switches, engineKeys, prefs, geoip: geoip && native, network: p.network, adBlocker: p.adBlocker, results, problem: null };
 }

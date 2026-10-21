@@ -92,14 +92,14 @@ gives focus back to whatever you were using, another PairBrowse window included.
 
 ## Settings
 
-Which browser PairBrowse runs (the native PairBrowse browser, PairBrowse (open build), or a
+Which browser PairBrowse runs (the native PairBrowse browser, PairBrowse as an extension, or a
 compatible browser of your own, such as Brave, Arc or Vivaldi) is asked once, and changed in the browser's Settings page or as `"browser"`
 in `~/.pairbrowse/config.json`. A change takes effect when the browser next starts on the same
 session profile: close the PairBrowse window or switch session. The timeline (on or off, and how
 many pictures it keeps, 1 to 200) is changed there too, and applies at once. See
 [Configuration](configuration.md).
 
-With the side panel extension (the open build, or a browser of your own) the same Settings page is the
+With PairBrowse as an extension (in its pinned browser, or a browser of your own) the same Settings page is the
 extension's options page: open it with the gear in the side panel's header, **Open settings** at
 the end of its Tools tab, or **Settings** in the menu of PairBrowse's toolbar button (right-click
 it). Every section works there: the browser choice, the downloads folder, approvals, your name,

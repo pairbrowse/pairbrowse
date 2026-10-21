@@ -29,7 +29,7 @@ export const cliCommand = (args) => `node ${/^[\w./:\\-]+$/.test(CLI) ? CLI : JS
 // default. Returns { id, name, kind, build, from (the engine it was held to before, or null),
 // status: "unverified", items }. Throws a sentence (err.code PROFILE_*) on a refusal.
 export function validateProfile(store, ref, { build, pack = null, configSettings, platform = process.platform, now = Date.now } = {}) {
-  if (typeof build !== "string" || !BUILD.test(build)) throw fail("PROFILE_VALIDATE", "No native PairBrowse build is installed for this home's browser, so there is nothing to check the profile on: profiles are checked on the native build (the open build's starts are never validated).");
+  if (typeof build !== "string" || !BUILD.test(build)) throw fail("PROFILE_VALIDATE", "No native PairBrowse build is installed for this home's browser, so there is nothing to check the profile on: profiles are checked on the native build (starts of PairBrowse as an extension are never validated).");
   const record = store.use(ref, { configSettings });
   const mapped = toLaunch(record, { browserKind: "pairbrowse", platform });
   if (mapped.problem) throw fail("PROFILE_VALIDATE", `Browser profile "${record.name}" wasn't checked on build ${build}: ${mapped.problem}`);
@@ -46,7 +46,7 @@ export async function installedBuild(config = {}) {
     import("../browser/choice.mjs"), import("../native/install.mjs"), import("../native-engine.mjs"), import("../native-pack.mjs"), import("node:fs"),
   ]);
   const spec = chooseBrowser(config, { native: !!pinnedAsset(), pinnedExec: () => nativeDirs().exec });
-  if (spec.binary !== "native") return { problem: "This home's browser is the open build (or a browser of your own): profiles are checked on the native PairBrowse build only." };
+  if (spec.binary !== "native") return { problem: "This home's browser is PairBrowse as an extension (or a browser of your own): profiles are checked on the native PairBrowse build only." };
   const exec = spec.executablePath || nativeDirs().exec;
   if (!exec || !existsSync(exec)) return { problem: "The native PairBrowse build isn't installed yet: start the browser once, then check the profile." };
   try { return { build: nativeManifest(exec).version, pack: NATIVE.engine?.sha256 || null, exec }; } catch (e) { return { problem: e?.message || String(e) }; }

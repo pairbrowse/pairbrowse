@@ -394,15 +394,16 @@ export async function ensureNative(log = () => {}, { pinned = pinnedArchive, eng
 }
 
 export const BROWSER_QUESTION = "Which browser should PairBrowse use?\n" +
-  "  1. PairBrowse (recommended): its own browser build; free for personal use (BINARY-LICENSE.md)\n" +
-  "  2. PairBrowse (open build): the open-source build with the PairBrowse side panel\n" +
+  "  1. The PairBrowse browser (recommended): its own browser, made for PairBrowse; free for personal use (BINARY-LICENSE.md)\n" +
+  "  2. PairBrowse as an extension: the same plugin in another browser, with a side panel; no server mode,\n" +
+  "     humanized input or the engine's identity work, so sites block it more often\n" +
   "Choice [1]: ";
 
 // The first-setup question, in the by-hand install step's terminal (the helper never asks: it has
 // no terminal, and uses the default until a person chooses in Settings). Returns the choice:
 // the recorded one without asking; "pairbrowse-open" without asking or recording on a computer with no
 // pinned build; otherwise asked once (ask(question) in tests; a terminal on input and output by
-// default, timeoutMs to answer): "2", "open", "pairbrowse-open" or "chromium" is the open build, anything else (Enter, no answer in
+// default, timeoutMs to answer): "2", "extension", "open", "pairbrowse-open" or "chromium" is the open build, anything else (Enter, no answer in
 // time, no terminal) is PairBrowse. The answer is recorded in config.json ("browser").
 export async function askBrowserChoice({ config = loadConfig(), native = !!pinnedAsset(), input = process.stdin, output = process.stderr, ask = null, timeoutMs = 60_000, log = () => {} } = {}) {
   const recorded = browserChoice(config, { native });
@@ -419,7 +420,7 @@ export async function askBrowserChoice({ config = loadConfig(), native = !!pinne
       if (answer === null) output.write("\n");
     } finally { ac.abort(); rl.close(); }
   }
-  const browser = /^\s*(2|open|pairbrowse-open|chromium)\s*$/i.test(String(answer ?? "")) ? OPEN_BROWSER : "pairbrowse";
+  const browser = /^\s*(2|extension|open|pairbrowse-open|chromium)\s*$/i.test(String(answer ?? "")) ? OPEN_BROWSER : "pairbrowse";
   // A config.json that can't be read is left as it is (saveConfig refuses it): the choice holds for this install only.
   try { saveConfig({ browser }); log(`browser: ${browser} (recorded in ~/.pairbrowse/config.json)`); } catch (e) { log(`browser: ${browser} (not recorded: ${e?.message || e})`); }
   return browser;

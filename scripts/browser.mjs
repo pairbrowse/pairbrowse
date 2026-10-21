@@ -435,7 +435,7 @@ async function ungoogledApp(log) {
   if (existsSync(join(app, "Contents", "Info.plist"))) return app;
   const asset = UNGOOGLED[process.arch === "arm64" ? "arm64" : "x64"];
   const dmg = join(paths.downloads, asset.file);
-  if (!existsSync(dmg)) log(`downloading the PairBrowse open build ${UNGOOGLED.version} (about 150 MB, once)`);
+  if (!existsSync(dmg)) log(`downloading the browser for PairBrowse as an extension (version ${UNGOOGLED.version}, about 150 MB, once)`);
   await downloadPinned(`https://github.com/ungoogled-software/ungoogled-chromium-macos/releases/download/${UNGOOGLED.version}/${asset.file}`, dmg, asset.sha256);
   const { stdout } = await run("hdiutil", ["attach", "-nobrowse", "-readonly", "-noautoopen", dmg]);
   const mount = stdout.trim().split("\n").at(-1).split("\t").at(-1).trim();

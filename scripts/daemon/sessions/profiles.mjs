@@ -154,8 +154,8 @@ export function createProfiles(st, deps = {}) {
     const results = [...mapped.results, ...believable];
 
     if (config.requireValidatedProfiles === true) {
-      const on = engine ? `build ${engine.build}` : native ? "this build" : "the open build";
-      if (status !== "validated") throw refuse(`${named} is ${status} on ${on}, and requireValidatedProfiles is on in config.json: validate the profile on it first${native ? "" : " (the open build's launches are never validated)"}; nothing was started.`);
+      const on = engine ? `build ${engine.build}` : native ? "this build" : "PairBrowse as an extension";
+      if (status !== "validated") throw refuse(`${named} is ${status} on ${on}, and requireValidatedProfiles is on in config.json: validate the profile on it first${native ? "" : " (launches of PairBrowse as an extension are never validated)"}; nothing was started.`);
       const errors = (prior.items || []).filter((i) => i.severity === "error");
       if (errors.length) throw refuse(`${named} has ${errors.length === 1 ? "an error" : `${errors.length} errors`} in its checks on ${on} (${errors.map((i) => i.field).join(", ")}), and requireValidatedProfiles is on in config.json; nothing was started.`);
     }
@@ -189,7 +189,7 @@ export function createProfiles(st, deps = {}) {
     // D9: config.json's persona "auto" or "local" is this computer now: one note in the status
     // while the config-backed default on the native build still says so (the launch logs it too).
     const notes = native && record.kind === "config" && PICKS_THIS_COMPUTER.includes(config.pairbrowse?.profile) ? [`note: ${THIS_COMPUTER_NOTE} (pairbrowse.profile "${config.pairbrowse.profile}" in config.json)`] : [];
-    log(`launch: ${who} on ${named}, revision ${record.revision}, ${status}${engine ? ` on ${engine.build}` : native ? "" : " (open build)"}`);
+    log(`launch: ${who} on ${named}, revision ${record.revision}, ${status}${engine ? ` on ${engine.build}` : native ? "" : " (PairBrowse as an extension)"}`);
     // The open coherence items: the screen's, and the measured ones of this pack (status validated
     // or failed: entryStatus counts a measurement only for its own pack).
     const coherence = coherenceOf(believable, status === "unverified" ? null : prior, record.name);
@@ -228,7 +228,7 @@ export function createProfiles(st, deps = {}) {
     const p = st.profile;
     const out = [];
     if (p) {
-      const on = p.build || (p.browserKind === "pairbrowse" ? "this build" : "the open build");
+      const on = p.build || (p.browserKind === "pairbrowse" ? "this build" : "PairBrowse as an extension");
       out.push(`Profile: ${p.name} (rev ${p.revision}, ${p.status} on ${on})`, ...p.warnings.map((w) => `warning: ${w}`), ...(p.notes || []));
       if (p.savedCard?.line) out.push(p.savedCard.on ? p.savedCard.line : `warning: ${p.savedCard.line}`);
     }

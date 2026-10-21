@@ -2738,7 +2738,9 @@ it depends on.
     dead, profiles native, ntfy. -> 47, 46
 50. Docs: `docs/server.md` (new), `docs/profiles.md` (new), `docs/configuration.md`, `docs/browser.md` graphics
     section, `docs/sharing.md`, `docs/using.md`, ADR 0009 "In code", `.claude/CLAUDE.md` Layout,
-    CHANGELOG, version bump in `package.json` and both plugin manifests, annotated tag.
+    CHANGELOG, version bump in `package.json` and both plugin manifests, annotated tag. With
+    `docs/server.md` in, the refusals that point to `docs/configuration.md` meanwhile (step 7's sandbox
+    errors, step 46b's `SERVER_NEEDS_NATIVE`) point to it.
 
 ## 12. Security implications
 
@@ -2899,6 +2901,16 @@ binding for implementation; where a phase section above says otherwise, this sec
     people who do not want the native browser. User-facing text calls it "PairBrowse as an extension"
     (the same plugin and `ui/` pages, loaded into another browser) rather than "open build"; the config
     value `"pairbrowse-open"` stays as it is.
+    Implemented (step 46b): `browser/choice.mjs` `serverRefusal` and `SERVER_NEEDS_NATIVE`, applied in
+    `daemon/browser/launch.mjs` `chooseEngine` before anything is installed or started ("Server mode
+    runs only the native PairBrowse browser: install it by setting "browser": "pairbrowse" in
+    ~/.pairbrowse/config.json (see "browser" in docs/configuration.md)."; it points to
+    `docs/server.md` once that exists, step 50, as the sandbox refusals of step 7 do). The Phase A live tests that run server mode on
+    Playwright's build (`integration/server-display`, `optin/server/server-run`) get the harness-only
+    knob `SERVER_OPEN` from `test/helpers/server.mjs` (the test gate drops it from any installed
+    helper); `integration/server-display` also checks the refusal without it (the whole file, 8 of 8,
+    run on Linux in the A13 container, `test/optin/server/container.mjs`, 2026-10-21). Tests:
+    `test/browser-choice.test.mjs`.
 
 Implementation conditions (from the user):
 - Keep the five phases and every agreed requirement: profile import and export, per-profile isolation,

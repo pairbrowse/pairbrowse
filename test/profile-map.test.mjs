@@ -166,7 +166,7 @@ test("an explicit field the open build can't apply refuses", () => {
     [{ graphics: { backend: "software", require: null } }, "graphics.backend"],
   ]) {
     const out = toLaunch(openRecord(changes), OPEN);
-    assert.match(out.problem || "", new RegExp(`^Browser profile "berlin-desktop" can't start on the open build: ${field.replace(".", "\\.")} \\(`), field);
+    assert.match(out.problem || "", new RegExp(`^Browser profile "berlin-desktop" can't start on PairBrowse as an extension: ${field.replace(".", "\\.")} \\(`), field);
     assert.deepEqual([out.switches, out.engineKeys], [[], {}], `${field}: nothing to launch with`);
     assert.ok(out.results.some((r) => r.field === field && r.severity === "error" && r.status === "unsupported"));
     assert.ok(!out.problem.includes("pinned-1"));

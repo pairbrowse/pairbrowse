@@ -15,41 +15,66 @@ PairBrowse checks where Claude Code runs and shows the browser in the matching w
 
 PairBrowse runs its own browser: a normal, headed browser, so pages render natively and sites
 treat it like a regular browser. Claude drives it over the private pipe, with no debugging port.
-There's no headless mode.
+There's no headless mode. It comes in two forms:
 
-- **macOS (open build):** a pinned, notarized open-source build (its source address, version and
-  SHA-256 are in `scripts/browser.mjs`), downloaded once (about 150 MB), checked against that
-  SHA-256 and its notarization, and copied into `~/.pairbrowse/browser/PairBrowse.app` (moved to an
-  app of its own next to it when the native build below is installed there) as PairBrowse
-  everywhere you can see it: name, icon, notifications, menus and the browser's own interface text
-  in every language (internal framework file names stay, the engine needs them). It runs with
-  `--show-avatar-button=never`, so the toolbar has no profile button. Energy Saver is off. A new version is a deliberate change of the pinned version and checksum.
-- **Windows and Linux (open build):** Playwright's own browser build, downloaded once (about 100 MB).
-- **The PairBrowse side panel**: click the pinned PairBrowse button in the toolbar, or press
-  **Cmd+Shift+Y** (Ctrl+Shift+Y on Windows and Linux). It shows what Claude is doing, "Your turn" when Claude
-  needs you, the activity list, and the Profile (remembered details and passwords).
+- **The native PairBrowse browser** (`"browser": "pairbrowse"`, the default on a Mac, Apple Silicon
+  or Intel, and on Linux x64): a hardened browser made for PairBrowse, with its own tab strip,
+  docks, new tab page and Settings built in. It looks like an everyday browser to sites, so you see
+  fewer CAPTCHAs, and it is the only browser PairBrowse runs in server mode. See
+  [The native PairBrowse browser](#the-native-pairbrowse-browser).
+- **PairBrowse as an extension** (`"browser": "pairbrowse-open"`): the fallback, for Windows until
+  the native browser arrives there and for people who don't want the native browser. It is the same
+  plugin and `ui/` pages, loaded into another browser as an extension with a side panel. Compared
+  with the native browser it lacks server mode (a server refuses to start it), the engine's identity
+  work (a coherent fingerprint kept per profile), humanized input, and the WebGPU and proxy
+  patches (a proxy with a password is refused there), so sites block it more often. Its browser:
+  - **macOS:** a pinned, notarized open-source build (its source address, version and
+    SHA-256 are in `scripts/browser.mjs`), downloaded once (about 150 MB), checked against that
+    SHA-256 and its notarization, and copied into `~/.pairbrowse/browser/PairBrowse.app` (moved to an
+    app of its own next to it when the native browser is installed there) as PairBrowse
+    everywhere you can see it: name, icon, notifications, menus and the browser's own interface text
+    in every language (internal framework file names stay, the engine needs them). It runs with
+    `--show-avatar-button=never`, so the toolbar has no profile button. Energy Saver is off. A new
+    version is a deliberate change of the pinned version and checksum.
+  - **Windows and Linux:** Playwright's own browser build, downloaded once (about 100 MB).
+  - **A browser of your own:** set `"browser": "/path/to/browser"` in `~/.pairbrowse/config.json`
+    to use Brave, Arc, Vivaldi or another compatible browser instead (an absolute path to its program).
+
+Wherever PairBrowse runs (the native browser, or PairBrowse as an extension in any of its browsers):
+
 - **New tabs** open the PairBrowse new tab page: the logo, a search field, and chips for your other recent sessions (one press switches, the same as the session picker's rows; none are shown when PairBrowse is not running).
 - **Claude's tab** carries the orange spark as its tab icon, and the spark moves with Claude.
 - **Claude's cursor**: a white pointer glides to where Claude clicks, types or chooses, with a
   ring on clicks. It never takes clicks and is hidden from Claude's view.
-- **PairBrowse everywhere**: the browser's own pages, its name and its logo there say PairBrowse
-  (the engine's open-source credits stay on the About page). The engine's own browser sign-in and sync, guest and extra profiles,
-  the default-browser check, translate prompts, and its password manager and autofill popups are
-  off: PairBrowse has its own sessions, fills forms itself and keeps passwords in its own file.
-  Signing into Google or any other site works as usual.
 - **The bottom bar** in each page shows who's driving and Claude's last actions. It never takes
   clicks, fades out when your pointer nears the bottom of the page, and is hidden from Claude's view.
-- It loads one extension of its own and no others: `ui/` (the side panel, new tab, picker, picture and capture pages,
-  which talk only to the key-protected live view on 127.0.0.1). Its navy colors are the browser's
-  built-in color theme, set in the profile (no theme extension, no "Installed theme" bar); pick
-  another in Settings > Appearance and PairBrowse keeps it.
-  With a native build that declares its own pages, no extension is loaded: the helper passes the
+- **Off in the browser:** the engine's own browser sign-in and sync, guest and extra profiles, the
+  default-browser check, translate prompts, and its password manager and autofill popups: PairBrowse has its own sessions,
+  fills forms itself and keeps passwords in its own file. Signing into Google or any other site
+  works as usual.
+
+In the native browser:
+
+- **Docks** instead of a side panel: what Claude is doing, "Your turn" when Claude needs you, the
+  activity list and the Profile sit in the window itself.
+- **No extension is loaded** when the build declares its own pages: the helper passes the
   live view's origin in `--pairbrowse-helper` and a key of their own in an owner-only file named
   by `--pairbrowse-helper-key-file` (deleted once used; the key is never on the command line), the
-  session picker is
-  `chrome://pairbrowse/picker`, and agents never see or drive `chrome://pairbrowse` pages.
-- Set `"browser": "/path/to/browser"` in `~/.pairbrowse/config.json` to use Brave, Arc, Vivaldi
-  or another compatible browser instead (an absolute path to its program).
+  session picker is `chrome://pairbrowse/picker`, and agents never see or drive `chrome://pairbrowse` pages.
+- **PairBrowse everywhere**: the browser's own pages, its name and its logo say PairBrowse
+  (the engine's credits stay on the About page).
+
+In PairBrowse as an extension:
+
+- **The PairBrowse side panel**: click the pinned PairBrowse button in the toolbar, or press
+  **Cmd+Shift+Y** (Ctrl+Shift+Y on Windows and Linux). It shows what Claude is doing, "Your turn" when Claude
+  needs you, the activity list, and the Profile (remembered details and passwords).
+- It loads one extension of its own and no others: `ui/` (the side panel, new tab, picker, picture and capture pages,
+  which talk only to the key-protected live view on 127.0.0.1).
+- Its navy colors are the browser's built-in color theme, set in the profile (no theme extension,
+  no "Installed theme" bar); pick another in Settings > Appearance and PairBrowse keeps it.
+- On macOS the pinned build is branded PairBrowse as described above; Playwright's build on Windows
+  and Linux, and a browser of your own, keep their own name and logo.
 
 ## See it inside the Claude desktop app
 
@@ -78,8 +103,8 @@ them an invite link instead (see [Working together](sharing.md)).
 ## The native PairBrowse browser
 
 Which browser runs is one setting, `"browser"` in `~/.pairbrowse/config.json`: `"pairbrowse"`
-(the native PairBrowse browser), `"pairbrowse-open"` (PairBrowse (open build): the open-source
-browser with the PairBrowse side panel; the older `"chromium"` still works) or an absolute path to a
+(the native PairBrowse browser), `"pairbrowse-open"` (PairBrowse as an extension: the same plugin
+in another browser, with the side panel; the older `"chromium"` still works) or an absolute path to a
 compatible browser of your own. Unset, it's `"pairbrowse"` where a build is pinned for your computer
 (a Mac, Apple Silicon or Intel, and Linux x64), else `"pairbrowse-open"`. You're asked once, in the
 terminal of the by-hand install step below and in the browser's Settings page; a change takes effect
@@ -88,7 +113,7 @@ when the browser next starts. With `"pairbrowse-open"` or a path, nothing is dow
 The native PairBrowse browser is a hardened build made for PairBrowse that looks like an
 everyday browser to sites, so you see fewer CAPTCHAs. It never switches to another browser on its
 own: if the build can't be installed, or there's none for your platform yet (Windows x64 follows),
-the browser doesn't start and says why. To use the open build instead, set `"browser": "pairbrowse-open"`.
+the browser doesn't start and says why. To use PairBrowse as an extension instead, set `"browser": "pairbrowse-open"`.
 While it installs (the first start, or a new version), a
 notification says so, and agents answer "installing" right away instead of waiting.
 
@@ -212,8 +237,7 @@ its own speed, tremor and habits throughout. `"classic"` uses the engine's own s
 { "pairbrowse": { "motion": "quick" } }
 ```
 
-For a fully open-source setup, set `"browser": "pairbrowse-open"` in `~/.pairbrowse/config.json`:
-PairBrowse (open build), a pinned open-source build on macOS and Playwright's browser elsewhere,
-both under their own open licenses. With it, PairBrowse removes Playwright's automation flag and
-disables the engine's AutomationControlled feature. That stops basic `navigator.webdriver` checks, nothing
-more.
+**PairBrowse as an extension** (`"browser": "pairbrowse-open"`) has none of the above: no
+fingerprint capture or persona, no humanized input, no engine pack. PairBrowse removes Playwright's
+automation flag and disables the engine's AutomationControlled feature there. That stops basic
+`navigator.webdriver` checks, nothing more.

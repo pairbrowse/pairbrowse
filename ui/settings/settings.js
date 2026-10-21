@@ -390,7 +390,7 @@ function drawDiag(d) {
   diag = d && typeof d === "object" ? d : null;
   const h = diag?.helper || {}, b = diag?.browser || {}, c = diag?.connections || {};
   $("about-helper").textContent = h.version ? `${h.version}${h.node ? ` · Node ${h.node}` : ""}` : "Not reported";
-  $("about-browser").textContent = b.engine ? [b.engine === "pairbrowse" ? "PairBrowse" : b.engine === "open" || b.engine === "chromium" ? "PairBrowse (open build)" : String(b.engine), b.version, b.build ? `build ${b.build}` : ""].filter(Boolean).join(" ") : "Not reported";
+  $("about-browser").textContent = b.engine ? [b.engine === "pairbrowse" ? "PairBrowse" : b.engine === "open" || b.engine === "chromium" ? "PairBrowse as an extension" : String(b.engine), b.version, b.build ? `build ${b.build}` : ""].filter(Boolean).join(" ") : "Not reported";
   const n = (k, one, many) => { const v = Number(c[k]) || 0; return `${v} ${v === 1 ? one : many}`; };
   $("about-agents").textContent = diag ? [n("agents", "agent", "agents"), n("joiners", "person joined", "people joined"), n("viewers", "viewer", "viewers")].join(" · ") : "Not reported";
   const errors = Array.isArray(diag?.errors) ? diag.errors.slice(-5).reverse() : [];

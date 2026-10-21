@@ -20,8 +20,20 @@ import { nativeManifest, declaresOwnPages, capturePages, captureKeyed, settingsS
 export const OPEN_BROWSER = "pairbrowse-open";
 export const OPEN_BROWSER_ALIASES = Object.freeze([OPEN_BROWSER, "chromium"]);
 export const isOpenBrowser = (value) => OPEN_BROWSER_ALIASES.includes(value);
-// The open build's name in words.
-export const OPEN_BROWSER_NAME = "PairBrowse (open build)";
+// The open build's name in words: PairBrowse as an extension (the same plugin and ui/ pages,
+// loaded into another browser), the fallback for Windows and for people who don't want the
+// native browser (spec server-mode decision 12).
+export const OPEN_BROWSER_NAME = "PairBrowse as an extension";
+
+// Server mode (display.mjs serverMode) runs only the native PairBrowse browser (spec server-mode
+// decision 12): the engine's identity work, humanized input and its WebGPU and proxy patches are
+// native only. serverRefusal(spec, { server, allowOther }): the one sentence a launch of any other
+// browser (chooseBrowser's binary "open" or "custom") is refused with, naming the fix, else null.
+// The sentence points to docs/configuration.md until docs/server.md exists (spec step 50).
+// allowOther: the Phase A live tests on Playwright's build (testenv.mjs SERVER_OPEN).
+export const SERVER_NEEDS_NATIVE = 'Server mode runs only the native PairBrowse browser: install it by setting "browser": "pairbrowse" in ~/.pairbrowse/config.json (see "browser" in docs/configuration.md).';
+export const serverRefusal = (spec, { server = false, allowOther = false } = {}) =>
+  (server && !allowOther && spec?.binary !== "native" ? SERVER_NEEDS_NATIVE : null);
 
 // Which browser PairBrowse runs (config "browser"): "pairbrowse" (the native build),
 // "pairbrowse-open" (older name "chromium": ensureBrowser in browser.mjs, the pinned UNGOOGLED build on

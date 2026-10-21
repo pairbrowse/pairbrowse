@@ -3,7 +3,7 @@
 // for everyone who needs the browser, its close, and what the next launch would be.
 // st: the browser's state (browser/state.mjs); api: the other parts' functions, read when called.
 import { ensureBrowser, launchOptions, prepareProfile, panelExtensionId, resetPanelWorker, writeHelperKeyFile, dropHelperKeyFile, CAPTURE_KEY_PREFIX } from "../../browser.mjs";
-import { chooseBrowser, engineConfig, shellOf } from "../../browser/choice.mjs";
+import { chooseBrowser, engineConfig, serverRefusal, shellOf } from "../../browser/choice.mjs";
 import { engineProfile, launchEngine, validateEngine, SANDBOX } from "../../engine.mjs";
 import { ensureNative, nativeDirs, nativeLayout, notChosen, pinnedAsset } from "../../native/install.mjs";
 import { profileDir, createSession, sweepTemporary } from "../../sessions.mjs";
@@ -132,6 +132,10 @@ export function createLaunch(st, deps, api) {
     const spec = chooseBrowser(config, { native: !!asset, pinnedExec: () => nativeDirs().exec });
     if (spec.problem) once(spec.problem);
     if (!spec.set) once(`browser: no choice recorded yet; using ${spec.browser} (Settings, or "browser" in ~/.pairbrowse/config.json)`);
+    // Server mode runs only the native build (spec server-mode decision 12): any other is refused
+    // here, before anything is installed or started.
+    const refused = serverRefusal(spec, { server: !!api.isServer?.(), allowOther: testOn("SERVER_OPEN") });
+    if (refused) { once(`launch refused: ${refused}`); throw new Error(refused); }
     st.inUse = spec.browser;
     // The home's move to browser profiles, and the engine pack's folders set, before anything here
     // can load the pack (an install's self-check launches it in this process; it reads those
@@ -139,7 +143,7 @@ export function createLaunch(st, deps, api) {
     api.profiles.prepare({ native: spec.binary === "native" });
     let executablePath = spec.executablePath; // a native build of your own (the older names), a path of your own, or null
     if (spec.install) {
-      const optOut = 'To use the open build instead, set "browser": "pairbrowse-open" in ~/.pairbrowse/config.json.';
+      const optOut = 'To use PairBrowse as an extension instead, set "browser": "pairbrowse-open" in ~/.pairbrowse/config.json.';
       const installLog = (m) => {
         log(m);
         if (st.installing || !/^(downloading|unpacking)/.test(m)) return;

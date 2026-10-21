@@ -155,6 +155,7 @@ is under the temp folder with a linked runtime), so none reaches an installed he
 | `RESTART_MS` | knob | `tunnels` | The tunnel pool's restart pause |
 | `RESUME_GRACE_MS` | knob | `integration/departures` | How long a closed agent connection's label, color and tab wait for the same app session (10 seconds otherwise) |
 | `SCREEN` | knob | the sharing tests, `bench` | Adds `pairbrowse_test_screen`: the shared browser picture page |
+| `SERVER_OPEN` | knob | `integration/server-display`, `optin/server/server-run` (`test/helpers/server.mjs`, unless the home's config names the native build) | Server mode may launch Playwright's build in place of the native one (refused otherwise: `browser/choice.mjs` `serverRefusal`) |
 | `SILENT_MS` | knob | `failover`, `join` | When a joiner's stream counts as silent |
 | `TAB_ORDER` | knob | `integration/taborder` | Adds `pairbrowse_test_tab_order`: read and move tabs in the strip |
 | `TUNNEL` | knob | the sharing tests, `bench` | `direct`: the guest port stands in for a tunnel |

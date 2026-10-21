@@ -135,7 +135,7 @@ test("the first start per runtime measures once in a probe browser of its own; a
   assert.equal(o.probes(), 0);
   assert.equal((await o.g.after({}, open, {})).ok, true);
   assert.equal(o.filed.length, 0, "no validation on the open build");
-  assert.deepEqual(o.g.statusParts(), [`Graphics: software (${LLVMPIPE.renderer.slice(0, 80)}), requested auto, unverified on the open build`]);
+  assert.deepEqual(o.g.statusParts(), [`Graphics: software (${LLVMPIPE.renderer.slice(0, 80)}), requested auto, unverified on PairBrowse as an extension`]);
 });
 
 test("static errors refuse the start, all named (E7, E9): a GPU over measured software, could not confirm, a screen vs the virtual screen, a requirement unmet", async () => {
@@ -238,7 +238,7 @@ test("a backend read that failed never drops a kept measurement; a probe that is
 test("the status part and diagnostics: kind and status only in a report, never the renderer or IDs (row E-3)", async () => {
   assert.equal(graphicsStatusPart({ kind: "hardware", renderer: "ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Pro)", requested: "gpu", status: "failed" }, { build: BUILD }),
     `Graphics: hardware (ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Pro)), requested gpu, failed on ${BUILD}`);
-  assert.equal(graphicsStatusPart({ kind: "odd", renderer: "x", requested: "metal", status: "maybe" }), "Graphics: unverified, requested auto, unverified on the open build");
+  assert.equal(graphicsStatusPart({ kind: "odd", renderer: "x", requested: "metal", status: "maybe" }), "Graphics: unverified, requested auto, unverified on PairBrowse as an extension");
   assert.deepEqual(graphicsSummary({ kind: "hardware", status: "validated", renderer: "Apple M4 Pro", vendor: 4203, device: 1 }), { kind: "hardware", status: "validated" });
   assert.equal(graphicsSummary(null), null);
   const d = createDiagnostics({ version: "1", logFile: join(dir, "none.log"), home: dir, browser: async () => ({ engine: "pairbrowse", version: BUILD, build: BUILD }),

@@ -131,7 +131,7 @@ export function applySettings(given, config, { native = false, exists, executabl
     const b = given.browser;
     if (typeof b !== "string") return { error: 'browser is "pairbrowse", "pairbrowse-open" or an absolute path.' };
     if (b === "pairbrowse") {
-      if (!native) return { error: "There's no PairBrowse browser build for this computer yet. Choose the open build for now." };
+      if (!native) return { error: "There's no PairBrowse browser build for this computer yet. Choose PairBrowse as an extension for now." };
     } else if (!isOpenBrowser(b)) {
       if (!isAbsolute(b) || b.length > PATH_MAX || CONTROL.test(b)) return { error: 'browser is "pairbrowse", "pairbrowse-open" or an absolute path.' };
       if (browserChoice({ browser: b }, checksOf(exists, executable)).browser !== b) return { error: `${b} isn't an executable file. Choose the browser app itself.` };

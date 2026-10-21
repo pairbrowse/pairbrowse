@@ -83,7 +83,7 @@ export function graphicsPlan({ requested = "auto", platform = process.platform, 
     return none();
   }
   if (browserKind !== "pairbrowse") {
-    if (requested !== "auto") refuse("graphics.backend", `Profile ${name} asks for graphics.backend: ${requested}, which only the native PairBrowse build can do; the open build reports this computer's own graphics.`);
+    if (requested !== "auto") refuse("graphics.backend", `Profile ${name} asks for graphics.backend: ${requested}, which only the native PairBrowse build can do; PairBrowse as an extension reports this computer's own graphics.`);
     return none();
   }
   const switches = [], engineKeys = {};
@@ -184,5 +184,5 @@ export function graphicsStatusPart(g = GRAPHICS, { build = null, renderer = true
   const kind = ["hardware", "software"].includes(g?.kind) ? g.kind : "unverified";
   const name = renderer && kind !== "unverified" && typeof g?.renderer === "string" && g.renderer ? ` (${g.renderer.slice(0, 80)})` : "";
   const status = ["validated", "failed"].includes(g?.status) ? g.status : "unverified";
-  return `Graphics: ${kind}${name}, requested ${GRAPHICS_BACKENDS.includes(g?.requested) ? g.requested : "auto"}, ${status} on ${build || "the open build"}`;
+  return `Graphics: ${kind}${name}, requested ${GRAPHICS_BACKENDS.includes(g?.requested) ? g.requested : "auto"}, ${status} on ${build || "PairBrowse as an extension"}`;
 }

@@ -335,7 +335,7 @@ export function launchPart(net, { shell = null, secrets = null, native = false }
   let authFile = null;
   if (p.auth) {
     if (!shell?.proxyAuthFile) {
-      return { problem: sessionRefusal(net.session, `network "${p.id}" needs a username and password, and this browser can't take them from its own file (no PairBrowse build reads one yet, and the open build never will); use a proxy without one for now`) };
+      return { problem: sessionRefusal(net.session, `network "${p.id}" needs a username and password, and this browser can't take them from its own file (no PairBrowse build reads one yet, and PairBrowse as an extension never will); use a proxy without one for now`) };
     }
     const creds = credentialsFor(p.id, secrets?.values, { fileProblem: secrets?.problem || null });
     if (creds.problem) return { problem: sessionRefusal(net.session, creds.problem) };

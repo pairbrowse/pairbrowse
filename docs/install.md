@@ -17,6 +17,16 @@
   Update Node.js instead.
 - Nothing else: PairBrowse downloads its own browser on first use (see [The PairBrowse browser](browser.md)).
 
+## Which browser
+
+PairBrowse runs in **the native PairBrowse browser**, made for it, on a Mac (Apple Silicon or
+Intel) and Linux x64. It is the default there, and the only browser PairBrowse runs on a server.
+**PairBrowse as an extension** is the fallback, for Windows until the native browser arrives there
+and for people who don't want the native browser: the same plugin and pages, loaded into another
+browser. It lacks server mode, the engine's identity work, humanized input, and the WebGPU and
+proxy patches, so sites block it more often. Choose in the browser's Settings or with `"browser"`
+in `~/.pairbrowse/config.json` (`"pairbrowse"` or `"pairbrowse-open"`). See [The PairBrowse browser](browser.md).
+
 ## Claude Code
 
 ```bash

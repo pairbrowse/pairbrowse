@@ -44,22 +44,24 @@ session). Codex: see [docs/codex.md](docs/codex.md). Grok uses the Claude Code i
 see [docs/grok.md](docs/grok.md). Update, uninstall and a local checkout:
 [docs/install.md](docs/install.md).
 
-## Two ways to run it: the native build or the open build
+## The PairBrowse browser
 
-- **The native PairBrowse browser** (the default on a Mac, Apple Silicon or Intel, and on Linux
-  x64). A hardened build made for PairBrowse, with its own tab strip, docks, new tab page
-  and Settings built in, and pointers of the people who joined drawn by the browser itself. It
-  looks like an everyday browser to sites, so you see fewer CAPTCHAs.
-- **PairBrowse (open build)**, for people who'd rather have the classic browser menus, settings
-  and toolbar: the fully open-source browser with PairBrowse as an extension in it: the side panel
-  (Cmd+Shift+Y, Ctrl+Shift+Y off a Mac), its toolbar menu, Settings, and the downloads, recordings
-  and hand-offs lists. Fully open source, so it's also the choice for commercial use without a Pro
-  license. Windows uses this until the native build arrives.
+PairBrowse runs in **the native PairBrowse browser** (the default on a Mac, Apple Silicon or Intel,
+and on Linux x64): a hardened browser made for PairBrowse, with its own tab strip, docks, new tab
+page and Settings built in, and pointers of the people who joined drawn by the browser itself. It
+looks like an everyday browser to sites, so you see fewer CAPTCHAs, and it is the only browser
+PairBrowse runs on a server.
 
-Pick one with `"browser"` in `~/.pairbrowse/config.json`: `"pairbrowse"` (native) or
-`"pairbrowse-open"` (open build; the older `"chromium"` still works); PairBrowse asks once, and
-Settings can switch it. Everything else (agents, sharing,
-sessions, safety) works the same in both. Details: [The browser](docs/browser.md).
+**PairBrowse as an extension** is the fallback, for Windows until the native browser arrives there
+and for people who don't want the native browser: the same plugin and pages, loaded into another
+browser (a pinned build on macOS, Playwright's browser elsewhere, or one of your own), with a side
+panel (Cmd+Shift+Y, Ctrl+Shift+Y off a Mac) in place of the docks. It lacks server mode, the
+engine's identity work, humanized input, and the WebGPU and proxy patches, so sites block it more
+often.
+
+Pick one with `"browser"` in `~/.pairbrowse/config.json`: `"pairbrowse"` (the native browser) or
+`"pairbrowse-open"` (PairBrowse as an extension; the older `"chromium"` still works); PairBrowse asks
+once, and Settings can switch it. Details: [The browser](docs/browser.md).
 
 ## Try it
 
@@ -120,14 +122,14 @@ accounts, app store listings, API keys, store settings), with you in the loop. N
 accounts in bulk, getting around a site's bot checks, or anything else a site doesn't allow. You
 use it on your own accounts and accept each site's terms.
 
-## Open source, honestly
+## License
 
-The plugin and helper are MIT ([LICENSE](LICENSE)). On macOS and Linux x64 the default `browser`
-setting (`"pairbrowse"`) downloads the native PairBrowse browser, a closed build that's
-free for personal, non-commercial use ([BINARY-LICENSE.md](BINARY-LICENSE.md)). For commercial
-use, either get a PairBrowse Pro license or set `"browser": "pairbrowse-open"` in
-`~/.pairbrowse/config.json` for a fully open setup (PairBrowse (open build): a pinned open-source
-build on macOS, Playwright's browser elsewhere). See [docs/browser.md](docs/browser.md#the-native-pairbrowse-browser).
+- The plugin (this repository) is MIT: [LICENSE](LICENSE).
+- The native PairBrowse browser is a private binary under [BINARY-LICENSE.md](BINARY-LICENSE.md):
+  free for personal, non-commercial use; commercial use through
+  [PairBrowse Pro](docs/browser.md#the-native-pairbrowse-browser).
+- PairBrowse as an extension is the same MIT plugin, loaded into another browser under that
+  browser's own license.
 
 ## Docs
 

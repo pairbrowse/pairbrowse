@@ -11,6 +11,7 @@ import assert from "node:assert/strict";
 import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { session } from "../helpers/live.mjs";
+import { SERVER_NEEDS_NATIVE } from "../../scripts/browser/choice.mjs";
 import { sleep, text, until } from "../helpers/util.mjs";
 import { SCREEN, browserPid, canRunXvfb, commandLine, logCount, logText, pidAlive, sandboxOf, screenRecord, serverHome, signalHelper, startServerHelper, startSite } from "../helpers/server.mjs";
 
@@ -70,6 +71,19 @@ test("starts headed on its own virtual screen; window matches virtualScreen 1280
     assert.match(status, new RegExp(`virtual screen ${rec.display} ${SCREEN.width}x${SCREEN.height}`));
     assert.doesNotMatch(status, /sandbox is off|sandbox stays on/i, "no sandbox warning");
     assert.doesNotMatch(logText(home), /sandbox is off/i);
+  });
+});
+
+// Decision 12: server mode runs only the native build. Without the harness's SERVER_OPEN knob the
+// launch of Playwright's build is refused in one sentence naming the fix, and no browser starts.
+test("server mode refuses a browser other than the native build, naming the fix; nothing starts", T, async () => {
+  await withHelper({}, { PAIRBROWSE_TEST_SERVER_OPEN: "0" }, async ({ start, agent, site, home }) => {
+    const { daemon } = await start();
+    const a = await agent("a");
+    const r = text(await a.tool("browser_navigate", { url: site.url("/one") }, 120_000));
+    assert.ok(r.includes(SERVER_NEEDS_NATIVE), r);
+    assert.equal(browserPid(daemon.pid), 0, "no browser started");
+    assert.match(logText(home), /launch refused: Server mode runs only the native PairBrowse browser/);
   });
 });
 

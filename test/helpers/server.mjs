@@ -29,6 +29,16 @@ export function serverHome(runtime, { prefix = "pbs-", config = {}, executablePa
   return home;
 }
 
+// Whether home's config.json names the native build ("browser" or the older "browserEngine"). Server
+// mode runs only that one (browser/choice.mjs serverRefusal); a home on Playwright's build gets the
+// SERVER_OPEN knob (scripts/testenv.mjs) from startServerHelper, so the Phase A live tests run anywhere.
+export function nativeHome(home) {
+  try {
+    const c = JSON.parse(readFileSync(join(home, "config.json"), "utf8"));
+    return c?.browser === "pairbrowse" || c?.browserEngine === "pairbrowse";
+  } catch { return false; }
+}
+
 // The helper for home, as a service manager starts it: no DISPLAY, WAYLAND_DISPLAY or XAUTHORITY
 // from this process, env added. Resolves once it listens: { daemon, socketPath }.
 export async function startServerHelper(home, { env = {}, ms = 90_000 } = {}) {
@@ -37,7 +47,7 @@ export async function startServerHelper(home, { env = {}, ms = 90_000 } = {}) {
   const out = openSync(join(home, "daemon.stderr.log"), "a");
   let daemon;
   try {
-    daemon = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: { ...base, ...env, PAIRBROWSE_HOME: home }, stdio: ["ignore", out, out] });
+    daemon = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: root, env: { ...base, ...(nativeHome(home) ? {} : { PAIRBROWSE_TEST_SERVER_OPEN: "1" }), ...env, PAIRBROWSE_HOME: home }, stdio: ["ignore", out, out] });
   } finally { closeSync(out); }
   const socketPath = join(home, "run", "browser.sock");
   try {

@@ -49,9 +49,9 @@ so the next start reinstalls it with `npm ci`. Then call any browser tool again.
 
 **Messages.**
 
-- `The PairBrowse browser couldn't be installed: <reason> To use the open build instead, set "browser": "pairbrowse-open" in ~/.pairbrowse/config.json.`
+- `The PairBrowse browser couldn't be installed: <reason> To use PairBrowse as an extension instead, set "browser": "pairbrowse-open" in ~/.pairbrowse/config.json.`
   (`scripts/daemon/browser/launch.mjs`). `<reason>` is one of the install errors below.
-- `There's no PairBrowse browser build for <platform> <arch> yet. To use the open build instead, set "browser": "pairbrowse-open" in ~/.pairbrowse/config.json.`
+- `There's no PairBrowse browser build for <platform> <arch> yet. To use PairBrowse as an extension instead, set "browser": "pairbrowse-open" in ~/.pairbrowse/config.json.`
   (same file).
 - `PairBrowse <version> isn't installed (<reason>). Install it with: node <plugin>/scripts/native-install.mjs <archive>`
   (`ensureNativeBrowser` in `scripts/native/install.mjs`).

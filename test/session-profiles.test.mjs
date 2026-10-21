@@ -76,7 +76,7 @@ test("the first start binds the folder to its profile; the launch's parts, evide
   assert.equal(def.kind, "config");
   assert.deepEqual(readBinding(plain), { profileId: def.id, created: new Date(T0).toISOString(), problem: null }, "its first start bound it");
   assert.equal(statSync(bindingFile(plain)).mode & 0o777, 0o600);
-  assert.deepEqual(profiles.statusParts(), ["Profile: default (rev 1, unverified on the open build)"]);
+  assert.deepEqual(profiles.statusParts(), ["Profile: default (rev 1, unverified on PairBrowse as an extension)"]);
   assert.equal(store.get(def.id).engine, null, "the open build pins no engine");
   assert.deepEqual(profiles.list().map((p) => p.name), ["default", "berlin"]);
 });
@@ -173,7 +173,7 @@ test("other major refuses, other build unverified, requireValidatedProfiles refu
   assert.equal(store.get(berlin.id).validation[BUILD].status, "failed");
   // The open build's launches are never validated: refused under the switch.
   const open = session("sp-engine-open");
-  assert.throws(() => strict.forLaunch(open, OPEN), /is unverified on the open build, and requireValidatedProfiles is on in config\.json: validate the profile on it first \(the open build's launches are never validated\)/);
+  assert.throws(() => strict.forLaunch(open, OPEN), /is unverified on PairBrowse as an extension, and requireValidatedProfiles is on in config\.json: validate the profile on it first \(launches of PairBrowse as an extension are never validated\)/);
   assert.equal(existsSync(bindingFile(open)), false, "a refused first start binds nothing");
 });
 
@@ -240,7 +240,7 @@ test("unknown or retired profile refused by name, never the default; a field the
   // D11: berlin sets a time zone, which the open build can't apply.
   const shop = session("sp-refuse-open");
   assignProfile(shop, berlin.id, { store });
-  assert.throws(() => profiles.forLaunch(shop, OPEN), /doesn't start: Browser profile "berlin" can't start on the open build: browser\.kind \(.*\); locale\.timezone \(the open build can't set a time zone\)\. Change the profile or the browser; nothing was started\.$/);
+  assert.throws(() => profiles.forLaunch(shop, OPEN), /doesn't start: Browser profile "berlin" can't start on PairBrowse as an extension: browser\.kind \(.*\); locale\.timezone \(PairBrowse as an extension can't set a time zone\)\. Change the profile or the browser; nothing was started\.$/);
   assert.equal(readBinding(shop).profileId, berlin.id, "the assignment's own binding stays as it was");
 });
 
@@ -367,7 +367,7 @@ test("the launch starts on the session's profile: its switches after browserArgs
   assert.ok(args.indexOf("--lang=de-DE") > args.indexOf("--lang=fr"), "the profile's switches come after browserArgs");
   assert.ok(args.includes("--force-dark-mode"));
   assert.equal(asked.at(-1).profileNetwork, "us", "the profile's network id reaches the network part");
-  assert.ok(context.statusParts().includes("Profile: shop (rev 1, unverified on the open build)"), context.statusParts().join("\n"));
+  assert.ok(context.statusParts().includes("Profile: shop (rev 1, unverified on PairBrowse as an extension)"), context.statusParts().join("\n"));
   assert.equal(readBinding(name).profileId, shop.id);
   assert.ok(existsSync(join(profileDir(name), "pairbrowse-binding.json")));
   await context.close();
@@ -404,9 +404,9 @@ test("a saved card (B12): forLaunch says the profile asks; the launch's answer i
   assert.deepEqual(profiles.savedCard(), { asked: true, on: true, store: "key-file", line: "Saved card: on (encrypted with this install's key file); only you fill it, during a hand-off" });
   assert.ok(profiles.statusParts().includes("Saved card: on (encrypted with this install's key file); only you fill it, during a hand-off"));
   assert.ok(lines.some((l) => l.startsWith("launch: Saved card: on")), lines.join("\n"));
-  profiles.setSavedCard({ asked: true, on: false, store: "", line: "saved card refused: this browser has no key store for it (the open build); payment autofill stays off" });
+  profiles.setSavedCard({ asked: true, on: false, store: "", line: "saved card refused: this browser has no key store for it (PairBrowse as an extension); payment autofill stays off" });
   assert.equal(profiles.savedCard().on, false);
-  assert.ok(profiles.statusParts().includes("warning: saved card refused: this browser has no key store for it (the open build); payment autofill stays off"));
+  assert.ok(profiles.statusParts().includes("warning: saved card refused: this browser has no key store for it (PairBrowse as an extension); payment autofill stays off"));
   profiles.release();
   assert.equal(profiles.savedCard(), null);
   // A profile that asks for none: nothing said, nothing on.

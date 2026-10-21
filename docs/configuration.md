@@ -10,14 +10,19 @@
 ```
 
 - `browser`: which browser PairBrowse runs. `"pairbrowse"`: the native PairBrowse browser;
-  `"pairbrowse-open"`: PairBrowse (open build), a pinned open-source build on macOS and
-  Playwright's browser elsewhere, with the PairBrowse side panel (the older value `"chromium"` still
-  works and means the same); or an absolute path to Brave, Arc, Vivaldi or another compatible
+  `"pairbrowse-open"`: PairBrowse as an extension, the same plugin in another browser (a pinned
+  open-source build on macOS and Playwright's browser elsewhere) with the PairBrowse side panel, the
+  fallback for Windows and for people who don't want the native browser (the older value
+  `"chromium"` still works and means the same); or an absolute path to Brave, Arc, Vivaldi or another compatible
   browser of your own, launched like `"pairbrowse-open"`. Unset: `"pairbrowse"` where a build is
   pinned for your computer, else `"pairbrowse-open"`; the helper uses that default without writing
   it, and says so once in its log. A path must be an existing, executable file: otherwise the helper
-  logs `browser: <path> isn't an executable file; using PairBrowse (open build) instead` and
-  starts the open build. With `"pairbrowse-open"` or a path, nothing is downloaded or installed for the native browser. You're asked
+  logs `browser: <path> isn't an executable file; using PairBrowse as an extension instead` and
+  starts that. With `"pairbrowse-open"` or a path, nothing is downloaded or installed for the native browser.
+  Server mode (PairBrowse's own virtual screen, or `server.keepAlive`) runs only the native browser:
+  any other choice refuses the launch with `Server mode runs only the native PairBrowse browser:
+  install it by setting "browser": "pairbrowse" in ~/.pairbrowse/config.json (see "browser" in docs/configuration.md).`
+  and no browser starts. You're asked
   once: in the terminal of the by-hand install step (`node scripts/native-install.mjs <file>`; Enter
   is PairBrowse), and in the browser's Settings page. Switching takes effect when the browser next
   starts on the same session profile: close the PairBrowse window or switch session. Sessions,
@@ -132,7 +137,8 @@
   PairBrowse runs its own virtual screen (`display` `"auto"` on a machine without a screen, or
   `"xvfb"`); elsewhere the window opens at 1366x900.
 - `server`: `{ "keepAlive": false }` (default). `true` puts the helper in server mode (a helper kept
-  running on a server, even one with a screen of its own, usually by the system's service manager):
+  running on a server, even one with a screen of its own, usually by the system's service manager;
+  it runs only the native browser, see `browser` above):
   the browser starts as soon as the helper does and its saved tabs come back (after a crash too,
   each agent whose bridge reconnects within 10 seconds is back in its own tab, as after any crash or
   reset of the browser outside server mode too); a browser closed with
@@ -263,7 +269,7 @@
   proxy. A SOCKS5 session gets the same name rule even with `strict` `false`. A proxy with `auth`
   needs both secrets in `secrets.env` (4 characters or more each) and a PairBrowse build that
   reads them from an owner-only file the helper writes for that launch and deletes once the
-  browser is up: no build does yet and the open build never will, so such a session doesn't start
+  browser is up: no build does yet and PairBrowse as an extension never will, so such a session doesn't start
   for now, with an error saying why. A session whose network can't be used doesn't start (its
   error says why); it never starts direct instead. Before any saved tab loads, at every start (a
   recovery after a crash included), the proxy's exit is checked: the helper reads `checkUrl`

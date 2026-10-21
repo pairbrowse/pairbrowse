@@ -918,7 +918,7 @@ test("the saved card (B12): its state and Add a saved card are the owner's; it o
     const opened = [];
     t.tools.openTab = async (url, onClose) => { const page = fakePage(url, "Payment methods"); opened.push({ url, onClose, page }); return { ok: true, page }; };
     // Asked, but refused for want of a key store: said, nothing opened.
-    card = { asked: true, on: false, store: "", line: "saved card refused: this browser has no key store for it (the open build); payment autofill stays off" };
+    card = { asked: true, on: false, store: "", line: "saved card refused: this browser has no key store for it (PairBrowse as an extension); payment autofill stays off" };
     let r = await add();
     assert.equal(r.status, 409);
     assert.match(JSON.parse(r.text).error, /^Not now: saved card refused: .*then start the session again\.$/);

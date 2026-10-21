@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { startLiveView, createInvites } from "../scripts/liveview.mjs";
 import { createGrants } from "../scripts/daemon/grants.mjs";
 import { createAudit } from "../scripts/daemon/audit.mjs";
+import { TAB_CLOSE_SETTLE_MS } from "../scripts/liveview/grants.mjs";
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const until = async (fn, ms = 2000) => { for (const end = Date.now() + ms; Date.now() < end; await wait(10)) if (await fn()) return true; return false; };
@@ -370,6 +371,26 @@ test("a tab opened by the grant tab joins scope; another does not", async () => 
     s.close(s.pages[0]);
     assert.ok(await until(() => turn.ended()));
     assert.deepEqual(eventsIn(turn.text(), "turn-ended"), [{ reason: "tab-closed" }]);
+  } finally { s.view.close(); }
+});
+
+test("a handed-over tab closing with its browser ends the hand-off browser-restarted (keep-alive reissues it), never tab-closed", async () => {
+  const s = await setup();
+  try {
+    const t = await s.taken(s.pages[0]);
+    s.view.watchGrants();
+    await wait(20);
+    const turn = await readStream(s.port, `/${t.viewKey}/events`);
+    await until(() => eventsIn(turn.text(), "turn").length);
+    // A crash or a lost screen: the engine closes every tab, then the browser's close is heard
+    // (daemon/yourturn.mjs browserClosed ends every grant "browser-restarted").
+    s.close(s.pages[0]);
+    assert.equal(s.grants.open().length, 1, "not ended as its tab closed");
+    s.grants.endWhere(() => true, "browser-restarted");
+    assert.ok(await until(() => turn.ended()));
+    assert.deepEqual(eventsIn(turn.text(), "turn-ended"), [{ reason: "browser-restarted" }]);
+    await wait(TAB_CLOSE_SETTLE_MS + 100);
+    assert.deepEqual(s.audited().filter((l) => l.kind === "ended").map((l) => l.detail), ["browser-restarted"], "ended once, by the browser's close");
   } finally { s.view.close(); }
 });
 

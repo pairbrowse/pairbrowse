@@ -42,6 +42,11 @@ import { hostOf, guestTabs, guestActivity } from "./tabs.mjs";
 
 export const TURN_ROLES = new Set(["turn", "redeem"]);
 const OPENER_MS = 1000; // asking a new tab which tab opened it
+// How long a handed-over tab's close waits to see whether its browser is closing too (a crash, a
+// lost screen): the browser's own close then ends the hand-off "browser-restarted", which keep-alive
+// reissues once the tab is back (daemon/yourturn.mjs recover), never "tab-closed". The engine closes
+// every tab before the browser's own close is heard, all in the same moment.
+export const TAB_CLOSE_SETTLE_MS = 1000;
 const RUN = /^[0-9a-f]{16}$/; // a turn viewer's page load, as its input batches name it
 const RUNS_MAX = 8; // page loads remembered per hand-off
 const LABEL = "Hand-off"; // the participant list's name for the person on a hand-off link
@@ -201,10 +206,16 @@ export function createTurnGate({ grants = null, sessionName, idOf, getContext, c
   }
 
   // A tab opened by a scope tab while the grant is live joins the scope (a sign-in or 3-D Secure
-  // pop-up); any tab closing leaves every scope, the handed-over one ending its grant. Tabs open
+  // pop-up); any tab closing leaves every scope, the handed-over one ending its grant (after
+  // TAB_CLOSE_SETTLE_MS, unless its browser's close ended it first). Tabs open
   // before the watch began are not asked: a pop-up opened before the hand-off isn't in it.
+  function tabClosed(page) {
+    if (!grants.handedOver?.(page)) return grants.closed(page);
+    const t = setTimeout(() => grants.closed(page), TAB_CLOSE_SETTLE_MS);
+    t.unref?.();
+  }
   async function opened(page) {
-    page.once?.("close", () => grants.closed(page));
+    page.once?.("close", () => tabClosed(page));
     const opener = await within(OPENER_MS, Promise.resolve().then(() => page.opener()).catch(() => null));
     if (opener && grants.addToScope(opener, page)) changed().catch(() => {});
   }
@@ -213,7 +224,7 @@ export function createTurnGate({ grants = null, sessionName, idOf, getContext, c
     const ctx = await getContext();
     if (!ctx || watched.has(ctx)) return;
     watched.add(ctx);
-    for (const p of ctx.pages()) p.once?.("close", () => grants.closed(p));
+    for (const p of ctx.pages()) p.once?.("close", () => tabClosed(p));
     ctx.on?.("page", (p) => { opened(p).catch((e) => log("turn opener", e?.message || e)); });
   }
 

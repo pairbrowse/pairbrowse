@@ -212,6 +212,8 @@ export function createGrants({ now = () => Date.now(), mono = () => performance.
       g.scope.add(page);
       return g.id;
     },
+    // Whether a live grant handed page over (its own tab, not one that joined its scope).
+    handedOver(page) { return [...live.values()].some((g) => g.page === page); },
     // A tab closed: the grant handed it over ends ("tab-closed"); it leaves every other scope.
     closed(page) {
       for (const g of [...live.values()]) {

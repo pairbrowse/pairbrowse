@@ -443,7 +443,7 @@ export const DRIVER_BACKGROUND_SWITCH = "--disable-background-networking";
 
 // The graphics plan (spec server-mode E2, E7; native/graphics.mjs graphicsPlan) over the resolved
 // fingerprint, in place, after the persona is saved (its keys are the runtime's, worked out at each
-// launch, never kept). On Linux with a GPU (measured: the backend read the launch has, { kind,
+// launch, never kept). On macOS no noise over this Mac's own pixels (fingerprintNoise: false). On Linux with a GPU (measured: the backend read the launch has, { kind,
 // renderer } or null before any): the real backend's WebGL strings, limits and extensions and
 // WebGPU vendor and architecture (disableGpuFingerprint), no noise over real pixels
 // (fingerprintNoise: false); on a host without one (a software read: decision 10) the engine's
@@ -467,6 +467,10 @@ export function applyGraphicsPlan(fingerprint, settings, { platform = process.pl
     // virtual screen's, never silently.
     const screenOther = SCREEN_KEYS.filter((k) => plan.engineKeys[k] !== undefined && differs(k));
     if (screenOther.length) log(`launch: ${screenOther.join(", ")} not applied on Linux: the virtual screen's apply (set virtualScreen in config.json to choose a screen)`);
+  }
+  if (platform === "darwin") {
+    const other = Object.keys(plan.engineKeys).filter((k) => fingerprint[k] !== undefined && fingerprint[k] !== plan.engineKeys[k]);
+    if (other.length) log(`launch: ${other.join(", ")} not applied on macOS: this Mac's own GPU draws with no noise over its pixels`);
   }
   Object.assign(fingerprint, plan.engineKeys);
   const screen = SCREEN_KEYS.every((k) => plan.engineKeys[k] !== undefined) ? `, screen ${plan.engineKeys.screenWidth}x${plan.engineKeys.screenHeight} (the virtual screen)` : "";

@@ -74,7 +74,7 @@ test("the property matrix: every runtime classed, mechanisms from the known list
   }
   assert.equal(new Set(PROPERTIES.map((p) => p.field)).size, PROPERTIES.length, "one row per field");
   // The rows the matrix calls out per runtime.
-  assert.deepEqual(property("canvas.noise").classes, { macos: "C", "linux-software": "U", "linux-gpu": "U" });
+  assert.deepEqual(property("canvas.noise").classes, { macos: "U", "linux-software": "C", "linux-gpu": "U" });
   assert.deepEqual([property("webgpu.limits").classes["linux-software"], property("webgpu.limits").later, property("webgpu.limits").patch], ["D", "M", "961"]);
   assert.equal(classOf("hardware.imported", "linux-gpu"), "U");
   assert.equal(classOf("nothing", "macos"), null);

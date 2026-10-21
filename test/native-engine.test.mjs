@@ -1206,7 +1206,8 @@ test("persona saved under the profile id; another profile's persona refused; a s
 });
 
 // Spec E2, E7 and section 13.1: on Linux the launch passes the real backend's strings, no noise and
-// the virtual screen (config.virtualDisplay, the helper's Xvfb) as the screen; elsewhere nothing.
+// the virtual screen (config.virtualDisplay, the helper's Xvfb) as the screen; on macOS no noise
+// over this Mac's pixels; elsewhere nothing.
 // What the plan adds is worked out at each launch and never kept in the persona.
 test("the graphics plan reaches the engine and never the persona", async () => {
   const app = appFixture();
@@ -1216,9 +1217,10 @@ test("the graphics plan reaches the engine and never the persona", async () => {
   await launchNative(fakeBrowserType(), { pairbrowse: { fingerprint: "seed", fingerprintProfile: PINNED_PROFILE(), graphics: "software" }, virtualDisplay: { width: 1366, height: 900, depth: 24 } }, directory,
     { executablePath: app.executablePath, headless: false, args: ["--use-angle=swiftshader"] }, pack, (l) => lines.push(l));
   const linux = process.platform === "linux";
-  const expected = linux ? { disableGpuFingerprint: true, fingerprintNoise: false, screenWidth: 1366, screenHeight: 900, availWidth: 1366, availHeight: 900, colorDepth: 24, devicePixelRatio: 1 } : {};
+  const mac = process.platform === "darwin";
+  const expected = linux ? { disableGpuFingerprint: true, fingerprintNoise: false, screenWidth: 1366, screenHeight: 900, availWidth: 1366, availHeight: 900, colorDepth: 24, devicePixelRatio: 1 } : mac ? { fingerprintNoise: false } : {};
   for (const [k, v] of Object.entries(expected)) assert.equal(pack.given[0][k], v, k);
-  if (!linux) for (const k of ["disableGpuFingerprint", "fingerprintNoise", "screenWidth"]) assert.equal(pack.given[0][k], undefined, k);
+  if (!linux) for (const k of ["disableGpuFingerprint", ...(mac ? [] : ["fingerprintNoise"]), "screenWidth"]) assert.equal(pack.given[0][k], undefined, k);
   const stored = JSON.parse(readFileSync(join(directory, "pairbrowse-persona.json"), "utf8")).options;
   for (const k of ["disableGpuFingerprint", "fingerprintNoise", "screenWidth", "screenHeight", "availWidth", "availHeight", "colorDepth", "devicePixelRatio"]) assert.equal(stored[k], undefined, `${k} is never kept`);
   assert.ok(!lines.some((l) => /pairbrowse\.graphics in config\.json not used/.test(l)), "pairbrowse.graphics is PairBrowse's own setting");

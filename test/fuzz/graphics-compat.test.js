@@ -8,7 +8,7 @@ import "../helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fc from "fast-check";
-import { graphicsPlan, compatErrors, SOFTWARE_SWITCH, LINUX_REAL, GPU_LESS_IDENTITY, identityKeys } from "../../scripts/native/graphics.mjs";
+import { graphicsPlan, compatErrors, SOFTWARE_SWITCH, LINUX_REAL, MAC_REAL, GPU_LESS_IDENTITY, identityKeys } from "../../scripts/native/graphics.mjs";
 import { parseSystemInfo } from "../../scripts/native/backend.mjs";
 import { screenBrowserArgs } from "../../scripts/browser-args.mjs";
 import { PAIRBROWSE_ENGINE_KEYS } from "../../scripts/config-schema.mjs";
@@ -58,6 +58,9 @@ test("for any profile, every set graphics field is applied or named in an error"
         assert.equal(plan.identity, shown ? GPU_LESS_IDENTITY.name : null);
         for (const [k, v] of Object.entries(shown ? identityKeys(true) : LINUX_REAL)) assert.equal(plan.engineKeys[k], v, k);
         assert.equal(plan.engineKeys.screenWidth, xvfb && !set ? xvfb.width : undefined);
+      } else if (browserKind === "pairbrowse" && os === "darwin") {
+        // macOS: the host capture's own GPU, only the noise over its pixels off.
+        assert.deepEqual(plan.engineKeys, MAC_REAL); assert.equal(plan.identity, null);
       } else { assert.deepEqual(plan.engineKeys, {}); assert.equal(plan.identity, null); }
     }
     // compatErrors: the plan's refusals and every other set field it can't meet, never thrown.

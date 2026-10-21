@@ -1226,7 +1226,7 @@ macOS native (host capture), Linux native on Xvfb without a GPU (software), Linu
 | WebGL/WebGL2 vendor, renderer | host | capture (macOS), `disableGpuFingerprint` (Linux) | M | M | M | probe rule `webgl.strings-vs-backend` | none |
 | WebGL limits, extensions, precision | host | same | M | M | M | `webgl.limits-vs-backend` | none |
 | WebGL and canvas pixels | host GPU or software raster | none | M | M | M | `canvas.stable`, `canvas.repeat` | none |
-| Canvas noise | build default | `fingerprintNoise` | C (on) | U (off on real pixels) | U (off on real pixels) | `native-graphics` "Linux plan sets noise off" | none |
+| Canvas noise | build default | `fingerprintNoise` | U (off on real pixels; decision 11) | C (`pairbrowse.graphicsNoise`) | U (off on real pixels) | `native-graphics` "Linux plan sets noise off", "macOS plan sets noise off" | none |
 | Canvas bridge | none (E1) | removed | U | U | U | rule `bridge.absent` | 960 |
 | WebGPU available, features, `isFallbackAdapter` | host | engine passes real | M | M (adapter or defined reason) | M | probe `webgpu.*` | none |
 | WebGPU vendor, architecture | host | capture or `webgl_real` | M | M | M | `webgpu.vendor` | none |

@@ -4,7 +4,7 @@
 // the last launch's graphics (GRAPHICS, as engine.mjs SANDBOX is the sandbox's).
 //
 // Graphics are the runtime's own on a host with a GPU (decision D-AP2): on macOS the host capture
-// (this Mac's GPU); on Linux the engine reports the real backend's WebGL strings, limits and
+// (this Mac's GPU), without noise over its pixels (fingerprintNoise: false); on Linux the engine reports the real backend's WebGL strings, limits and
 // extensions and WebGPU vendor and architecture (disableGpuFingerprint), without noise over real
 // pixels (fingerprintNoise: false), and on the helper's virtual screen the real screen. On a host
 // without one (decision 10: software rendering measured, which gets a session blocked before a
@@ -24,6 +24,11 @@ export const SOFTWARE_SWITCH = "--use-angle=swiftshader";
 // The engine keys of the Linux plan on a host with a GPU: the real backend's strings, no noise
 // over its pixels.
 export const LINUX_REAL = Object.freeze({ disableGpuFingerprint: true, fingerprintNoise: false });
+// The engine key of the macOS plan: the host capture already carries this Mac's own GPU, so only
+// the noise goes; the ordinary-browser measurement (decision 11) found noise over this Mac's real
+// pixels made its canvas differ from an everyday browser's on the same Mac, which fingerprint
+// checks read as tampering.
+export const MAC_REAL = Object.freeze({ fingerprintNoise: false });
 // The engine's one graphics identity for a host without a GPU (decision 10): the seed persona's
 // Intel UHD 770 on a current Linux Mesa driver, whose WebGL strings, extensions and limits the
 // engine carries and whose WebGPU vendor, architecture, features and limits follow it (engine
@@ -117,6 +122,7 @@ export function graphicsPlan({ requested = "auto", platform = process.platform, 
   const where = PLATFORM_NAMES[platform] ?? platform;
   // The identity is shown over software rendering only (a GPU asked for over it is refused below).
   const identity = platform === "linux" && measured?.kind === "software" && requested !== "gpu" ? GPU_LESS_IDENTITY.name : null;
+  if (platform === "darwin") Object.assign(engineKeys, MAC_REAL);
   if (platform === "linux") {
     Object.assign(engineKeys, identity ? identityKeys(graphicsNoise) : LINUX_REAL);
     if (display && !screenSet && finite(display.width) && finite(display.height)) {

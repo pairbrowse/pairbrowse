@@ -63,8 +63,10 @@ test("Linux plan sets disableGpuFingerprint and noise off", () => {
   assert.equal(graphicsPlan({ platform: "linux", display: { width: 1920, height: 1080, depth: 16 } }).engineKeys.colorDepth, 16);
   assert.deepEqual(graphicsPlan({ platform: "linux" }).engineKeys, { disableGpuFingerprint: true, fingerprintNoise: false });
   assert.deepEqual(graphicsPlan({ platform: "linux", display: XVFB, screenSet: true }).engineKeys, { disableGpuFingerprint: true, fingerprintNoise: false });
-  // macOS keeps the host capture (its own GPU): the plan adds nothing there.
-  assert.deepEqual(graphicsPlan({ platform: "darwin", display: XVFB }), { switches: [], engineKeys: {}, refusals: [], identity: null });
+  // macOS keeps the host capture (its own GPU): the plan adds only no noise over its pixels, whatever
+  // graphicsNoise says (that setting is for a host without a GPU).
+  assert.deepEqual(graphicsPlan({ platform: "darwin", display: XVFB }), { switches: [], engineKeys: { fingerprintNoise: false }, refusals: [], identity: null });
+  assert.deepEqual(graphicsPlan({ platform: "darwin", graphicsNoise: true }).engineKeys, { fingerprintNoise: false });
   // The open build: nothing, and anything but auto is refused (E9).
   assert.deepEqual(graphicsPlan({ platform: "linux", browserKind: "pairbrowse-open", display: XVFB }), { switches: [], engineKeys: {}, refusals: [], identity: null });
   assert.match(messages(graphicsPlan({ requested: "software", platform: "linux", browserKind: "pairbrowse-open" }).refusals)[0], /only the native PairBrowse build can do/);
@@ -149,12 +151,17 @@ test("the Linux plan on a launch's fingerprint: persona untouched, legacy GPU ke
   const own = { fingerprint: "seed", screenWidth: 1920, screenHeight: 1080 };
   applyGraphicsPlan(own, { overrides: { screenWidth: 1920, screenHeight: 1080 }, saved: {} }, { platform: "linux", display: XVFB });
   assert.deepEqual([own.screenWidth, own.screenHeight, own.disableGpuFingerprint], [1920, 1080, true]);
-  // macOS: the legacy keys still apply for this release, named deprecated; nothing else changes.
+  // macOS: the legacy keys still apply for this release, named deprecated; the noise goes.
   const mac = { gpuVendor: "Zq GPU" }, macLogs = [];
   applyGraphicsPlan(mac, { overrides: mac, saved: {} }, { platform: "darwin", display: null, log: (l) => macLogs.push(l) });
-  assert.deepEqual(mac, { gpuVendor: "Zq GPU" });
+  assert.deepEqual(mac, { gpuVendor: "Zq GPU", fingerprintNoise: false });
   assert.equal(macLogs.length, 1);
   assert.match(macLogs[0], /gpuVendor \(another device's GPU\) is deprecated and goes in the next release/);
+  // A layer's own noise on macOS isn't applied, and the log says so.
+  const noisy = { fingerprintNoise: true }, noisyLogs = [];
+  applyGraphicsPlan(noisy, { overrides: noisy, saved: {} }, { platform: "darwin", display: null, log: (l) => noisyLogs.push(l) });
+  assert.equal(noisy.fingerprintNoise, false);
+  assert.ok(noisyLogs.some((l) => /fingerprintNoise not applied on macOS/.test(l)));
 });
 
 test("gpu requested, software measured: error", () => {

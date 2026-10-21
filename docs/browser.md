@@ -192,7 +192,10 @@ to get around a site's security (see [Intended use](../README.md#intended-use)).
 **Human-like input (native browser).** On by default: an agent's single clicks, drags and typing
 follow one human input style (eased, slightly curved mouse paths and key-by-key typing with human
 timing, all as native trusted input), and `pairbrowse_scroll` glides the page with the cursor on
-it. Fast mode (`pairbrowse_run`) is just fast: it skips both. To turn it off (deterministic
+it, turning the wheel in whole notches of the size the platform pages are told about reports (40
+px on macOS, 100 on Windows, 120 on Linux) in short flicks with a finger's pauses, so every wheel
+event is one a real mouse makes. Fast mode (`pairbrowse_run`) is just fast: it skips the human
+timing (its scroll is the same whole notches, one frame apart). To turn it off (deterministic
 actions, for testing):
 
 ```json

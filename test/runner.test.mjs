@@ -48,6 +48,38 @@ test("scroll steps take up, down or a non-zero number of pixels up to 20000", ()
   for (const bad of ["left", 0, 20001, "fast", null, Infinity]) assert.match(preflight([{ scroll: bad }]), /scroll takes/, String(bad));
 });
 
+// The scroll step turns the wheel in whole notches of the platform pages are told about (wheel.mjs):
+// each wheel event one notch, in flicks with a finger's pauses when smooth (pairbrowse_scroll),
+// a frame apart in fast mode; never a pixel-sized event under a fixed wheelDeltaY (gap 9).
+test("a scroll step sends whole notches of the given size, smoothly or quickly", async () => {
+  const { scroll } = await import("../scripts/runner/steps/scroll.mjs");
+  const run = async (arg, hooks) => {
+    const wheels = [], moves = [];
+    const page = { evaluate: async () => [1200, 800], mouse: { move: async (x, y) => moves.push([x, y]), wheel: async (dx, dy) => wheels.push([dx, dy, Date.now()]) } };
+    const activity = [];
+    await scroll({ page, arg, hooks: { activity: (text) => activity.push(text), ...hooks } });
+    return { wheels, moves, activity };
+  };
+  const smooth = await run("down", { smooth: true, wheelNotch: 100 });
+  assert.deepEqual(smooth.moves, [[600, 400]], "the pointer onto the page first");
+  assert.equal(smooth.wheels.length, Math.round(640 / 100), "a screen's 80% in 100 px notches");
+  assert.ok(smooth.wheels.every(([dx, dy]) => dx === 0 && dy === 100), "every event one whole notch down");
+  assert.deepEqual(smooth.activity, ["Scrolled down"]);
+  const gaps = smooth.wheels.slice(1).map(([, , t], i) => t - smooth.wheels[i][2]);
+  assert.ok(gaps.some((g) => g >= 25), `a finger's waits between notches: ${gaps.join(" ")}`);
+  const quick = await run(-480, { smooth: false, wheelNotch: 40 });
+  assert.equal(quick.wheels.length, 12);
+  assert.ok(quick.wheels.every(([, dy]) => dy === -40), "whole notches up");
+  const quickGaps = quick.wheels.slice(1).map(([, , t], i) => t - quick.wheels[i][2]);
+  assert.ok(quickGaps.every((g) => g < 60), `fast mode waits a frame at most: ${quickGaps.join(" ")}`);
+  const tiny = await run(5, { smooth: true, wheelNotch: 120 });
+  assert.deepEqual(tiny.wheels.map(([dx, dy]) => [dx, dy]), [[0, 120]], "a scroll under half a notch is one notch");
+  // Without a notch given, this computer's platform's (wheel.mjs).
+  const { wheelNotch } = await import("../scripts/wheel.mjs");
+  const own = await run(300, { smooth: false });
+  assert.ok(own.wheels.every(([, dy]) => dy === wheelNotch()));
+});
+
 test("upload steps get the same file checks as pairbrowse_upload", () => {
   mkdirSync(uploads, { recursive: true });
   const dir = mkdtempSync(join(tmpdir(), "pb-upl-"));

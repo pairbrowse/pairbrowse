@@ -4,6 +4,8 @@ import { paths } from "../../../paths.mjs";
 import { listPlaybooks, loadPlaybook, outline, preflight, runSteps, savePlaybook, substitute } from "../../../runner.mjs";
 import { sleep, within } from "../../../util.mjs";
 import { ownerOf } from "../../fields.mjs";
+import { personaPlatform } from "../../../native/graphics.mjs";
+import { wheelNotch } from "../../../wheel.mjs";
 
 const RUN_MAX_MS = 120_000; // a fast-mode run stops between steps past this
 
@@ -40,6 +42,7 @@ export function createRunTool(conn, api) {
     const result = await Promise.race([sleep(RUN_MAX_MS + 15_000).then(() => stuck), runSteps(page, resolved, {
       trace: (t) => { lastTrace = String(t); },
       uploadsDir: paths.uploads,
+      wheelNotch: wheelNotch(personaPlatform()), // the wheel's notch follows the platform pages are told about
       secrets: secrets.get(),
       signal: AbortSignal.any([disconnected.signal, AbortSignal.timeout(RUN_MAX_MS)]),
       beforeStep: async () => {

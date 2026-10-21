@@ -6,7 +6,7 @@
 // page itself gives (it lets that host through for the rest of the helper's run). Agents can't
 // press it: their hands work only in web tabs (policy.mjs isWebTab). Off with
 // config.phishingProtection false. Lists only reported sites, by domain; no malware list.
-import { readFileSync, statSync, mkdirSync, writeFileSync, renameSync } from "node:fs";
+import { readFileSync, statSync, mkdirSync, writeFileSync, renameSync, openSync, writeSync, closeSync, rmSync } from "node:fs";
 import { dirname } from "node:path";
 import { randomBytes } from "node:crypto";
 
@@ -15,15 +15,59 @@ export const LIST_EVERY_MS = 6 * 3600_000;
 const LIST_MAX_BYTES = 64 * 1024 * 1024;
 const FETCH_MS = 120_000;
 
-// The list's text as a Set of lower-case host names (comments, blanks and anything that isn't a
-// host name left out).
-export function parseList(text) {
-  const out = new Set();
-  for (const line of String(text ?? "").split("\n")) {
-    const d = line.trim().toLowerCase();
-    if (d && d.includes(".") && /^[a-z0-9.-]+$/.test(d)) out.add(d);
+// The list (its file's bytes, or its text) as a set of lower-case host names (comments, blanks
+// and anything that isn't a host name left out; ASCII spaces around a name read as none):
+// { size, has(host) }. Kept compact, since the list holds about 400,000 names: the file's bytes
+// and a hash table of where each name starts in them, built and searched a byte at a time, so no
+// string is made per name. (A Set of them took about 40 MB of the helper's heap, and making it
+// about 120 MB more memory that the process kept; this keeps about 15 MB, outside the heap.)
+const space = (c) => c === 32 || (c >= 9 && c <= 13);
+const lower = (c) => (c >= 65 && c <= 90 ? c + 32 : c);
+// A name's character: a-z, 0-9, "." or "-" (upper case read as lower).
+const nameChar = (c) => (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c === 46 || c === 45;
+// FNV-1a over the lower-cased characters at(i) for i from `a` to `b`.
+const hashOf = (at, a, b) => { let h = 0x811c9dc5; for (let i = a; i < b; i++) h = Math.imul(h ^ lower(at(i)), 0x01000193); return h >>> 0; };
+export function parseList(input) {
+  const bytes = Buffer.isBuffer(input) ? input : Buffer.from(String(input ?? ""), "utf8");
+  const byte = (i) => bytes[i];
+  // Each name's start in bytes, plus one (0: an empty slot), at slot (hash & mask), else the slots
+  // after it. A kept name ends at the first byte after it that isn't a name's character.
+  let mask = 1023, slots = new Uint32Array(1024), size = 0;
+  const same = (slot, at, a, b) => {
+    const start = slots[slot] - 1;
+    for (let i = 0; i < b - a; i++) if (lower(bytes[start + i] ?? 0) !== lower(at(a + i))) return false;
+    const next = start + b - a;
+    return next >= bytes.length || !nameChar(lower(bytes[next]));
+  };
+  // The slot holding the name at(a) to at(b - 1), or the empty one where it would go.
+  const slotOf = (at, a, b) => { let slot = hashOf(at, a, b) & mask; while (slots[slot] && !same(slot, at, a, b)) slot = (slot + 1) & mask; return slot; };
+  const end = (start) => { let i = start; while (i < bytes.length && nameChar(lower(bytes[i]))) i++; return i; };
+  const grow = () => {
+    const old = slots;
+    mask = mask * 2 + 1; slots = new Uint32Array(mask + 1);
+    for (const at of old) if (at) slots[slotOf(byte, at - 1, end(at - 1))] = at;
+  };
+  for (let start = 0; start < bytes.length;) {
+    let stop = bytes.indexOf(10, start);
+    if (stop < 0) stop = bytes.length;
+    let a = start, b = stop;
+    while (a < b && space(bytes[a])) a++;
+    while (b > a && space(bytes[b - 1])) b--;
+    let ok = b > a, dot = false;
+    for (let i = a; ok && i < b; i++) { const c = lower(bytes[i]); ok = nameChar(c); dot ||= c === 46; }
+    if (ok && dot) {
+      const slot = slotOf(byte, a, b);
+      if (!slots[slot]) { slots[slot] = a + 1; size++; if (size * 2 > mask) grow(); }
+    }
+    start = stop + 1;
   }
-  return out;
+  const has = (host) => {
+    const h = String(host ?? "");
+    if (!h.length) return false;
+    const at = (i) => h.charCodeAt(i);
+    return slots[slotOf(at, 0, h.length)] !== 0;
+  };
+  return { size, has };
 }
 export function listedHost(list, host) {
   const h = String(host ?? "").toLowerCase().replace(/\.$/, "");
@@ -43,27 +87,44 @@ export function warningPage(url, host, nonce) {
   return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
 }
 
-async function fetchList(url, ms = FETCH_MS) {
+// The list's bytes, downloaded a piece at a time into the file `to` (removed after) and read back
+// from it: the whole download is never held in memory at once, which kept about 50 MB more of the
+// helper's memory for the rest of its run.
+export async function fetchList(url, { ms = FETCH_MS, to, max = LIST_MAX_BYTES } = {}) {
   const res = await fetch(url, { signal: AbortSignal.timeout(ms), redirect: "follow" });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const text = await res.text();
-  if (text.length > LIST_MAX_BYTES) throw new Error("the list is larger than expected");
-  return text;
+  mkdirSync(dirname(to), { recursive: true });
+  let fd = openSync(to, "w", 0o600);
+  try {
+    let bytes = 0;
+    for await (const chunk of res.body) {
+      bytes += chunk.byteLength;
+      if (bytes > max) throw new Error("the list is larger than expected");
+      writeSync(fd, chunk);
+    }
+    closeSync(fd);
+    fd = null;
+    return readFileSync(to);
+  } finally {
+    if (fd !== null) { try { closeSync(fd); } catch {} }
+    rmSync(to, { force: true });
+  }
 }
 
-// file: where the list is kept. fetchText(url): the list's text. enabled(): config's switch.
+// file: where the list is kept. fetchText(url, { to }): the list's bytes or text (to: a file it may use
+// on the way). enabled(): config's switch.
 export function createPhishing({ file, enabled = () => true, fetchText = fetchList, log = () => {}, now = Date.now } = {}) {
-  let list = new Set();
+  let list = parseList("");
   const allowed = new Set(); // hosts a person let through from a warning page
   const warned = new Map(); // host -> the nonce of its warning page
   let timer = null, fetching = null;
-  const load = () => { try { list = parseList(readFileSync(file, "utf8")); } catch {} return list.size; };
+  const load = () => { try { list = parseList(readFileSync(file)); } catch {} return list.size; };
   const age = () => { try { return now() - statSync(file).mtimeMs; } catch { return Infinity; } };
   async function refresh(force = false) {
     if (!enabled() || fetching || (!force && age() < LIST_EVERY_MS)) return fetching;
     fetching = (async () => {
       try {
-        const text = await fetchText(LIST_URL);
+        const text = await fetchText(LIST_URL, { to: `${file}.download` });
         const next = parseList(text);
         if (next.size < 1000) throw new Error(`only ${next.size} names`);
         mkdirSync(dirname(file), { recursive: true });

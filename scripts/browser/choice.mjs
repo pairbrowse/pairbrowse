@@ -85,6 +85,15 @@ export function chooseBrowser(config = {}, { native = false, pinnedExec = () => 
   return { ...choice, binary: choice.executablePath ? "custom" : "open", install: false };
 }
 
+// The native build's binary while it is the browser in use (inUse: the engine open now, else
+// the one spec, chooseBrowser's answer, would launch), else null: only its launch is given
+// PairBrowse's font configuration on Linux (native-engine.mjs launchEnv), so a report of the open
+// build's fonts reads this computer's (native/fontconf.mjs fontSource). pinned: the installed build's.
+export function nativeExecInUse(inUse, spec, pinned) {
+  if (inUse ? inUse !== "pairbrowse" : spec?.binary !== "native") return null;
+  return (spec?.binary === "native" && spec.executablePath) || pinned;
+}
+
 // The launch layer's view of a chosen browser (engine.mjs and native-engine.mjs read
 // browserEngine: "pairbrowse" or "open"): a copy of config, never config itself. executablePath:
 // the program (for the pinned native build, where it was installed).

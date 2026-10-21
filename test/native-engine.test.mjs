@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync, statSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { launchNative, applyGraphicsPlan, DRIVER_BLINK_SWITCH, DRIVER_BACKGROUND_SWITCH, nativeManifest, declaresOwnPages, macHostProfile, captureMacHost, MEASURING, hostCachePath, screenInfoArg, CANVAS_BRIDGE_DROPPED, isCanvasBridgeSwitch, personaProxyRefusal, PROXY_CREDENTIALS_REFUSAL, proxyCredentials, withoutAddresses, proxyAuthFile, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE, paceSets, flatWebgpuProfile, personaBindingRefusal, droppedLine, clockZoneNote } from "../scripts/native-engine.mjs";
+import { launchNative, launchEnv, applyGraphicsPlan, DRIVER_BLINK_SWITCH, DRIVER_BACKGROUND_SWITCH, nativeManifest, declaresOwnPages, macHostProfile, captureMacHost, MEASURING, hostCachePath, screenInfoArg, CANVAS_BRIDGE_DROPPED, isCanvasBridgeSwitch, personaProxyRefusal, PROXY_CREDENTIALS_REFUSAL, proxyCredentials, withoutAddresses, proxyAuthFile, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE, paceSets, flatWebgpuProfile, personaBindingRefusal, droppedLine, clockZoneNote } from "../scripts/native-engine.mjs";
 import { PAIRBROWSE_ENGINE_KEYS } from "../scripts/config-schema.mjs";
 import { loadEngine } from "../scripts/native/pack.mjs";
 import { normalizeWebgpu, GRAPHICS } from "../scripts/native/graphics.mjs";
@@ -55,6 +55,39 @@ const macPackTest = engineDir && process.platform === "darwin" ? test : test.ski
 const offMacPackTest = engineDir && process.platform !== "darwin" ? test : test.skip;
 const PLATFORM = { darwin: "macos", linux: "linux", win32: "windows" }[process.platform];
 const loadPack = () => loadEngine(engineDir);
+
+// The font setup on Linux (spec step 52): PairBrowse's font configuration goes over the caller's env
+// alone, so the pack's merge (this process's env, the build's fonts, --lang's LANGUAGE, then the
+// caller's) still takes the UI language from --lang when the helper was started with LANGUAGE set.
+test("a native launch on Linux after the font setup: PairBrowse's font file, and LANGUAGE still from --lang", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pairbrowse-fontenv-"));
+  const fontsDir = join(dir, "fonts"), record = join(fontsDir, "setup.json"), file = join(dir, "fonts.conf");
+  mkdirSync(fontsDir, { recursive: true });
+  writeFileSync(record, "{}");
+  const fonts = { platform: "linux", record, file, fontsDir };
+  // The installed pack's fontLaunchEnv, as it merges: the caller's env has the last word.
+  const lang = (args) => { const l = args.find((a) => a.startsWith("--lang="))?.slice(7); return l ? { LANGUAGE: l.replace("-", "_") } : {}; };
+  const stubPack = { fontLaunchEnv: (exec, callerEnv, args) => ({ ...process.env, FONTCONFIG_FILE: join(exec, "..", "fonts", "fonts.generated.conf"), ...lang(args), ...callerEnv }) };
+  const was = process.env.LANGUAGE;
+  process.env.LANGUAGE = "en_US:en";
+  try {
+    const lines = [];
+    const env = launchEnv({}, { given: undefined, pack: stubPack, executablePath: "/b/PairBrowse/chrome", args: ["--lang=de-DE"], log: (l) => lines.push(l), fonts });
+    assert.equal(env.FONTCONFIG_FILE, file, "PairBrowse's font configuration in the build's place");
+    assert.equal(env.LANGUAGE, "de_DE", "the identity's language, not the helper's");
+    assert.match(lines[0], /stand-ins for the Windows names off/);
+    // A caller env of its own keeps its keys; no pack: this process's env with the font file.
+    assert.equal(launchEnv({}, { given: { TZ: "UTC" }, pack: stubPack, executablePath: "/b/PairBrowse/chrome", args: [], fonts }).TZ, "UTC");
+    const bare = launchEnv({}, { given: undefined, pack: {}, executablePath: "/b/PairBrowse/chrome", args: [], fonts });
+    assert.deepEqual([bare.FONTCONFIG_FILE, bare.LANGUAGE], [file, "en_US:en"]);
+    // Before the setup (or off Linux): the pack's merge with the caller's env as it was.
+    const before = launchEnv({}, { given: undefined, pack: stubPack, executablePath: "/b/PairBrowse/chrome", args: ["--lang=de-DE"], fonts: { ...fonts, record: join(dir, "none.json") } });
+    assert.deepEqual([before.FONTCONFIG_FILE, before.LANGUAGE], ["/b/PairBrowse/fonts/fonts.generated.conf", "de_DE"]);
+    assert.equal(launchEnv({}, { given: undefined, pack: {}, executablePath: "/b/PairBrowse/chrome", args: [], fonts: { ...fonts, platform: "darwin" } }), undefined);
+  } finally {
+    if (was === undefined) delete process.env.LANGUAGE; else process.env.LANGUAGE = was;
+  }
+});
 
 // The capture runs once per Mac: a cached host profile is reused until the build or hardware changes.
 const fakePack = { collector: "", DEFAULT_IGNORED_ARGS: [] };

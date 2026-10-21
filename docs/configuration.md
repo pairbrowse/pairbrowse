@@ -455,7 +455,7 @@ user's file, readable by others), the section says why and refuses a username or
   `"Claude"`), its distance from the screen's top (default 52), and whether that app's window
   makes room for it (default `false`).
 - `pairbrowse`: the native PairBrowse build's own settings (`humanize`, `showCursor`, `typingPace`,
-  `formMove`, `motion`, `inputPace`, `profile`, `profileSelect`, `geoip`, `graphics`): see
+  `formMove`, `motion`, `inputPace`, `fontStandIns`, `profile`, `profileSelect`, `geoip`, `graphics`): see
   [The native PairBrowse browser](browser.md#the-native-pairbrowse-browser). `inputPace` is how
   quickly humanized input goes: `"adaptive"` (default) types at `typingPace` (0.2, a fast typist)
   and moves at `motion` (`"fast"`) wherever nothing scores the input, and at an everyday person's
@@ -466,7 +466,18 @@ user's file, readable by others), the section says why and refuses a username or
   one-time code or card field); `"fast"` keeps the fast pace everywhere, `"human"` the everyday
   one everywhere. Each typing or pointer result says which pace it took ("Pace: fast.",
   "Pace: everyday (sign-in form).", with "moves stayed fast" when the moves couldn't change pace in
-  time). A browser profile can't set it (a helper-wide setting). `graphics` is the
+  time). A browser profile can't set it (a helper-wide setting). `fontStandIns` (true or false,
+  default `false` until the ordinary-browser measurement decides; Linux and the native build only
+(the open build reads the computer's own font configuration), and only once the
+  font setup of [Running PairBrowse on a server](server.md#fonts) has run, which gives the browser
+  PairBrowse's own font configuration, `~/.pairbrowse/fonts.conf`, written again at each start):
+  `true` points the Windows names at the open stand-ins (Segoe UI and its Light, Semilight and
+  Semibold at Selawik, Calibri at Carlito, Cambria at Caladea, and Arial, Times New Roman and
+  Courier New at Liberation where the real font isn't there), so a width-based font check finds
+  them; `false` keeps Selawik, Carlito and Caladea from the browser altogether (Liberation stays,
+  fontconfig's own alias on any Linux desktop). It changes only the browser's font matching, takes
+  effect at the browser's next start, and a browser profile can't set it (a helper-wide setting).
+  `graphics` is the
   `default` profile's graphics backend (a stored profile has its own `graphics.backend`):
   `"auto"` (default) renders as this computer does (on a Linux server's virtual screen that is
   already software); `"software"` forces the engine's own software renderer

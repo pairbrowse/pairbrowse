@@ -48,7 +48,7 @@ const READ_KEYS = ["acceptLanguage", "timezone", "geoip", "screenWidth", "screen
 const HARDWARE_KEYS = ["gpuVendor", "gpuRenderer", "gpuStringSpoof", "disableGpuFingerprint", "hardwareConcurrency", "deviceMemory", "maxTouchPoints",
   "platform", "platformVersion", "brand", "brandVersion", "fingerprintVoices"];
 // The helper's own settings in the pairbrowse block: global, never a profile's.
-const GLOBAL_KEYS = ["humanize", "showCursor", "typingPace", "motion", "formMove", "inputPace"];
+const GLOBAL_KEYS = ["humanize", "showCursor", "typingPace", "motion", "formMove", "inputPace", "fontStandIns"];
 const SEED = /^(?!off$)[A-Za-z0-9_-]{1,128}$/;
 const MAP_RULE = "profile.map";
 const CONFIG_RULE = "config.map";

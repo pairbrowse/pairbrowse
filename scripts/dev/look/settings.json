@@ -133,7 +133,14 @@
       "browser": {
         "engine": "pairbrowse",
         "version": "142.0.7444.59",
-        "build": "3"
+        "build": "3",
+        "fonts": {
+          "conf": "pairbrowse",
+          "standIns": true,
+          "present": ["Arial", "Courier New"],
+          "standingIn": [{ "family": "Calibri", "by": "Carlito" }],
+          "absent": ["Marlett"]
+        }
       },
       "connections": {
         "agents": 1,

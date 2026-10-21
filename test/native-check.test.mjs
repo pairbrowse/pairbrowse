@@ -203,13 +203,19 @@ test("graphics step whose probe fails: an unverified line naming why, no measure
 });
 
 // The install check's Windows fonts line (Linux): which of the eight families font checks on a
-// Windows browser look for are missing from fontconfig's list; never a failure, never a download.
-test("the Windows fonts line names the missing families from fontconfig's list", async () => {
+// Windows browser look for are found, standing in (an open stand-in under the name) or missing
+// from fontconfig's list, as the browser reads it; never a failure, never a download.
+test("the Windows fonts line names the found, standing-in and missing families from fontconfig's list", async () => {
   const { WINDOWS_FONTS, parseFontList, missingWindowsFonts, readFontFamilies, windowsFontsLine } = await import("../scripts/native/winfonts.mjs");
   assert.deepEqual([...WINDOWS_FONTS], ["Segoe UI", "Segoe UI Light", "Calibri", "Marlett", "MS UI Gothic", "Franklin Gothic", "Consolas", "Courier New"]);
   const some = parseFontList("DejaVu Sans:style=Book\nSegoe UI:style=Light\nSegoe UI:style=Regular\nFranklin Gothic Medium:style=Regular\nCourier New,Courier New CE:style=Regular\n\nNoto Color Emoji:style=Regular\n");
   assert.deepEqual(missingWindowsFonts(some), ["Calibri", "Marlett", "MS UI Gothic", "Consolas"]);
-  assert.equal(windowsFontsLine(some), "Windows fonts missing: Calibri, Marlett, MS UI Gothic, Consolas (not provided by PairBrowse; a licensed Windows of your own carries them: docs/server.md)");
+  assert.equal(windowsFontsLine(some), "Windows fonts: 4 of the eight found; missing: Calibri, Marlett, MS UI Gothic, Consolas (Microsoft's, not provided by PairBrowse: docs/server.md)");
+  // An open stand-in counts only while the stand-ins are on (pairbrowse.fontStandIns); Liberation
+  // stands in for Courier New whatever the switch says (fontconfig's own metric aliases).
+  const free = parseFontList("Selawik:style=Regular\nSelawik,Selawik Light:style=Light,Regular\nCarlito:style=Regular\nLiberation Mono:style=Regular\n");
+  assert.equal(windowsFontsLine(free), "Windows fonts: 0 of the eight found; standing in: Courier New (Liberation Mono); missing: Segoe UI, Segoe UI Light, Calibri, Marlett, MS UI Gothic, Franklin Gothic, Consolas (Microsoft's, not provided by PairBrowse: docs/server.md)");
+  assert.equal(windowsFontsLine(free, { standIns: true }), "Windows fonts: 0 of the eight found; standing in: Segoe UI (Selawik), Segoe UI Light (Selawik Light), Calibri (Carlito), Courier New (Liberation Mono); missing: Marlett, MS UI Gothic, Franklin Gothic, Consolas (Microsoft's, not provided by PairBrowse: docs/server.md)");
   const all = parseFontList(WINDOWS_FONTS.map((f) => `${f}:style=Regular`).join("\n"));
   assert.deepEqual(missingWindowsFonts(all), []);
   assert.equal(windowsFontsLine(all), "Windows fonts: all eight found");
@@ -217,18 +223,20 @@ test("the Windows fonts line names the missing families from fontconfig's list",
   assert.ok(missingWindowsFonts(parseFontList("Segoe UI Symbol:style=Regular")).includes("Segoe UI"), "another family of the name's start is not it");
   assert.deepEqual(missingWindowsFonts(parseFontList("")), [...WINDOWS_FONTS]);
   assert.equal(windowsFontsLine(null), "Windows fonts: not checked (fc-list is not installed)");
-  // fc-list asked with a bound; absent or failing, nothing (never a throw).
+  // fc-list asked with a bound, under the environment given (the browser's font configuration);
+  // absent or failing, nothing (never a throw).
   let asked = null;
-  assert.deepEqual(readFontFamilies({ run: (cmd, args, o) => { asked = { cmd, args, timeout: o.timeout }; return { status: 0, stdout: "Calibri:style=Regular\n" }; } }).length, 1);
-  assert.deepEqual(asked, { cmd: "fc-list", args: [":", "family", "style"], timeout: 10_000 });
+  assert.deepEqual(readFontFamilies({ run: (cmd, args, o) => { asked = { cmd, args, timeout: o.timeout, conf: o.env?.FONTCONFIG_FILE }; return { status: 0, stdout: "Calibri:style=Regular\n" }; }, env: { FONTCONFIG_FILE: "/x/fonts.conf" } }).length, 1);
+  assert.deepEqual(asked, { cmd: "fc-list", args: [":", "family", "style"], timeout: 10_000, conf: "/x/fonts.conf" });
   assert.equal(readFontFamilies({ run: () => ({ error: new Error("ENOENT") }) }), null);
   assert.equal(readFontFamilies({ run: () => { throw new Error("boom"); } }), null);
   assert.equal(readFontFamilies({ run: () => ({ status: 1, stdout: "" }) }), null);
-  // The self-check pushes the line on Linux only, after the graphics step.
+  // The self-check pushes the line on Linux only, after the graphics step, read through the
+  // browser's font configuration.
   const src = readFileSync(join(root, "scripts", "native", "check.mjs"), "utf8");
   const run = src.slice(src.indexOf("const result = await withTimeout(work"));
-  assert.ok(run.indexOf("graphicsCheck(") < run.indexOf("windowsFontsLine(readFontFamilies())"), "after the graphics step");
-  assert.match(run, /if \(process\.platform === "linux"\) \{ const fonts = windowsFontsLine\(readFontFamilies\(\)\); log\(fonts\); result\.push\(fonts\); \}/);
+  assert.ok(run.indexOf("graphicsCheck(") < run.indexOf("windowsFontsLine(readFontFamilies("), "after the graphics step");
+  assert.match(run, /if \(process\.platform === "linux"\) \{ const src = fontSource\(config, \{ exec \}\); const fonts = windowsFontsLine\(readFontFamilies\(\{ env: src\.env \}\), \{ standIns: src\.standIns \}\); log\(fonts\); result\.push\(fonts\); \}/);
 });
 
 test("graphics step off macOS and Linux: a clean line, no probe started", async () => {

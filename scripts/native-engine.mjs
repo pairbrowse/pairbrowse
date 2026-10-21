@@ -14,6 +14,7 @@ import { switchName, withoutNoSandbox } from "./browser-args.mjs";
 import { PAIRBROWSE_ENGINE_KEYS } from "./config-schema.mjs";
 import { normalizeWebgpu, graphicsPlan, backendSwitches, GRAPHICS, SCREEN_KEYS, IDENTITY_KEYS, LEGACY_GPU_KEYS, GPU_POOL_SWITCH, identityNamed } from "./native/graphics.mjs";
 import { wheelNotch } from "./wheel.mjs";
+import { browserFontEnv, fontStandInsOf } from "./native/fontconf.mjs";
 import { boundedStep, launchWithin, localSite } from "./native/probe.mjs";
 import { STRICT_WEBRTC } from "./net/config.mjs";
 import { ENGINE_KEYS as PROFILE_ENGINE_KEYS, PICKS_THIS_COMPUTER, THIS_COMPUTER_NOTE } from "./profiles/map.mjs";
@@ -331,11 +332,12 @@ function readSettings(config, pack, personaPath) {
   // graphicsNoise: noise over the identity shown on a host without a GPU (decisions 10 and 11, off
   // by default; native/graphics.mjs identityKeys: the engine's fingerprintNoise and canvasNoise);
   // on a host with a GPU the real pixels get no readback noise, whatever this says.
-  const { profile: selection, profileSelect, graphics = "auto", graphicsNoise = false, humanize = true, showCursor = false, geoip = false, typingPace = TYPING_PACE, motion: motionSetting = "fast", formMove, inputPace, ...given } = config.pairbrowse ?? {};
+  const { profile: selection, profileSelect, graphics = "auto", graphicsNoise = false, humanize = true, showCursor = false, geoip = false, typingPace = TYPING_PACE, motion: motionSetting = "fast", formMove, inputPace, fontStandIns, ...given } = config.pairbrowse ?? {};
   // profileSelect only steered the engine pack's persona pick, which PairBrowse no longer asks
   // for (D9 below; config-schema.mjs PROFILE_SELECT keeps it closed, D8).
   // graphics: the default profile's backend, read by profiles/map.mjs into its switches (E2).
-  void formMove, profileSelect, inputPace;
+  // fontStandIns: the browser's font configuration on Linux (native/fontconf.mjs, read at launch).
+  void formMove, profileSelect, inputPace, fontStandIns;
   // Only the engine's fingerprint options pass (config-schema.mjs PAIRBROWSE_ENGINE_KEYS): never an
   // unpacked extension, a proxy, launch options or switches from config.json, which would go
   // around the browserArgs screen. An option this engine can't honour still stops the launch below.
@@ -523,6 +525,22 @@ export function engineHasGpuPool(pack, executablePath) {
   try { return pack?.engineSupportsSwitch?.(executablePath, GPU_POOL_SWITCH.slice(2).split("=")[0]) === true; } catch { return false; }
 }
 
+// A native launch's environment (undefined: the driver's own, this process's). Linux: the
+// build's bundled fonts (FONTCONFIG_FILE) and the UI language from --lang (LANGUAGE), the pack's
+// merge (fontLaunchEnv: this process's env, then those, then the caller's, which wins); once the
+// server setup has run, PairBrowse's font configuration in the build's place: the computer's
+// fonts, and the open stand-ins under the Windows names only while pairbrowse.fontStandIns is on
+// (native/fontconf.mjs, spec step 52). Only FONTCONFIG_FILE goes over the caller's env, never
+// this process's whole env, so a LANGUAGE the helper was started with never outranks --lang's.
+// fonts: browserFontEnv's options (tests).
+export function launchEnv(config, { given, pack, executablePath, args, log = () => {}, fonts = {} }) {
+  const fontEnv = browserFontEnv(config, { log, ...fonts });
+  if (fontEnv) log(`launch: fonts: this computer's font set, stand-ins for the Windows names ${fontStandInsOf(config) ? "on" : "off"} (pairbrowse.fontStandIns)`);
+  const givenEnv = fontEnv ? { ...(given ?? {}), ...fontEnv } : given;
+  if (pack.fontLaunchEnv) return pack.fontLaunchEnv(executablePath, givenEnv, args);
+  return fontEnv ? { ...process.env, ...givenEnv } : given;
+}
+
 export async function launchNative(chromium, config, directory, options, pack, log = () => {}) {
   const metadata = nativeManifest(options.executablePath);
   // Before anything else runs (a first launch's host capture takes up to a minute).
@@ -590,8 +608,7 @@ export async function launchNative(chromium, config, directory, options, pack, l
   const finalArgs = gated.args.filter((a) => !isCanvasBridgeSwitch(a));
   // This launch's graphics (status reads GRAPHICS); the backend in use is read once it runs.
   Object.assign(GRAPHICS, { requested: settings.graphics, switches: backendSwitches(finalArgs), engineKeys: Object.keys(plan.engineKeys), shown: plan.identity ?? null, kind: "unverified", renderer: null, status: "unverified" });
-  // Linux: the build's bundled fonts (FONTCONFIG_FILE) and the UI language from --lang (LANGUAGE).
-  const env = pack.fontLaunchEnv?.(options.executablePath, merged.env, finalArgs);
+  const env = launchEnv(config, { given: merged.env, pack, executablePath: options.executablePath, args: finalArgs, log });
   const contextAt = Date.now();
   const context = await chromium.launchPersistentContext(directory, {
     ...merged, proxy, ...(env ? { env } : {}),

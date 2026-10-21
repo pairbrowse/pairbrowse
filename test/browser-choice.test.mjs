@@ -13,7 +13,7 @@ import { EventEmitter } from "node:events";
 // project's modules are imported only after this line.
 const home = mkdtempSync(join(tmpdir(), "pb-choice-"));
 process.env.PAIRBROWSE_HOME = home;
-const { chooseBrowser, engineConfig, shellFrom, shellOf, serverRefusal, SERVER_NEEDS_NATIVE, OPEN_BROWSER_NAME, EXTENSION_SHELL } = await import("../scripts/browser/choice.mjs");
+const { chooseBrowser, engineConfig, nativeExecInUse, shellFrom, shellOf, serverRefusal, SERVER_NEEDS_NATIVE, OPEN_BROWSER_NAME, EXTENSION_SHELL } = await import("../scripts/browser/choice.mjs");
 const { launchOptions } = await import("../scripts/browser.mjs");
 const { paths } = await import("../scripts/paths.mjs");
 
@@ -43,6 +43,17 @@ test("the choice: binary and where it runs from, for the setting, its older name
   // "browser" wins over the older names; a bad value is the open build, with the line for the log.
   assert.equal(choose({ browser: "chromium", browserEngine: "pairbrowse", executablePath: "/x" }).binary, "open");
   assert.match(choose({ browser: "brave" }).problem, /must be "pairbrowse", "pairbrowse-open" or an absolute path/);
+});
+
+// Spec step 52: only the native build reads PairBrowse's font configuration, so the fonts report
+// names its binary only while it is the browser in use (open now, else the one a launch chooses).
+test("the native build's binary for the fonts report, only while it is the browser in use", () => {
+  const native = { binary: "native", executablePath: null }, own = { binary: "native", executablePath: "/opt/own/chrome" }, open = { binary: "open", executablePath: null };
+  assert.equal(nativeExecInUse(null, native, PINNED), PINNED, "none open: the one chosen");
+  assert.equal(nativeExecInUse(null, own, PINNED), "/opt/own/chrome");
+  assert.equal(nativeExecInUse(null, open, PINNED), null);
+  assert.equal(nativeExecInUse("pairbrowse", open, PINNED), PINNED, "the native build open now, whatever is chosen since");
+  assert.equal(nativeExecInUse("pairbrowse-open", native, PINNED), null, "the open build open now");
 });
 
 test("the launch layer gets a copy with the older names; config stays as written", () => {

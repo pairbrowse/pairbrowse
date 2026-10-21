@@ -91,7 +91,7 @@ import { engineDir } from "./native/pack.mjs";
 import { answerOpen, writeOpener, claimOpener, releaseOpener, registryDir } from "./opener.mjs";
 import { bundleIdOfApp } from "./openers.mjs";
 import { createVersionHandoff, readUse } from "./handoff.mjs";
-import { chooseBrowser, isOpenBrowser } from "./browser/choice.mjs";
+import { chooseBrowser, isOpenBrowser, nativeExecInUse } from "./browser/choice.mjs";
 import { AGENT_COLOR } from "../ui/vocab.js";
 import { testOn, harnessStarted } from "./testenv.mjs";
 import { createAudit } from "./daemon/audit.mjs";
@@ -179,7 +179,7 @@ const previews = createPreviews();
 previews.clear();
 const HELPER_VERSION = readJson(join(dirname(fileURLToPath(import.meta.url)), "..", "package.json"))?.version || "";
 const diagnostics = createDiagnostics({
-  version: HELPER_VERSION, mask: (t) => output.mask(t), agents: () => clients.size, graphics: () => context.graphics(), // graphics: kind and status only
+  version: HELPER_VERSION, mask: (t) => output.mask(t), agents: () => clients.size, graphics: () => context.graphics(), nativeExec: () => nativeExecInUse(context.browserInUse(), chooseBrowser(context.choiceConfig?.() || config, { native: !!pinnedAsset(), pinnedExec: () => nativeDirs().exec }), nativeDirs().exec), // graphics: kind and status only; nativeExec: where the Windows fonts are read from on Linux (the native build only)
   // Never a path, and never a launch for it: the browser open now, if any.
   browser: async () => {
     const inUse = context.browserInUse();

@@ -30,7 +30,7 @@ in WebGPU on a software adapter the browser offers there, Windows speech voices 
 layout, and the virtual screen less a Windows taskbar), the same choice the best published
 browser of this kind makes on a Linux server; no canvas noise unless `pairbrowse.graphicsNoise`
 is `true`, so sessions on one such computer share its canvas reading. What it still lacks is
-Windows' own fonts (below). PairBrowse never pretends otherwise to you: the helper log,
+Windows' own fonts (see [Fonts](#fonts)). PairBrowse never pretends otherwise to you: the helper log,
 `pairbrowse_status`, the install check and a diagnostics report say "software rendering, shown
 as Windows 11 with NVIDIA GeForce RTX 3060", and a browser profile checked there reads
 "consistent" rather than "validated". Expect more verification steps handed to you than on a
@@ -44,27 +44,8 @@ UHD Graphics 770 instead; the status names whichever it is.)
 - Node.js 20 or newer, and the plugin (see [Install](install.md)).
 - `xvfb` and `xauth` (Debian and Ubuntu: `sudo apt-get install -y xvfb xauth`): the private
   virtual screen the browser runs on when the server has no screen.
-- A normal desktop font set, so pages render as they do on a desktop and font checks resolve:
-  on Debian and Ubuntu `fonts-liberation fonts-dejavu-core fonts-noto-core fonts-noto-cjk
-  fonts-noto-color-emoji` (the Linux build also brings its own metric-compatible clones of the
-  common desktop fonts). The CJK and colour emoji packages are not optional on a computer without
-  a graphics card: sites draw an emoji and CJK text on a hidden canvas and compare the picture
-  with real desktops', and the install check (`fonts.emoji` in a profile's checks) warns when
-  emoji draw in black and white. Microsoft's freely distributable core fonts for the web (Arial,
-  Times New Roman, Courier New, Verdana, Georgia, Trebuchet MS and the rest) come through the
-  distribution's own package, `ttf-mscorefonts-installer` on Debian and Ubuntu, which shows
-  Microsoft's licence for you to accept once.
-- **Windows fonts** (a computer without a graphics card, which presents as Windows 11): a Windows
-  desktop also carries Segoe UI, Segoe UI Light, Calibri, Marlett, MS UI Gothic, Franklin Gothic
-  and Consolas (with Courier New, the eight families font checks on a Windows browser look for
-  first). PairBrowse does not provide them, never downloads them from a third-party site and
-  never ships them: they are Microsoft's, licensed with Windows. The install check lists which
-  of the eight are missing ("Windows fonts missing: ..."), so you know what a strict font check
-  will see. If you own a licensed Windows, its fonts are yours to use under its terms: copy the
-  files from its `C:\Windows\Fonts` into `~/.local/share/fonts/` on the server and run
-  `fc-cache -f`; the browser reads them through fontconfig at its next start, and the install
-  check then finds them. Without them the browser's metric-compatible clones stand in for the
-  Windows names, which keeps text the right size but not the same glyphs.
+- The font set, with the setup's own command (below): pages render as on a desktop, and font
+  checks find the fonts a Windows browser has wherever a free font can provide them.
 - The time zone of the place your traffic leaves from. A server's clock is usually UTC, which few
   everyday computers use, and pages compare the browser's time zone with the region of the address
   they see. Set it for each profile (`locale.timezone`, see [Browser profiles](profiles.md)) or for
@@ -78,6 +59,74 @@ UHD Graphics 770 instead; the status names whichever it is.)
 
 Run PairBrowse as a normal user, never as root: the browser's sandbox is always on in server mode
 and refuses to start as root.
+
+## Fonts
+
+A computer without a graphics card presents as Windows 11, and sites check fonts as part of that:
+they draw an emoji and CJK text on a hidden canvas and compare the picture with real desktops',
+and they measure text in a font's name to see whether that font is there. PairBrowse installs only
+free fonts, never downloads a font from a third-party mirror site, and never ships, renames or
+modifies one. Run the setup as the user PairBrowse runs as (it asks `sudo` for the packages):
+
+```sh
+node <plugin copy>/scripts/native/fontsetup.mjs install   # installs the set, then checks
+node <plugin copy>/scripts/native/fontsetup.mjs check     # what the browser finds now
+```
+
+On Debian and Ubuntu it installs:
+
+1. **Microsoft's core fonts for the web** (Arial, Courier New, Times New Roman, Verdana, Georgia,
+   Trebuchet MS, Comic Sans MS, Impact, Andale Mono, Webdings), only through the distribution's own
+   package, `ttf-mscorefonts-installer`, which downloads Microsoft's original installers and checks
+   each against the checksums the package carries. They come with Microsoft's licence (EULA), which
+   you accept once and nobody accepts for you: on Debian the setup shows the licence in full and
+   installs the package only when you type `yes` (Debian's package asks nothing itself); on Ubuntu
+   the package shows it and asks you. Your answer is recorded with the licence text's SHA-256, so a
+   later run doesn't ask again. Without a terminal to answer in, or without a `yes`, the core fonts
+   are skipped and the rest is installed. The package is in Debian's `contrib` section (Ubuntu's
+   `multiverse`): if your package sources don't include it, the setup says how to add it and leaves
+   your sources as they are (Debian: add `contrib` to the `Components:` of the Debian entries in
+   `/etc/apt/sources.list.d/debian.sources`, or to the lines in `/etc/apt/sources.list`, then
+   `sudo apt-get update`; Ubuntu: `sudo add-apt-repository multiverse`).
+2. **Colour emoji and CJK**: `fonts-noto-color-emoji` and `fonts-noto-cjk` (with `fontconfig`). Not
+   optional on a computer without a graphics card: the install check (`fonts.emoji` in a profile's
+   checks) warns when emoji draw in black and white.
+3. **The open stand-ins** for Windows-only names: Carlito for Calibri and Caladea for Cambria
+   (`fonts-crosextra-carlito`, `fonts-crosextra-caladea`), Liberation for Arial, Times New Roman and
+   Courier New where the core fonts are absent (`fonts-liberation`), all SIL OFL 1.1, and Selawik,
+   Microsoft's own open stand-in for Segoe UI (OFL 1.1; close to Segoe UI, not the same: its kerning
+   differs), taken from Microsoft's release on GitHub with the archive, each font in it and its
+   licence pinned by SHA-256, kept under their own names in `~/.pairbrowse/fonts/selawik/`.
+4. **The browser's font configuration** (`~/.pairbrowse/fonts.conf`, written again at each browser
+   start): the browser then reads this computer's fonts (everything above) rather than only the
+   fonts the Linux build carries. Whether the Windows names point at the stand-ins is
+   `pairbrowse.fontStandIns` in `config.json` (see [Configuration](configuration.md)), `false` by
+   default until the measurement of the ordinary-browser work decides: off, the switched stand-ins
+   (Selawik, Carlito, Caladea) are kept from the browser altogether, so a width check finds no
+   Segoe UI, Calibri or Cambria (Liberation stays: fontconfig's own aliases use it for Arial, Times
+   New Roman and Courier New, as on any Linux desktop); on, those names find their stand-in. Only
+   the browser's font matching changes, nothing else on the computer. Until the setup has run, the
+   browser keeps the Linux build's own font configuration, which reads only the fonts the build
+   carries (its own clones always stand in there, and none of the computer's fonts, its colour
+   emoji among them, reach it).
+
+On Fedora (`sudo dnf install fontconfig google-noto-color-emoji-fonts google-noto-sans-cjk-fonts
+google-carlito-fonts google-crosextra-caladea-fonts liberation-sans-fonts liberation-serif-fonts
+liberation-mono-fonts`) and Arch (`sudo pacman -S fontconfig noto-fonts-emoji noto-fonts-cjk
+ttf-carlito ttf-caladea ttf-liberation`) the setup names these packages for you to install, then
+does steps 3 and 4 itself, and `install` exits 1 until this computer's fontconfig lists their fonts; Microsoft's core fonts aren't in those distributions' own repositories,
+and PairBrowse never takes them from elsewhere. On another distribution install the equivalent
+packages (fontconfig, a colour emoji font, Noto CJK, Carlito, Caladea, Liberation) and run the
+setup for Selawik and the configuration (it checks for the same fonts).
+
+What stays absent: Segoe UI, Calibri, Cambria, Consolas, Marlett, MS UI Gothic, Franklin Gothic and
+the other fonts only Windows carries are Microsoft's, licensed with Windows, and no free package
+has them. The setup's check, the install self-check ("Windows fonts: ..."), a diagnostics report
+and Settings (About and diagnostics) list each Windows font as present, standing in (and by which
+open font) or absent, so you know what a strict font check will see. The open build
+(`"browser": "pairbrowse-open"`) is never given PairBrowse's font configuration: it reads this
+computer's own, whose metric aliases stand Carlito and Caladea in for Calibri and Cambria whatever
+`pairbrowse.fontStandIns` says, and the report lists its fonts that way.
 
 ## The helper as a service
 
@@ -167,4 +216,5 @@ its status on this build, its network and the exit's last check, and its graphic
 hardware (<renderer>), requested auto, validated on <build>` on a computer with a graphics card;
 `Graphics: software (<renderer>), shown as Windows 11 with NVIDIA GeForce RTX 3060, requested
 auto, consistent on <build>` on one without. The helper log (`~/.pairbrowse/daemon.log`) says the
-same at each start, and the install check's lines include which Windows fonts are missing.
+same at each start (and, once the font setup has run, whether the stand-ins are on), and the
+install check's lines say which Windows fonts are found, standing in or missing.

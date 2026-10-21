@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { scrub, lastErrors, createDiagnostics, pinnedBrowserVersion } from "../scripts/daemon/diagnostics.mjs";
+import { scrub, lastErrors, createDiagnostics, pinnedBrowserVersion, fontsSummary, fontsLine } from "../scripts/daemon/diagnostics.mjs";
 import { handoffKind } from "../scripts/daemon/toolstab.mjs";
 
 const home = "/Users/tester";
@@ -128,5 +128,27 @@ test("a known browser version reaches diagnostics.json and the report", async ()
     assert.equal(got.browser.version, "155.0.8059.12");
     assert.equal(JSON.parse(JSON.stringify(got)).browser.version, "155.0.8059.12");
     assert.match(d.reportText(got), /Browser: open 155\.0\.8059\.12/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+// Spec step 52: on Linux the report and diagnostics.json name the Windows fonts the browser finds
+// (present, standing in and by which open font, absent), and nothing else of the computer's fonts.
+test("the Windows fonts reach diagnostics.json and the report, only by their known names", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pb-diag-f-"));
+  try {
+    const fonts = async () => ({ conf: "pairbrowse", standIns: true, present: ["Arial", "Some Private Font"], standingIn: [{ family: "Calibri", by: "Carlito" }, { family: "Calibri", by: "/home/x/evil" }], absent: ["Segoe UI"], extra: "x" });
+    const d = createDiagnostics({ version: "1.2.3", logFile: join(dir, "none.log"), home: dir, fonts });
+    const got = await d.read();
+    assert.deepEqual(got.browser.fonts, { conf: "pairbrowse", standIns: true, present: ["Arial"], standingIn: [{ family: "Calibri", by: "Carlito" }], absent: ["Segoe UI"] });
+    assert.match(d.reportText(got), /^Windows fonts: present Arial; standing in Calibri \(Carlito\); absent Segoe UI \(stand-ins on\)$/m);
+    assert.equal(fontsSummary(null), null);
+    // Off Linux (no fonts read) nothing is said; a read that never answers is given up on.
+    const none = await createDiagnostics({ logFile: join(dir, "none.log"), home: dir }).read();
+    assert.equal(none.browser.fonts, undefined);
+    assert.doesNotMatch(createDiagnostics({ home: dir }).reportText(none), /Windows fonts/);
+    const thrown = await createDiagnostics({ logFile: join(dir, "none.log"), home: dir, fonts: () => { throw new Error("no fc-list"); } }).read();
+    assert.equal(thrown.browser.fonts, undefined);
+    assert.match(fontsLine({ standIns: false, conf: "build", present: [], standingIn: [], absent: ["Calibri"] }), /^Windows fonts: absent Calibri \(stand-ins off, the build's own font configuration\)$/);
+    assert.match(fontsLine({ standIns: true, conf: "system", present: [], standingIn: [], absent: ["Calibri"] }), /\(stand-ins on, this computer's font configuration\)$/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

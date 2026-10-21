@@ -391,6 +391,17 @@ function drawDiag(d) {
   const h = diag?.helper || {}, b = diag?.browser || {}, c = diag?.connections || {};
   $("about-helper").textContent = h.version ? `${h.version}${h.node ? ` · Node ${h.node}` : ""}` : "Not reported";
   $("about-browser").textContent = b.engine ? [b.engine === "pairbrowse" ? "PairBrowse" : b.engine === "open" || b.engine === "chromium" ? "PairBrowse as an extension" : String(b.engine), b.version, b.build ? `build ${b.build}` : ""].filter(Boolean).join(" ") : "Not reported";
+  // On Linux: which Windows fonts the browser finds (spec step 52), present, standing in or absent.
+  const f = b.fonts;
+  $("about-fonts-row").hidden = !f;
+  if (f) {
+    const names = (list) => (Array.isArray(list) ? list : []);
+    $("about-fonts").textContent = [
+      names(f.present).length ? `Present: ${names(f.present).join(", ")}` : "",
+      names(f.standingIn).length ? `Standing in: ${names(f.standingIn).map((s) => `${s.family} (${s.by})`).join(", ")}` : "",
+      names(f.absent).length ? `Absent: ${names(f.absent).join(", ")}` : "",
+    ].filter(Boolean).join(" · ") || "None listed";
+  }
   const n = (k, one, many) => { const v = Number(c[k]) || 0; return `${v} ${v === 1 ? one : many}`; };
   $("about-agents").textContent = diag ? [n("agents", "agent", "agents"), n("joiners", "person joined", "people joined"), n("viewers", "viewer", "viewers")].join(" · ") : "Not reported";
   const errors = Array.isArray(diag?.errors) ? diag.errors.slice(-5).reverse() : [];

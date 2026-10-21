@@ -64,6 +64,9 @@ both({ fixtures, viewport: VIEW }, async ({ helper, until, inPage, errors }) => 
   await until("the picture count", () => document.getElementById("tl-state").textContent === "1 picture kept in this session");
   await until("the versions", () => document.getElementById("about-helper").textContent === "0.15.45 · Node 22.11.0");
   assert.equal(await inPage(text, "about-browser"), "PairBrowse 142.0.7444.59 build 3");
+  // On Linux, the Windows fonts the browser finds (spec step 52): present, standing in, absent.
+  assert.equal(await inPage(text, "about-fonts"), "Present: Arial, Courier New · Standing in: Calibri (Carlito) · Absent: Marlett");
+  assert.equal(await inPage(() => document.getElementById("about-fonts-row").hidden), false);
   assert.equal(await inPage(text, "about-conn"), "Connected");
   assert.equal(await inPage(text, "about-agents"), "1 agent · 1 person joined · 0 viewers");
   assert.match(await inPage(text, "errors"), /tunnel: The Quick Tunnel didn't answer/);

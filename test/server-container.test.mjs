@@ -4,7 +4,8 @@
 import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { BASE_IMAGE, PLATFORM, SECCOMP_DENY, UID, USER, dockerfile, imageTag, runArgs, seccompProfile } from "./optin/server/container.mjs";
+import { BASE_IMAGE, PLATFORM, SECCOMP_DENY, UID, USER, dockerfile, fontsDockerfile, fontsImageTag, imageTag, runArgs, seccompProfile } from "./optin/server/container.mjs";
+import { CORE_PACKAGE, PACKAGES, freePackages } from "../scripts/native/fontsetup.mjs";
 import { graphicsSwitches, scrubProbe, scrubSystemInfo, scrubText } from "./optin/server/scrub.mjs";
 
 test("the image: node:22-bookworm with Xvfb, xauth, fonts and Mesa, run as a normal user", () => {
@@ -18,6 +19,18 @@ test("the image: node:22-bookworm with Xvfb, xauth, fonts and Mesa, run as a nor
   // The tag follows the recipe.
   assert.match(imageTag(), /^pairbrowse-test-server:[0-9a-f]{12}$/);
   assert.equal(imageTag(), imageTag());
+});
+
+// Spec step 52: the fonts image is the base image with the server setup's own Debian packages
+// (Debian's contrib added for the core fonts), and still runs as the normal user.
+test("the fonts image: the setup's Debian packages on the base image, contrib added, a normal user last", () => {
+  const recipe = fontsDockerfile("base:x");
+  assert.match(recipe, /^FROM base:x$/m);
+  assert.match(recipe, /Components: \.\*main\)\$\/\\1 contrib\/' \/etc\/apt\/sources\.list\.d\/debian\.sources/);
+  for (const pkg of [...freePackages(PACKAGES.debian), CORE_PACKAGE]) assert.match(recipe, new RegExp(`\\b${pkg}\\b`), pkg);
+  assert.match(recipe, new RegExp(`USER ${USER}\\n$`), "the last user is not root");
+  assert.doesNotMatch(recipe, /debconf-set-selections/);
+  assert.match(fontsImageTag(), /^pairbrowse-test-server-fonts:[0-9a-f]{12}$/);
 });
 
 test("the run: its own seccomp profile, every capability dropped, no new privileges, a normal user, never privileged", () => {

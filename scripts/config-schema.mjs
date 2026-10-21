@@ -119,6 +119,10 @@ export const CONFIG_SCHEMA = {
       // false, as the measurement of decision 11 decided). On a host with a GPU the real
       // pixels get no noise, whatever this says.
       graphicsNoise: { type: "boolean" },
+      // The open stand-ins under the Windows font names in the browser's font configuration on
+      // Linux, once the server setup has run (native/fontconf.mjs, spec step 52): default false
+      // until the ordinary-browser measurement decides.
+      fontStandIns: { type: "boolean" },
       ...Object.fromEntries(PAIRBROWSE_ENGINE_KEYS.map((k) => [k, {}])),
     },
   },

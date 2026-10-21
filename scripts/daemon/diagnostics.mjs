@@ -6,10 +6,15 @@ import { open, stat } from "node:fs/promises";
 import { homedir, platform, arch, release } from "node:os";
 import { paths } from "../paths.mjs";
 import { PASSING_STATUSES, shownIdentity } from "../native/graphics.mjs";
+import { REPORT_FONTS, fontGroupsLine } from "../native/winfonts.mjs";
+import { fontsReport } from "../native/fontconf.mjs";
+import { within } from "../util.mjs";
 
 const LINE_MAX = 200;
 const TAIL_BYTES = 256 * 1024;
 const REPORT_MAX = 64 * 1024;
+// fontconfig's list is asked with its own bound (winfonts.mjs); a report never waits longer.
+const FONTS_MS = 12_000;
 const ERRORS_MAX = 20;
 const ERROR_WORDS = /\b(error|failed|fail|couldn't|can't|cannot|unhandled|uncaught|exception|refused|timed out|crash(ed)?|lost)\b/i;
 const WHERE = /^[a-z][a-z-]{1,23}:?$/;
@@ -104,12 +109,29 @@ export function graphicsSummary(g) {
 }
 // A report's graphics line (row E-3): "Graphics: <kind>, <status>", or on a host without a GPU
 // "Graphics: software rendering, shown as <identity>, <status>".
+// A report's fonts line: winfonts.mjs fontGroupsLine, and whether the stand-ins are on.
+export const fontsLine = (f) => `${fontGroupsLine(f)} (stand-ins ${f?.standIns ? "on" : "off"}${f?.conf === "build" ? ", the build's own font configuration" : f?.conf === "system" ? ", this computer's font configuration" : ""})`;
 export const graphicsLine = (g) => (g ? `Graphics: ${g.kind}${g.shown ? ` rendering, shown as ${g.shown}` : ""}, ${g.status}` : "Graphics: not read");
 
+// The Windows fonts as the browser finds them on Linux (spec step 52; native/fontconf.mjs
+// fontsReport): which of winfonts.mjs REPORT_FONTS are present, standing in (and by which open
+// font) or absent, whether the stand-ins are on, and whose font configuration the browser reads
+// ("pairbrowse", "build" or "system"); only those names, nothing else of the computer's fonts.
+export function fontsSummary(f) {
+  if (!f || typeof f !== "object") return null;
+  const known = (list) => (Array.isArray(list) ? list.filter((n) => REPORT_FONTS.includes(n)) : []);
+  const standingIn = Array.isArray(f.standingIn) ? f.standingIn.filter((s) => REPORT_FONTS.includes(s?.family) && typeof s.by === "string" && /^[A-Za-z][A-Za-z ]{0,39}$/.test(s.by)).map((s) => ({ family: s.family, by: s.by })) : [];
+  return { conf: ["pairbrowse", "build", "system"].includes(f.conf) ? f.conf : null, standIns: f.standIns === true, present: known(f.present), standingIn, absent: known(f.absent) };
+}
+
 // version: the helper's version. browser(): { engine, version, build } (never a path). graphics():
-// the running browser's { kind, status } or null (graphicsSummary keeps only those). agents():
-// agents connected now. read() gives the parts the helper knows; the live view adds connections.
-export function createDiagnostics({ version = "", browser = async () => ({ engine: null, version: null, build: null }), graphics = () => null, agents = () => 0, logFile = paths.daemonLog, home = homedir(), mask = (t) => t } = {}) {
+// the running browser's { kind, status } or null (graphicsSummary keeps only those). nativeExec():
+// the native build's binary, beside which its own font configuration sits, or null when the
+// browser in use is another (it reads this computer's font configuration); given, fonts() reads
+// the Windows fonts on Linux (native/fontconf.mjs fontsReport; fontsSummary keeps only those), null
+// elsewhere. agents(): agents connected now. read() gives the parts the helper knows; the live
+// view adds connections.
+export function createDiagnostics({ version = "", browser = async () => ({ engine: null, version: null, build: null }), graphics = () => null, nativeExec = null, fonts = nativeExec ? () => { const exec = nativeExec(); return fontsReport({ exec, native: !!exec }); } : async () => null, agents = () => 0, logFile = paths.daemonLog, home = homedir(), mask = (t) => t } = {}) {
   const clean = (t) => scrub(t, { home, mask });
   return {
     async read() {
@@ -117,9 +139,11 @@ export function createDiagnostics({ version = "", browser = async () => ({ engin
       try { b = { ...b, ...(await browser()) }; } catch {}
       let g = null;
       try { g = graphicsSummary(graphics()); } catch {}
+      let f = null;
+      try { f = fontsSummary(await within(FONTS_MS, Promise.resolve().then(fonts))); } catch {}
       return {
         helper: { version: String(version || ""), node: process.versions.node, uptime: Math.round(process.uptime()) },
-        browser: { engine: b.engine ?? null, version: b.version ?? null, build: b.build ?? null, graphics: g },
+        browser: { engine: b.engine ?? null, version: b.version ?? null, build: b.build ?? null, graphics: g, ...(f ? { fonts: f } : {}) },
         agents: Number(agents()) || 0,
         errors: await lastErrors({ file: logFile, home, mask }),
       };
@@ -136,6 +160,7 @@ export function createDiagnostics({ version = "", browser = async () => ({ engin
         `OS: ${platform()} ${arch()} ${release()}`,
         `Browser: ${diag.browser?.engine || "none"} ${diag.browser?.version || "?"}${diag.browser?.build ? ` (build ${diag.browser.build})` : ""}`,
         graphicsLine(graphicsSummary(diag.browser?.graphics)),
+        ...(diag.browser?.fonts ? [fontsLine(fontsSummary(diag.browser.fonts))] : []),
         `Connections: ${c.agents ?? 0} agents, ${c.viewers ?? 0} viewers, ${c.joiners ?? 0} joiners, ${c.streams ?? 0} streams`,
         `Joined: ${roles.drive} drive, ${roles.watch} watch`,
         (diag.errors || []).length ? "Errors:" : "Errors: none",

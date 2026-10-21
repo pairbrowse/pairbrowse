@@ -93,6 +93,13 @@ export const paths = {
   // Pinned tools (cloudflared, shared) and the Quick Tunnels' logs (this home's).
   tools: join(SHARED, "tools"),
   tunnels: join(HOME, "tunnels"),
+  // The server setup's fonts (native/fontsetup.mjs, shared by instances): Selawik from Microsoft's
+  // pinned release with its licence, and the setup's record (setup.json: what it found and did,
+  // and the core fonts' EULA as the person accepted it). The browser's font configuration on
+  // Linux (native/fontconf.mjs, this home's pairbrowse.fontStandIns) is written at each start.
+  fonts: join(SHARED, "fonts"),
+  fontsSetup: join(SHARED, "fonts", "setup.json"),
+  fontsConf: join(HOME, "fonts.conf"),
   // This Mac's captured host profile (native builds).
   hostProfile: join(SHARED, "mac-host-profile.json"),
   // Saved fast-mode playbooks; browser sessions (the default session's files sit in the home).

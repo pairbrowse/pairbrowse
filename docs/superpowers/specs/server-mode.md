@@ -2818,6 +2818,77 @@ it depends on.
     `test/input-pace.test.mjs` (new: the decision with and without a widget, a sensitive form or not,
     a widget loading later; the two move sets and the swap without a jump), `test/native-engine.test.mjs`,
     `test/integration/input-pace.test.mjs` (new).
+52. Server fonts for the Windows identity (decision 11, 2026-10-22: free fonts only, and the
+    metric-compatible route to measure). In the server setup (`docs/server.md` and its setup
+    command, Debian and Ubuntu first, other distributions documented): (1) Microsoft's core fonts
+    for the web through the distribution's own package, with Microsoft's EULA shown and accepted by
+    the person once, never accepted on their behalf; (2) colour emoji and CJK; (3) the open
+    metric-compatible stand-ins (Selawik, Carlito, Caladea, Liberation), each from distribution
+    packages or its official source with SHA-256 pinned, never renamed or modified; (4) a fontconfig
+    alias file installed by the setup and switchable (`pairbrowse.fontStandIns`, default false
+    until the measurement decides) that points the Windows family names at those stand-ins.
+    Diagnostics and Settings list which Windows fonts are present, standing in, or absent.
+    Finding first (read from the pinned Linux build -5): the build carries a font configuration of
+    its own (`fonts/fonts.conf.template`, which the engine pack's `fontLaunchEnv` writes out and
+    points `FONTCONFIG_FILE` at on every Linux launch). It is self-contained: it never includes
+    `/etc/fonts`, so no font installed on the computer (core fonts, colour emoji, the CJK package)
+    reaches a page, and its own clones (Selawik, Carlito, Caladea, Arimo, Tinos, Cousine and more)
+    always stand in for the Windows names. A setup that only installed packages would change
+    nothing the browser shows, and the alias could not be switched off. (The colour emoji assertion
+    of `optin/linux-graphics` depends on this too: with the build's configuration the computer's
+    emoji font is out of reach.) So the implementation differs from "an alias file installed by the
+    setup" in one way: once the setup has run, every Linux launch of the native build gets
+    PairBrowse's own font configuration in place of the build's (the pack's env merge lets the
+    caller's `FONTCONFIG_FILE` win), and the switch lives in that file. Before the setup has run
+    the build's own configuration stays as it is.
+    Landed as: `scripts/native/fontsetup.mjs` (new; `node scripts/native/fontsetup.mjs check|install`,
+    run by the person as the user PairBrowse runs as, refused as root): `PACKAGES` per family
+    (Debian and Ubuntu through `sudo apt-get install --no-install-recommends`, apt's confirmation
+    left to the person; Fedora and Arch named for the person, no core fonts there since their own
+    repositories carry none; there, and on a distribution it doesn't know, install exits 1 until
+    the computer's fontconfig lists colour emoji, Noto Sans CJK, Carlito, Caladea and Liberation,
+    `FREE_FAMILIES`), `parseOsRelease`, `distroOf`, `parseDpkgStatus`, `parseCandidate`
+    (a missing `contrib` or `multiverse` named with the fix, sources never edited); the EULA
+    (`eulaAnswer`): on Debian, whose package asks nothing, the full text
+    (`scripts/native/corefonts-eula.txt`, the text Ubuntu's own package shows) and the package
+    installed only on a typed "yes"; on Ubuntu the package's own debconf question; no flag, no
+    preseeded answer, `DEBIAN_FRONTEND` dropped from the package's environment, no terminal means
+    skipped; the acceptance recorded once (`paths.fontsSetup`, 0600, with the text's SHA-256);
+    Selawik 1.01 from Microsoft's GitHub release (`SELAWIK`: the archive, its five TTFs and the
+    licence at the tag's commit, each pinned; `zipEntries`/`zipRead` read stored and deflated
+    entries only; nothing written unless every pin matches) into `paths.fonts`/selawik; then
+    `fc-cache` there, the record, the browser's font configuration and the check's lines.
+    `scripts/native/fontconf.mjs` (new): `fontsConf` (the computer's `/etc/fonts/fonts.conf`; on,
+    Selawik's folder and one `<alias binding="same">` with `<accept>` per Windows name, so a real
+    font of the name wins; off, `rejectfont` for Selawik and its weights, Carlito and Caladea, so
+    width checks find no Windows name there; Liberation never switched, fontconfig's own metric
+    alias), `writeFontsConf` (`paths.fontsConf`, 0600, atomic, only when its text changed),
+    `browserFontEnv` (Linux, setup done: `{ FONTCONFIG_FILE }`, else null), `fontSource` (which
+    configuration the browser reads: PairBrowse's, the build's, the system's; the open build,
+    never given PairBrowse's file, always the system's, whose metric aliases stand Carlito and
+    Caladea in) and `fontsReport`.
+    `native/winfonts.mjs`: `STAND_INS`, `REPORT_FONTS` (the eight, Cambria, the Segoe UI weights
+    Selawik has, the core fonts), `fontStatus` (present, standing in by which font, absent),
+    `fontGroups`, `fontGroupsLine`, `readFontFamiliesAsync`; the install self-check's line now
+    reads "N of the eight found; standing in: ...; missing: ..." through the browser's
+    configuration. `native-engine.mjs` `launchEnv` passes `browserFontEnv`'s `FONTCONFIG_FILE` over the caller's
+    env alone (never this process's whole env, which would outrank the `LANGUAGE` the pack takes
+    from `--lang`) to the pack's `fontLaunchEnv` and logs "launch: fonts: this computer's font set, stand-ins for the Windows
+    names on|off"; `config-schema.mjs` `pairbrowse.fontStandIns` (boolean); `profiles/map.mjs` a
+    helper-wide key. Diagnostics (`daemon/diagnostics.mjs` `fontsSummary`, `fontsLine`; the native build's
+    binary only while it is the browser in use, `browser/choice.mjs` `nativeExecInUse`; the report's
+    "Windows fonts: present ...; standing in ...; absent ... (stand-ins on|off)", only names from
+    `REPORT_FONTS`) and Settings (About and diagnostics: "Windows fonts", Linux only). Docs:
+    `docs/server.md` Fonts (the copy-from-your-own-Windows advice removed: free fonts only),
+    `docs/configuration.md`, `docs/security.md` (a new row), `docs/development.md`. Tests:
+    `test/font-setup.test.mjs` (new), `test/native-check.test.mjs`, `test/diagnostics.test.mjs`,
+    `test/server-container.test.mjs`, `test/ui-settings.test.mjs`, and the opt-in
+    `test/optin/server-fonts.test.mjs` (new, `PAIRBROWSE_TEST_DOCKER=1` and
+    `PAIRBROWSE_TEST_COREFONTS_EULA=accept`: the setup's Debian packages in an image built on the
+    server image, the setup command run as the normal user, then the native build reads fonts by
+    width with the stand-ins off and on; inside run `test/optin/server/fonts-run.mjs`). To measure
+    there: whether the engine takes Selawik for Segoe UI as it takes Carlito and Caladea (its
+    metric-compatible substitution decides which fontconfig answers a page may use).
 
 ## 12. Security implications
 
@@ -3060,8 +3131,10 @@ binding for implementation; where a phase section above says otherwise, this sec
     picks the pool entry by vendor and drops the four WebGPU feature names a D3D12 adapter never
     exposes from the NVIDIA entry's list; engine 968 lets the software adapter asked for by name
     through the one blocklist reason that refused it (a CPU adapter), the safety level and every
-    other reason untouched. The free-fonts route below is documented in docs/server.md (the core
-    fonts package, emoji and CJK); the alias route is still to measure.
+    other reason untouched. The free-fonts route and the alias route below are built by step 52
+    (the server setup's font command and the browser's own font configuration, the alias switch
+    `pairbrowse.fontStandIns` off by default); which of the two the measurement keeps is still
+    to measure.
     Font checks, a second legal route (to measure): open, metric-compatible fonts installed under
     fontconfig aliases for the Windows-only names, so width-based font detection finds a font of the
     right size where the Windows font would be: Selawik (Microsoft's own OFL 1.1 stand-in for Segoe UI,

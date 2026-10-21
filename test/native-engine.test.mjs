@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync, statSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { launchNative, launchEnv, applyGraphicsPlan, DRIVER_BLINK_SWITCH, DRIVER_BACKGROUND_SWITCH, nativeManifest, declaresOwnPages, macHostProfile, captureMacHost, MEASURING, hostCachePath, screenInfoArg, CANVAS_BRIDGE_DROPPED, isCanvasBridgeSwitch, personaProxyRefusal, PROXY_CREDENTIALS_REFUSAL, proxyCredentials, withoutAddresses, proxyAuthFile, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE, paceSets, flatWebgpuProfile, personaBindingRefusal, droppedLine, clockZoneNote } from "../scripts/native-engine.mjs";
+import { launchNative, launchEnv, applyGraphicsPlan, DRIVER_BLINK_SWITCH, DRIVER_BACKGROUND_SWITCH, nativeManifest, declaresOwnPages, macHostProfile, hostFonts, captureMacHost, MEASURING, hostCachePath, screenInfoArg, CANVAS_BRIDGE_DROPPED, isCanvasBridgeSwitch, personaProxyRefusal, PROXY_CREDENTIALS_REFUSAL, proxyCredentials, withoutAddresses, proxyAuthFile, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE, paceSets, flatWebgpuProfile, personaBindingRefusal, droppedLine, clockZoneNote } from "../scripts/native-engine.mjs";
 import { PAIRBROWSE_ENGINE_KEYS } from "../scripts/config-schema.mjs";
 import { loadEngine } from "../scripts/native/pack.mjs";
 import { normalizeWebgpu, GRAPHICS } from "../scripts/native/graphics.mjs";
@@ -927,6 +927,32 @@ test("the Mac host capture hands the engine a flat WebGPU", async () => {
   const chromium = fakeBrowserType({ webgl: { vendor: "Apple", renderer: "Apple M3 Pro" }, webgpu: structuredClone(NESTED_WEBGPU), media_devices: [] });
   const captured = await captureMacHost(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-capture-webgpu-")), null);
   assert.deepEqual(captured.webgpu, FLAT_WEBGPU);
+});
+
+// The host capture is this Mac's own persona: its fonts carry `host: true` (engine patch 963 lets
+// every family the computer has through), on a fresh capture and on a cache hit alike, with the
+// collector's detected list kept; the capture itself and a profile a setting gives are unmarked.
+test("the Mac host capture marks its fonts as this computer's own, fresh and cached", async () => {
+  rmSync(hostCachePath(), { force: true });
+  const chromium = fakeBrowserType({ webgl: { vendor: "Apple", renderer: "Apple M3 Pro" }, fonts: { detected: ["Arial", "Helvetica"], probed: 65 }, media_devices: [] });
+  const hardware = () => "Mac15,7|AGXAcceleratorG15X";
+  const captured = await captureMacHost(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-capture-fonts-")), null);
+  assert.deepEqual(captured.fonts, { detected: ["Arial", "Helvetica"], probed: 65 }, "the capture reports what the collector found");
+  const fresh = await macHostProfile(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-fonts-")), "150.0.7871.114", hardware);
+  assert.deepEqual(fresh.fonts, { detected: ["Arial", "Helvetica"], probed: 65, host: true });
+  const cached = await macHostProfile(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-fonts-")), "150.0.7871.114", hardware);
+  assert.equal(chromium.captures, 2, "a cache hit");
+  assert.deepEqual(cached.fonts, { detected: ["Arial", "Helvetica"], probed: 65, host: true });
+  assert.deepEqual(hostFonts({ webgl: {} }).fonts, { host: true }, "a capture without a font list is still this computer's");
+  assert.deepEqual(hostFonts({ fonts: ["Arial"] }).fonts, { host: true }, "a list that isn't the engine's shape is replaced, never spread");
+  assert.equal(hostFonts(null), null);
+  // Through a launch: the engine is handed the marked profile, and a profile a setting gives is not marked.
+  const pack = { ...recordingPack(), collector: "" };
+  const app = appFixture();
+  await launchNative(chromium, { pairbrowse: {} }, mkdtempSync(join(tmpdir(), "pairbrowse-launch-fonts-")), { executablePath: app.executablePath, headless: false }, pack);
+  if (process.platform === "darwin") assert.equal(pack.given.at(-1).fingerprintProfile.fonts.host, true);
+  await launchNative(chromium, { pairbrowse: { fingerprintProfile: { webgl: { vendor: "x" }, fonts: { detected: ["Segoe UI"] } } } }, mkdtempSync(join(tmpdir(), "pairbrowse-launch-given-")), { executablePath: app.executablePath, headless: false }, pack);
+  assert.deepEqual(pack.given.at(-1).fingerprintProfile.fonts, { detected: ["Segoe UI"] }, "a given profile keeps its own list");
 });
 
 // A host profile cached before the flattening (nested WebGPU) is flattened on a cache hit, never captured again.

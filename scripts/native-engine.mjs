@@ -259,12 +259,24 @@ export async function macHostProfile(chromium, executablePath, pack, directory, 
   const file = hostCachePath();
   const key = sha256(JSON.stringify({ version, hardware: await hardware() }));
   const cached = readJson(file);
-  if (cached?.key === key && cached.profile && typeof cached.profile === "object") return normalizeWebgpu(cached.profile);
+  if (cached?.key === key && cached.profile && typeof cached.profile === "object") return hostFonts(normalizeWebgpu(cached.profile));
   if (capturing?.key === `${file}\n${key}`) return capturing.promise;
   try { onCapture(); } catch {}
-  const promise = captureAndKeep(chromium, executablePath, pack, directory, file, key, version);
+  const promise = captureAndKeep(chromium, executablePath, pack, directory, file, key, version).then(hostFonts);
   capturing = { key: `${file}\n${key}`, promise };
   try { return await promise; } finally { if (capturing?.promise === promise) capturing = null; }
+}
+
+// This Mac's own profile shows pages this Mac's own font list: `fonts.host` (engine patch 963)
+// marks a persona captured from the computer the browser runs on, so every family the computer
+// has reaches a page, as an everyday browser on it shows them, instead of only the families the
+// collector's width probe found among its mostly Windows list (14 of 70 on a Mac where an everyday
+// browser shows 30; the ordinary-browser measurement's font gap). Only the host capture gets the
+// mark: a profile a setting gives (another computer's, or another OS's) keeps its own list.
+export function hostFonts(profile) {
+  if (!profile || typeof profile !== "object") return profile;
+  const fonts = profile.fonts && typeof profile.fonts === "object" && !Array.isArray(profile.fonts) ? profile.fonts : {};
+  return { ...profile, fonts: { ...fonts, host: true } };
 }
 
 async function captureAndKeep(chromium, executablePath, pack, directory, file, key, version) {

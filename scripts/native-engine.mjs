@@ -302,17 +302,18 @@ export const personaBindingRefusal = (name, id) => `The persona kept with this s
 // are the config-backed default's. config.json's other engine keys (the legacy hardware ones,
 // decision U6) still apply to every profile.
 function readSettings(config, pack, personaPath) {
-  // motion: how humanized mouse moves are shaped: "fast" (the default: PairBrowse's hand-like
-  // shape, one reach that lands close, then homes in without stopping, at a quick hand's pace: a
-  // hop between fields in about a third of the profile's time, a reach in under two thirds, a
-  // short press), "quick" (the same shape, a hop in about half the time and a reach as a hand's),
-  // "combined" (the same shape at the profile's own slower speed, tremor and habits: for a more
-  // careful hand) or "classic" (the engine's own). Every click still lands exactly on its point.
+  // motion: how humanized mouse moves are shaped: "combined" (the default since the ordinary-
+  // browser measurement of decision 11, which read "fast" moves as about 30% quicker than Fitts'
+  // law allows a hand: PairBrowse's hand-like shape, one reach that lands close, then homes in
+  // without stopping, at the profile's own speed, tremor and habits), "fast" (the same shape at a
+  // quick hand's pace: a hop between fields in about a third of the profile's time, a reach in
+  // under two thirds, a short press; the default before), "quick" (the same shape, a hop in about
+  // half the time and a reach as a hand's) or "classic" (the engine's own). Every click still lands exactly on its point.
   // An engine pack without "combined" uses its own. formMove is PairBrowse's own (fillSettings), not the engine's.
   // graphicsNoise: noise over the identity shown on a host without a GPU (decisions 10 and 11, off
   // by default; native/graphics.mjs identityKeys: the engine's fingerprintNoise and canvasNoise);
   // on a host with a GPU the real pixels get no readback noise, whatever this says.
-  const { profile: selection, profileSelect, graphics = "auto", graphicsNoise = false, humanize = true, showCursor = false, geoip = false, typingPace = TYPING_PACE, motion: motionSetting = "fast", formMove, ...given } = config.pairbrowse ?? {};
+  const { profile: selection, profileSelect, graphics = "auto", graphicsNoise = false, humanize = true, showCursor = false, geoip = false, typingPace = TYPING_PACE, motion: motionSetting = "combined", formMove, ...given } = config.pairbrowse ?? {};
   // profileSelect only steered the engine pack's persona pick, which PairBrowse no longer asks
   // for (D9 below; config-schema.mjs PROFILE_SELECT keeps it closed, D8).
   // graphics: the default profile's backend, read by profiles/map.mjs into its switches (E2).
@@ -326,7 +327,7 @@ function readSettings(config, pack, personaPath) {
   const fromProfile = Object.entries(chosen?.engineKeys ?? {}).filter(([k]) => PROFILE_ENGINE_KEYS.includes(k));
   const overrides = withFlatWebgpu(Object.fromEntries([...fromConfig, ...fromProfile]));
   const ignored = Object.keys(given).filter((k) => !PAIRBROWSE_ENGINE_KEYS.includes(k) && !UNSUPPORTED.includes(k));
-  const motion = ["classic", "combined", "quick"].includes(motionSetting) ? motionSetting : "fast";
+  const motion = ["classic", "fast", "quick"].includes(motionSetting) ? motionSetting : "combined";
   if (given.canvasBridge !== undefined) throw new Error(canvasBridgeRefusal("config.json's pairbrowse block"));
   // D9: "auto" and "local" are this computer (the macOS host capture, else the seed persona);
   // PairBrowse never has the engine pack pick another device's persona from a library or a service.

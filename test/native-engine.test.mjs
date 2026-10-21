@@ -179,16 +179,16 @@ packTest("a native launch leaves out the driver's switches: no automation flag, 
   assert.ok(!args.includes(DRIVER_BACKGROUND_SWITCH));
 });
 
-packTest("humanized mouse moves take the fast shape unless config asks for the quick, the combined or the classic one", async () => {
+packTest("humanized mouse moves take the combined shape unless config asks for the fast, the quick or the classic one", async () => {
   const pack = await loadPack();
   const seen = [];
   const spy = { ...pack, installHumanizeOnContext: (context, opts) => seen.push(opts) };
   const app = appFixture();
-  for (const pairbrowse of [{}, { motion: "classic" }, { motion: "combined" }, { motion: "quick" }, { motion: "anything else" }]) {
+  for (const pairbrowse of [{}, { motion: "classic" }, { motion: "fast" }, { motion: "quick" }, { motion: "anything else" }]) {
     await launchNative(fakeBrowserType(), { pairbrowse: { fingerprint: "motion-seed", ...pairbrowse } }, mkdtempSync(join(tmpdir(), "pairbrowse-motion-")),
       { executablePath: app.executablePath, headless: false }, spy);
   }
-  assert.deepEqual(seen.map((o) => o.motion), ["fast", "classic", "combined", "quick", "fast"]);
+  assert.deepEqual(seen.map((o) => o.motion), ["combined", "classic", "fast", "quick", "combined"]);
   assert.ok(seen.every((o) => o.humanize === true && o.seed));
   assert.ok(seen.every((o) => o.typingPace === TYPING_PACE), "single actions type at the default pace");
 });

@@ -3180,6 +3180,19 @@ binding for implementation; where a phase section above says otherwise, this sec
     is shown with a proxy (an everyday browser shows an mDNS name; a page with camera or microphone
     permission would see the real LAN address through it). An older build keeps the deny alone.
     `docs/security.md` rows "browserArgs" and "A session's proxy leaks" say so.
+    Fixed with the third pass's list (2026-10-22, engine tail 967 amended and 969 to 972, pack -7):
+    the pool switch reaches every renderer (967: pages read the RTX 3060 under the Windows
+    identity); the macOS host capture carries `fonts.host` (963 applies the Mac's own font list);
+    strokes curve and last as a hand's (pack -7: bows, near misses with a return, hesitations,
+    durations spread around the law); the Windows identity's CSS system colours are a Windows
+    browser's (969) and its voices carry the brand's nineteen network voices after the three local
+    ones (970; no camera is claimed: hardware a page can test); BrowserScan's "WebGL exception"
+    was the engine answering the unmasked renderer and vendor strings from memory, about 1400
+    calls a millisecond where an everyday browser makes a GPU round trip each (1 to 40), the
+    check's local half failing above 100: 972 makes the persona branch take the round trip first
+    (reproduced and fixed on this Mac with the check's own script). The owner of an unattended
+    server may record their acceptance of the core fonts licence beforehand
+    (`server.acceptMsCoreFontsEula`, `docs/server.md`).
 
 12. **Server mode needs the native PairBrowse browser (user, 2026-10-21).** The open build with the side
     panel extension stays supported on a desktop and is kept aligned with the native build wherever it

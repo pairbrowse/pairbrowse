@@ -271,16 +271,21 @@ test("one POST in flight with presses in order", { skip: !runtime, timeout: 60_0
   const s = await phone(t);
   await s.takeOver();
   s.setSlow(60); // each dispatched event takes the page 60 ms: answers come late
-  let open = 0, most = 0, posts = 0;
-  s.page.on("request", (r) => { if (r.method() === "POST" && /\/input\?/.test(r.url())) { open++; posts++; most = Math.max(most, open); } });
-  const done = (r) => { if (r.method() === "POST" && /\/input\?/.test(r.url())) open--; };
-  s.page.on("requestfinished", done);
-  s.page.on("requestfailed", done);
+  // Counted in the viewer's own fetch: from the call until its answer (or failure) reaches the
+  // page. (The browser's network events can say a request finished after the next one began,
+  // though the page had its answer first.)
+  await s.inPage(`(() => { const f = window.fetch; window.__posts = { open: 0, most: 0, n: 0 };
+    window.fetch = function (url, init) {
+      if (!(init && init.method === "POST" && /\\/input\\?/.test(String(url)))) return f.apply(this, arguments);
+      const c = window.__posts; c.open++; c.n++; c.most = Math.max(c.most, c.open);
+      return f.apply(this, arguments).finally(() => { c.open--; });
+    }; })()`);
   const pts = [[200, 200], [400, 300], [600, 400], [800, 500], [1000, 600]];
   for (const [x, y] of pts) { const p = await s.at(x, y); await s.page.touchscreen.tap(p.x, p.y); await wait(110); } // past a double tap's reach
   await s.page.tap("#type-box");
   await s.page.keyboard.type("1234");
   assert.ok(await until(() => typedIn(s.input()) === "1234", 15_000), typedIn(s.input()));
+  const { most, n: posts } = JSON.parse((await s.inPage("JSON.stringify(window.__posts ?? {})")).result.value);
   assert.equal(most, 1, "never two input POSTs at once");
   assert.ok(posts < pts.length * 3 + 4, `events went together while a POST was out (${posts} POSTs)`);
   const order = mouseCalls(s.input()).filter((c) => c.params.type !== "mouseMoved").map((c) => `${c.params.type === "mousePressed" ? "P" : "R"}${Math.round(c.params.x / 100)}`);

@@ -39,7 +39,23 @@ export function createTurns(conn, api) {
     }
     conn.mine = page;
     conn.lostTab = false;
-    try { homes.set(context.sessionName(), page); } catch {}
+    conn.mineSession = null;
+    try { conn.mineSession = context.sessionName(); homes.set(conn.mineSession, page); } catch {}
+  }
+
+  // A tab of its own, opened as browser_tabs new opens one: for an agent whose tab went with the
+  // session it was in (a switch it or a person made), when the session now open has no tab it may
+  // use (a new session of the PairBrowse browser opens on the browser's own new tab page, which
+  // no agent acts in). A tab a person or a page closed is never replaced this way. null: none.
+  async function newTabAfterSwitch() {
+    let now = null;
+    try { now = context.sessionName(); } catch {}
+    if (!conn.mineSession || !now || now === conn.mineSession) return null;
+    const r = await keepFocus(() => internal("browser_tabs", { action: "new" })).catch(() => null);
+    if (!r || r.result?.isError) return null;
+    const page = await currentIn((r.result?.content || []).map((c) => c.text || "").join("\n"));
+    conn.serverAt = page || null;
+    return page && !page.isClosed() && !isBrowserPage(page.url()) && !personTab(page) ? page : null;
   }
 
   // A tab no other agent is working in (its spark or turn), for when this one's tab closed.
@@ -126,7 +142,7 @@ export function createTurns(conn, api) {
       try { session = context.sessionName(); } catch {}
       const back = [homes.get(session), conn.mine].map((p) => (p && !p.isClosed() ? p : context.successorOf?.(p))).find(Boolean);
       if (back && !takenByOther(back) && !personTab(back)) { setMine(back); return conn.mine; }
-      const next = await freeTab();
+      const next = await freeTab() || await newTabAfterSwitch();
       if (next) setMine(next);
       else { conn.mine = null; conn.lostTab = true; conn.noTabWhy = lostWhy(); }
       return conn.mine;

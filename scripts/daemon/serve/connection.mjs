@@ -17,6 +17,7 @@ export function createConnectionState(participant, { remote = null, pauseSeen = 
     // The tab this participant works in, as a page: other agents' new and closed tabs shift the
     // numbers, and two tabs can show the same URL. Its browser server's current tab follows it.
     mine: null,
+    mineSession: null, // the browser session its tab was in (a switch away leaves it without one)
     serverAt: null, // the page its browser server has current, when known
     lostTab: false, // it closed its tab and every other tab was another agent's
     // Why it has no tab, for the answer it then gets.

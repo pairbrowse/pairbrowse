@@ -128,13 +128,47 @@ test("the browser dying before a pending save ran still records the tabs as last
   const a = fakePage("https://a.test/"), b = fakePage("https://b.test/");
   const ctx = fakeContext([a, b]);
   const file = tmpFile();
-  trackTabs(ctx, { file });
+  const tracker = trackTabs(ctx, { file });
   a.navigate("https://a.test/two"); // a save is due in 1.5 s
   b.closed = true; b.emit("close"); // a person closed b just before
   t.mock.timers.tick(1200);
   a.closed = true; a.emit("close"); // the crash takes a down
   ctx.emit("close");
   assert.deepEqual(JSON.parse(readFileSync(file, "utf8")).tabs.map((x) => x.url), ["https://a.test/two"], "the new address, without the tab a person closed");
+  // The places are this write's, so the tab that comes back first is a's.
+  assert.deepEqual(tracker.pages(), [a]);
+  assert.equal(tracker.indexOf(a), 0);
+  assert.equal(tracker.indexOf(b), -1);
+});
+
+test("a crash with a save pending keeps the active tab: its address, since its page is gone", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  const a = fakePage("https://a.test/"), b = fakePage("https://b.test/");
+  const ctx = fakeContext([a, b]);
+  const file = tmpFile();
+  let current = "https://b.test/";
+  trackTabs(ctx, { file, activePage: () => ctx.pages().find((p) => p.url() === current), activeUrl: () => current });
+  a.navigate("https://a.test/2"); // a save is due
+  a.closed = b.closed = true; a.emit("close"); b.emit("close"); // the screen died: every page goes
+  ctx.emit("close");
+  const saved = JSON.parse(readFileSync(file, "utf8"));
+  assert.deepEqual(saved.tabs.map((x) => x.url), ["https://a.test/2", "https://b.test/"]);
+  assert.equal(saved.active, 1, "b was active, though the browser lists no page now");
+  current = null;
+});
+
+test("each saved tab keeps its place after the browser closed: pages() is the last save's order", async () => {
+  const a = fakePage("https://a.test/"), own = fakePage("chrome://settings"), b = fakePage("https://b.test/");
+  const ctx = fakeContext([a, own, b]);
+  const tracker = trackTabs(ctx, { file: tmpFile() });
+  assert.deepEqual(tracker.pages(), [], "nothing saved yet");
+  await tracker.saveNow();
+  assert.deepEqual(tracker.pages(), [a, b], "the web pages, in the saved order");
+  a.closed = b.closed = own.closed = true; // a crash: the browser lists none now
+  ctx.emit("close");
+  assert.deepEqual(tracker.pages(), [a, b], "their places stay, for the tabs that come back in them");
+  tracker.pages().pop();
+  assert.equal(tracker.pages().length, 2, "a copy");
 });
 
 test("a tabs file that can't be written is logged, not thrown", async () => {

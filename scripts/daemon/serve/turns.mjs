@@ -120,7 +120,8 @@ export function createTurns(conn, api) {
     if (conn.lostTab) return null;
     if (conn.mine) {
       // Its own tab came back as a new page (its session's browser restarted: a switch and
-      // back): that one, the same tab, never another agent's on the same address.
+      // back, or a crash): that one, the same tab, never another agent's on the same address.
+      await context.ready?.(); // the saved tabs back first (a crash or a switch): its own comes back among them
       let session = "";
       try { session = context.sessionName(); } catch {}
       const back = [homes.get(session), conn.mine].map((p) => (p && !p.isClosed() ? p : context.successorOf?.(p))).find(Boolean);

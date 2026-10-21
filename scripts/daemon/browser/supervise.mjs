@@ -9,6 +9,7 @@
 // pause, so a server with nobody connected keeps its browser up.
 // st: the browser's state (browser/state.mjs); api: the other parts' functions, read when called.
 import { needsVirtualDisplay, screenGeometry, serverMode, startVirtualDisplay } from "../../display.mjs";
+import { testMs } from "../../testenv.mjs";
 import { within } from "../../util.mjs";
 import { markServer } from "../where.mjs";
 
@@ -16,14 +17,19 @@ import { markServer } from "../where.mjs";
 const LOST_CLOSE_MS = 5000;
 // The crash-loop guard (A5): CRASH_LIMIT unexpected closes within CRASH_WINDOW_MS, each within
 // EARLY_MS of its launch, and getContext() refuses for CRASH_WINDOW_MS (or until the helper restarts).
+// The live test shortens the window (PAIRBROWSE_TEST_CRASH_WINDOW_MS).
 const CRASH_LIMIT = 3;
-const CRASH_WINDOW_MS = 5 * 60_000;
+const CRASH_WINDOW_MS = testMs("CRASH_WINDOW_MS", 5 * 60_000);
 const EARLY_MS = 60_000;
 export const CRASH_LOOP = "the browser keeps crashing on this machine: see daemon.log";
 // Keep-alive's pauses before each start after the browser closed by itself (A9): the first, the
 // second, then every later one, until a browser stays up past EARLY_MS. The crash-loop guard ends
-// the run of starts before the pauses grow past these.
-export const RELAUNCH_MS = [2000, 10_000, 30_000];
+// the run of starts before the pauses grow past these. The live test gives one short pause for all
+// (PAIRBROWSE_TEST_RELAUNCH_MS).
+const RELAUNCH_TEST_MS = testMs("RELAUNCH_MS", 0);
+export const RELAUNCH_MS = RELAUNCH_TEST_MS ? [RELAUNCH_TEST_MS] : [2000, 10_000, 30_000];
+// A span for the log: "5 minutes", or seconds when shorter than a minute or not whole minutes.
+const span = (ms) => (ms % 60_000 ? `${ms / 1000} s` : `${ms / 60_000} minute${ms === 60_000 ? "" : "s"}`);
 
 // deps: config, log, shuttingDown(); onCrashLoop(): the guard stopped launches (once per stop; Phase
 // B sends its "ended" message from it); startScreen, needsScreen, server, now, setTimer and mark for
@@ -86,7 +92,7 @@ export function createSupervisor(st, deps, api = {}) {
     st.unexpectedCloses = [...st.unexpectedCloses.filter((at) => t - at < CRASH_WINDOW_MS), t];
     if (st.unexpectedCloses.length < CRASH_LIMIT) return false;
     st.crashLoopUntil = t + CRASH_WINDOW_MS;
-    log(`the browser closed by itself ${st.unexpectedCloses.length} times within ${CRASH_WINDOW_MS / 60_000} minutes, each soon after it started: no new start for ${CRASH_WINDOW_MS / 60_000} minutes (or until PairBrowse restarts)`);
+    log(`the browser closed by itself ${st.unexpectedCloses.length} times within ${span(CRASH_WINDOW_MS)}, each soon after it started: no new start for ${span(CRASH_WINDOW_MS)} (or until PairBrowse restarts)`);
     try { onCrashLoop(); } catch (e) { log(`crash loop: ${e?.message || e}`); }
     return true;
   }

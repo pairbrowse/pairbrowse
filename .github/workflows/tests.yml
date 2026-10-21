@@ -56,10 +56,18 @@ jobs:
           npm audit signatures
       - name: Patchright's browser (the driver PairBrowse ships with), and a virtual screen
         run: |
-          sudo apt-get update -q && sudo apt-get install -y -q xvfb
+          sudo apt-get update -q && sudo apt-get install -y -q xvfb xauth
           node runtime/node_modules/patchright/cli.js install --with-deps chromium
           # Only for the test of the "playwright" opt-in (test/integration/driver-optin.test.mjs).
           node runtime/node_modules/playwright/cli.js install chromium
+      # Server mode never starts the browser without its sandbox, which needs user namespaces: the
+      # runner's AppArmor rule against unprivileged ones is lifted, as a server's host setting would
+      # be (test/integration/server-display.test.mjs; spec server-mode U1). Nothing is turned off.
+      - name: User namespaces for the browser's sandbox
+        run: |
+          if sysctl -n kernel.apparmor_restrict_unprivileged_userns >/dev/null 2>&1; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
       - name: Unit and live tests, with coverage
         run: xvfb-run -a --server-args="-screen 0 1920x1200x24" npm run coverage
         env:

@@ -2616,6 +2616,41 @@ it depends on.
    T-B18's measurement of the autofill list in screencast frames (step 49's opt-in runs) and a live
    check that the engine's list opens on `ArrowDown` from `Input.dispatchKeyEvent`.
 46. Phase A integration file, CI `xauth`, Phase A opt-in tests on the harness (A13). -> 8, 39
+    Landed as: `test/integration/server-display.test.mjs`, the seven cases of section 4 on the
+    driver's browser (Linux with Xvfb and xauth, `PAIRBROWSE_TEST_RUNTIME`; skipped elsewhere), its
+    parts in `test/helpers/server.mjs` (`serverHome`, `startServerHelper` without `DISPLAY`,
+    `WAYLAND_DISPLAY` or `XAUTHORITY`, `screenRecord`, the browser's processes from `/proc`, and
+    `sandboxOf`: no `--no-sandbox` and every process the sandboxed zygote started (renderers keep
+    the zygote's command line) in a PID namespace of its own, `NSpid`, with `Seccomp: 2` required
+    on x64 hosts; measured in the container, emulated on Apple Silicon, all on). The switches `CRASH_WINDOW_MS` (the guard's window and hold)
+    and `RELAUNCH_MS` (one pause for every keep-alive start) are read as `supervise.mjs` loads; the
+    keep-alive case kills each browser only after its start completed ("browser started"), since a
+    kill during a launch fails the launch and is no close for the guard. CI: `xauth` beside `xvfb`,
+    and the runner's AppArmor rule against unprivileged user namespaces lifted for the live job
+    (`kernel.apparmor_restrict_unprivileged_userns=0`), the host setting U1 names, since server mode
+    never starts the browser without its sandbox. Opt-in: `test/optin/server/server-docker.test.mjs`
+    (its three cases, run inside by `test/optin/server/server-run.mjs`, the driver's Linux browser
+    installed once into a kept folder; `container.mjs` `startContainer` gains `seccomp: "default"`
+    (no profile of ours: Docker's own) and `root`, and every run gets `--init`, since a killed
+    helper's Xvfb is otherwise left a zombie under the container's `sleep` and still counts as
+    running for `reapOwn`), and `test/optin/server-native.test.mjs` on a
+    Linux host (the native build is checked in the container by step 39's spike). `npm run
+    test:optin` takes `test/optin/server/*.test.mjs` too. Found while writing "browser killed":
+    after a crash an agent's tab never came back as its own (places were noted only before a
+    switch, from the browser's open tabs, which a crashed browser no longer lists; a crash cleared
+    the agent's spark before its connection's departure was held; a resumed connection dropped a
+    closed tab). Now the tab tracker keeps its last save's pages (`scripts/tabs.mjs` `pages()`, set
+    by the crash-time write too, which `notePlaces` makes first with `flush()` whichever close
+    handler runs first, and seated with each tab back while a restore holds the file, so a second
+    crash then loses none), `notePlaces` reads them and the browser in use's close handler calls it
+    on every close but a switch, the departure holds `conn.mine` when the spark is gone, the resumed
+    connection keeps its closed tab, and `turns.mjs` `myTab` waits for the saved tabs before it
+    looks for that tab's successor (`test/tab-successors.test.mjs`, `test/tabs.test.mjs`). Also
+    found ("Xvfb killed"): the crash-time write named the first tab active, since the active page
+    is asked of a browser whose pages are gone; `trackTabs` gains `activeUrl` (the helper's
+    `st.lastCurrentUrl`) for that write. All seven integration cases and the three Docker cases
+    passed in the A13 container (emulated x64, 2026-10-21); `server-native` waits for a Linux host. Rows A-1
+    and the sandbox row name the new tests.
 47. pn: 960, 961, 962 patches, locks, tail-patch tests, `ENGINE-AUDIT.md`; next engine build (E1 pn
     part, E10 F4, C1, E14). -> 9, 10
 48. pn then pb: pack edits (font cache, geoip pin, `applyGeoip` with the measured IP), new pack pin,

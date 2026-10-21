@@ -18,7 +18,9 @@ export function readSavedTabs(file) {
 // holding(): true while the saved tabs are still coming back (restoreTabs): nothing is written
 // then (the file keeps the whole list rather than the few tabs open so far, whatever stops the
 // browser meanwhile); a save due then is made once the restore is over.
-export function trackTabs(ctx, { file, activePage = () => null, log = () => {}, holding = () => false } = {}) {
+// activeUrl(): the active tab's address when its page can't be asked any more (the browser died
+// with a save pending: its pages are gone), activePage()'s by default.
+export function trackTabs(ctx, { file, activePage = () => null, activeUrl = () => activePage()?.url(), log = () => {}, holding = () => false } = {}) {
   let timer = null;
   let stopped = false;
   // The tabs as last seen (their addresses from the navigations, titles from the last save): what
@@ -66,10 +68,14 @@ export function trackTabs(ctx, { file, activePage = () => null, log = () => {}, 
   const saveKnown = () => {
     if (holding()) return;
     const now = Date.now();
-    const tabs = [...known.values()].filter((t) => restorable(t.url) && (t.closedAt === undefined || now - t.closedAt < 1000)).map((t) => ({ url: t.url, title: t.title || titles.get(t.url) || "" }));
+    const kept = [...known].filter(([, t]) => restorable(t.url) && (t.closedAt === undefined || now - t.closedAt < 1000));
+    const tabs = kept.map(([, t]) => ({ url: t.url, title: t.title || titles.get(t.url) || "" }));
     if (!tabs.length) return;
-    const active = Math.max(0, tabs.findIndex((t) => t.url === activePage()?.url()));
-    try { writeJsonAtomic(file, { tabs, active, savedAt: new Date().toISOString() }); } catch (e) { log("saving tabs failed", e?.message || e); }
+    const active = Math.max(0, tabs.findIndex((t) => t.url === activeUrl()));
+    try {
+      writeJsonAtomic(file, { tabs, active, savedAt: new Date().toISOString() });
+      order = kept.map(([page]) => page); // the places now are this write's
+    } catch (e) { log("saving tabs failed", e?.message || e); }
   };
   const soon = () => {
     if (stopped) return;
@@ -90,9 +96,15 @@ export function trackTabs(ctx, { file, activePage = () => null, log = () => {}, 
     stopped = true;
     clearTimeout(timer);
   });
+  // A save due now, made at once from what's known (the browser is going): the close handlers'
+  // order then never matters to pages() (daemon/browser/tabs.mjs notePlaces asks first).
+  const flush = () => { if (stopped || !timer || holding()) return; clearTimeout(timer); timer = null; saveKnown(); };
   // indexOf(page): where the page stands in the last save (-1: not in it). Restored tabs come back in
-  // that order (restoreTabs onPage), so it names the same tab after a browser restart.
-  return { saveNow, stop: () => { stopped = true; clearTimeout(timer); }, indexOf: (page) => order.indexOf(page) };
+  // that order (restoreTabs onPage), so it names the same tab after a browser restart. pages(): the
+  // last save's pages in that order, closed ones too (a crash closed them all; their places stay);
+  // a place not back yet is empty. seat(i, page): saved tab i came back as page, so the places hold
+  // while the restore writes nothing (a second crash then still finds every tab back so far).
+  return { saveNow, flush, stop: () => { stopped = true; clearTimeout(timer); }, indexOf: (page) => order.indexOf(page), pages: () => Array.from(order), seat: (i, page) => { order[i] = page; } };
 }
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);

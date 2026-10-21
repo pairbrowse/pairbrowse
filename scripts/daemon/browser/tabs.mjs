@@ -97,23 +97,25 @@ export function createTabs(st, deps, api) {
   }
 
   // screen: the tab that shows "Opening tabs" (default: the first one).
-  // A tab's identity across a browser restart (a session switch, a rename): its place in its
+  // A tab's identity across a browser restart (a session switch, a rename, a crash): its place in its
   // session's last save. Before the browser closes, each saved page is noted with that place
-  // (placeOf); as the session's tabs come back, each new page takes the place's (successors), so an
+  // (notePlaces); as the session's tabs come back, each new page takes the place's (successors), so an
   // agent's tab is the same tab when its session comes back, never another one on the same address.
   const successors = new WeakMap(); // old page -> the page that tab came back as
   const comingBack = new Map(); // `${session}|${i}` -> [old pages]
 
+  // From the tracker's last save, not the browser's tabs: after a crash (launch.mjs's close
+  // handler) the browser lists none, yet each tab comes back in its place. A save due is made
+  // first (flush), whichever close handler runs first. While the saved tabs come back, the places
+  // are the ones back so far (seat); one not back yet keeps its older pages waiting.
   function notePlaces() {
-    if (!st.tabTracker?.indexOf || !st.contextPromise) return;
-    return st.contextPromise.then((ctx) => {
-      for (const p of ctx.pages()) {
-        const i = st.tabTracker.indexOf(p);
-        if (i < 0) continue;
-        const k = `${st.session}|${i}`;
-        comingBack.set(k, [...(comingBack.get(k) || []).filter((x) => x !== p), p].slice(-8));
-      }
-    }).catch(() => {});
+    st.tabTracker?.flush?.();
+    const saved = st.tabTracker?.pages?.() || [];
+    saved.forEach((p, i) => {
+      if (!p) return;
+      const k = `${st.session}|${i}`;
+      comingBack.set(k, [...(comingBack.get(k) || []).filter((x) => x !== p), p].slice(-8));
+    });
   }
 
   const successorOf = (page) => { let p = page; for (let n = 0; p && n < 8 && successors.has(p); n++) p = successors.get(p); return p && p !== page && !p.isClosed() ? p : null; };
@@ -124,7 +126,7 @@ export function createTabs(st, deps, api) {
     const restoredSession = st.session;
     // Nothing is written while the saved tabs come back (a stop or a crash meanwhile keeps the whole list).
     let tracker = null;
-    tracker = st.tabTracker = trackTabs(ctx, { file: tabsFile(st.session), activePage: () => findPage(ctx, st.lastCurrentUrl), log, holding: () => st.restoring !== null && st.tabTracker === tracker });
+    tracker = st.tabTracker = trackTabs(ctx, { file: tabsFile(st.session), activePage: () => findPage(ctx, st.lastCurrentUrl), activeUrl: () => st.lastCurrentUrl, log, holding: () => st.restoring !== null && st.tabTracker === tracker });
     if (!saved.tabs.length) { screen?.close().catch(() => {}); restored(); return; }
     st.restoredActiveUrl = saved.tabs[saved.active]?.url || null;
     const restoreAt = Date.now();
@@ -136,7 +138,7 @@ export function createTabs(st, deps, api) {
       // Progress shows in the live view and side panel only (never as a badge in the pages),
       // and only when there's more than one tab to bring back.
       onProgress: (n, total) => { if (total > 1) status({ text: `Opening tabs ${n} of ${total}`, kind: "claude" }); },
-      onPage: (i, page) => { for (const old of comingBack.get(`${restoredSession}|${i}`) || []) successors.set(old, page); comingBack.delete(`${restoredSession}|${i}`); },
+      onPage: (i, page) => { tracker.seat?.(i, page); for (const old of comingBack.get(`${restoredSession}|${i}`) || []) successors.set(old, page); comingBack.delete(`${restoredSession}|${i}`); },
     }).catch((e) => log("restore failed", e?.message || e)).finally(() => {
       status(hud.badge());
       st.restoring = null;

@@ -85,12 +85,17 @@ export function seccompProfile() {
   };
 }
 
-// docker run's arguments. mounts: [{ from, to, readOnly }]; env: { NAME: value }.
-export function runArgs({ name, label, seccompFile, mounts = [], env = {}, image = imageTag() }) {
+// docker run's arguments. mounts: [{ from, to, readOnly }]; env: { NAME: value }. seccompFile:
+// the test profile, or null for Docker's default one (which refuses the sandbox's user
+// namespaces: a test that the launch is refused then). root: the container runs as root (a test
+// that the launch is refused as root); otherwise the normal user.
+export function runArgs({ name, label, seccompFile, root = false, mounts = [], env = {}, image = imageTag() }) {
   return [
-    "run", "-d", "--rm", "--name", name, "--label", label, "--platform", PLATFORM,
-    "--security-opt", `seccomp=${seccompFile}`, "--security-opt", "no-new-privileges", "--cap-drop", "ALL",
-    "--user", `${UID}:${UID}`, "--shm-size", "1g",
+    // --init: a process that reaps orphans as a service manager does (a killed helper's Xvfb is
+    // otherwise left a zombie that still counts as running).
+    "run", "-d", "--rm", "--init", "--name", name, "--label", label, "--platform", PLATFORM,
+    ...(seccompFile ? ["--security-opt", `seccomp=${seccompFile}`] : []), "--security-opt", "no-new-privileges", "--cap-drop", "ALL",
+    "--user", root ? "0:0" : `${UID}:${UID}`, "--shm-size", "1g",
     ...mounts.flatMap((m) => ["-v", `${m.from}:${m.to}${m.readOnly === false ? "" : ":ro"}`]),
     ...Object.entries(env).flatMap(([k, v]) => ["-e", `${k}=${v}`]),
     image, "sleep", String(LIFETIME_S),
@@ -145,8 +150,9 @@ function execIn(name, argv, { env = {}, user, ms = 600_000 } = {}) {
 }
 
 // Starts the container: { name, exec(argv, opts), node(script, args, opts), stop() }. name: also
-// its label's value (pairbrowse-test=<name>). The repo is mounted read-only at /repo.
-export function startContainer({ name, repo, mounts = [], env = {}, log = () => {} }) {
+// its label's value (pairbrowse-test=<name>). The repo is mounted read-only at /repo. seccomp:
+// "test" (seccompProfile) or "default" (Docker's own); root: see runArgs.
+export function startContainer({ name, repo, mounts = [], env = {}, seccomp = "test", root = false, log = () => {} }) {
   const label = `pairbrowse-test=${name}`;
   const image = ensureImage(log);
   removeLabelled(label);
@@ -161,7 +167,7 @@ export function startContainer({ name, repo, mounts = [], env = {}, log = () => 
     rmSync(dir, { recursive: true, force: true });
   };
   for (const [signal, handler] of handlers) process.once(signal, handler);
-  sh(runArgs({ name, label, seccompFile, image, env, mounts: [...(repo ? [{ from: repo, to: "/repo" }] : []), ...mounts] }), 120_000);
+  sh(runArgs({ name, label, seccompFile: seccomp === "default" ? null : seccompFile, root, image, env, mounts: [...(repo ? [{ from: repo, to: "/repo" }] : []), ...mounts] }), 120_000);
   watch(name);
   const exec = (argv, opts) => execIn(name, argv, opts);
   return { name, exec, node: (script, args = [], opts) => exec(["node", script, ...args], opts), stop };

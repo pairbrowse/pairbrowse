@@ -133,7 +133,9 @@
   `"xvfb"`); elsewhere the window opens at 1366x900.
 - `server`: `{ "keepAlive": false }` (default). `true` puts the helper in server mode (a helper kept
   running on a server, even one with a screen of its own, usually by the system's service manager):
-  the browser starts as soon as the helper does and its saved tabs come back; a browser closed with
+  the browser starts as soon as the helper does and its saved tabs come back (after a crash too,
+  each agent whose bridge reconnects within 10 seconds is back in its own tab, as after any crash or
+  reset of the browser outside server mode too); a browser closed with
   nobody connected no longer ends the helper; any close PairBrowse didn't cause (a crash, or closing
   the window or quitting the browser by hand) brings the browser back after 2 s, then 10 s, then
   30 s for each further close (back to 2 s once a browser stayed up for a minute), never past the

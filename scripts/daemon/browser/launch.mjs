@@ -327,6 +327,10 @@ export function createLaunch(st, deps, api) {
       // Closed for good (by hand, a crash, the turn cap), not on the way to another session: the
       // calls in flight hear of it.
       if (!st.switching) for (const fn of closeWatchers) try { fn(); } catch {}
+      // Each saved tab's place, so an agent's tab is the same tab when the tabs come back (a
+      // switch noted them before it closed the browser). Only the browser in use: an older one
+      // closing late would note the next one's tabs.
+      if (!st.switching && st.contextPromise === mine) api.notePlaces?.();
       // A close nobody asked for, on a server: the crash-loop guard counts it (browser/supervise.mjs)
       // and, unless it now holds, keep-alive starts the browser again after a pause.
       // The helper's own resets (a stalled call, the turn cap) are not crashes.

@@ -12,7 +12,7 @@
     "test": "node --test test/*.test.mjs test/integration/*.test.mjs",
     "test:unit": "node --test test/*.test.mjs",
     "test:live": "node --test test/integration/*.test.mjs",
-    "test:optin": "node --test test/optin/*.test.mjs",
+    "test:optin": "node --test test/optin/*.test.mjs test/optin/server/*.test.mjs",
     "test:fuzz": "node --test test/fuzz/*.test.js",
     "bench:check": "PAIRBROWSE_TEST_RUNTIME=${PAIRBROWSE_TEST_RUNTIME:-$HOME/.pairbrowse/runtime} node test/bench.mjs --check test/bench-budgets.json",
     "lint": "eslint --max-warnings 0 .",

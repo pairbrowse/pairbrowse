@@ -128,7 +128,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
         hud.moveSpark(participant, null).catch(() => {});
         hud.forgetParticipant?.(participant);
       };
-      if (shown && conn.resumeKey) departures.hold(conn.resumeKey, { id: participant, label: was.label, page: hud.sparkPage(participant) || null }, gone);
+      if (shown && conn.resumeKey) departures.hold(conn.resumeKey, { id: participant, label: was.label, page: hud.sparkPage(participant) || conn.mine || null }, gone); // its own tab, closed too when the browser went (a crash clears the sparks first): the tab that comes back in its place is its own then
       else gone();
       screenshots.forget(participant);
       follow.ownerGone(participant);
@@ -314,7 +314,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
           conn.resumed = true;
           collaboration.register(participant, back.label);
           hud.adoptParticipant?.(back.id, participant);
-          if (back.page && !back.page.isClosed()) conn.mine = back.page;
+          if (back.page) conn.mine = back.page; // closed (the browser restarted): turns.mjs myTab finds the tab it came back as
           back.finish();
           collaboration.seen(participant);
           log(`participant ${participant} resumes ${back.id}`);

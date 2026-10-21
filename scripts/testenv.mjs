@@ -41,6 +41,7 @@ export function applyTestGate(env = process.env) {
 export const SWITCHES = {
   ACTIVE_MS: "how long an agent's connection counts as active (serve.mjs)",
   APPROVAL: "pairbrowse_test_approval: the approval card, clicked as a person would",
+  CRASH_WINDOW_MS: "the crash-loop guard's window and hold, in place of 5 minutes (daemon/browser/supervise.mjs)",
   FAILOVER_MS: "how long a joiner waits on a silent tunnel before the standby (sharing/join-client.mjs)",
   FILL: "pairbrowse_test_fill: a field in a tab set as a person would (a card number no agent may type)",
   GONE_MS: "when a silent joiner counts as gone (liveview/push.mjs)",
@@ -55,6 +56,7 @@ export const SWITCHES = {
   PANEL: "pairbrowse_test_panel: the side panel's worker",
   PICK_WAIT_MS: "how long the session picker waits (daemon/sessions/picker.mjs)",
   RECHECK_MS: "how often a running proxied session's exit is checked again (daemon/network.mjs), in place of network.recheckMinutes",
+  RELAUNCH_MS: "keep-alive's one pause before each start after the browser closed by itself, in place of 2, 10 and 30 s (daemon/browser/supervise.mjs)",
   RESTART_MS: "the tunnel pool's restart pause (daemon/tunnel-pool.mjs)",
   RESUME_GRACE_MS: "how long a closed agent connection's label, color and tab wait for the same app session (daemon/serve/departures.mjs)",
   SCREEN: "pairbrowse_test_screen: the shared browser picture page",

@@ -30,11 +30,20 @@ test("the run: its own seccomp profile, every capability dropped, no new privile
   assert.ok(pair("--platform", PLATFORM));
   assert.ok(pair("--label", "pairbrowse-test=pb-x"));
   assert.ok(args.includes("--rm"), "Docker removes it when it stops");
+  assert.ok(args.includes("--init"), "orphans are reaped, as on a server");
   assert.ok(pair("-v", "/a:/repo:ro"), "mounts are read-only unless asked");
   assert.ok(pair("-v", "/b:/out"));
   assert.ok(pair("-e", "A=1"));
   for (const a of args) assert.doesNotMatch(a, /privileged|unconfined|--cap-add|no-sandbox/);
   assert.deepEqual(args.slice(-3), ["img", "sleep", "7200"], "it stops by itself");
+  // The refusal cases: Docker's default seccomp profile (no profile of ours named), or root; the
+  // rest stays as strict.
+  const plain = runArgs({ name: "pb-y", label: "pairbrowse-test=pb-y", seccompFile: null, root: true, image: "img" });
+  const has = (flag, value) => plain.some((a, i) => a === flag && plain[i + 1] === value);
+  assert.ok(!plain.some((a) => a.startsWith("seccomp=")), "Docker's default seccomp profile");
+  assert.ok(has("--user", "0:0"));
+  assert.ok(has("--security-opt", "no-new-privileges") && has("--cap-drop", "ALL"));
+  for (const a of plain) assert.doesNotMatch(a, /privileged|unconfined|--cap-add|no-sandbox/);
 });
 
 test("the seccomp profile allows the sandbox's namespaces and refuses calls no browser needs", () => {

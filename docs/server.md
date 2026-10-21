@@ -43,6 +43,11 @@ refuses the start by name rather than pretending.
   on Debian and Ubuntu `fonts-liberation fonts-dejavu-core fonts-noto-core fonts-noto-cjk
   fonts-noto-color-emoji` (the Linux build also brings its own metric-compatible clones of the
   common desktop fonts).
+- The time zone of the place your traffic leaves from. A server's clock is usually UTC, which few
+  everyday computers use, and pages compare the browser's time zone with the region of the address
+  they see. Set it for each profile (`locale.timezone`, see [Browser profiles](profiles.md)) or for
+  the helper as a whole (`Environment=TZ=...` in the unit below, with your exit's zone);
+  the helper log says so at each start on a UTC clock that nothing overrides.
 - Mesa's software renderers (`libgl1-mesa-dri`, `mesa-vulkan-drivers`) on a computer without a
   graphics card; the drivers of your graphics card on one with it.
 - The native PairBrowse browser: server mode runs only that one (`"browser": "pairbrowse"` in
@@ -61,7 +66,8 @@ five minutes); only stopping the helper keeps it closed; and a newer plugin vers
 this helper (`pairbrowse_status` says to restart the service to move to it).
 
 A systemd user unit for it (`~/.config/systemd/user/pairbrowse.service`; `<plugin copy>` is the
-installed plugin's folder, for example `~/.claude/plugins/cache/pairbrowse/pairbrowse/<version>`):
+installed plugin's folder, for example `~/.claude/plugins/cache/pairbrowse/pairbrowse/<version>`;
+`TZ` is the zone of your exit):
 
 ```ini
 [Unit]
@@ -73,6 +79,7 @@ ExecStart=/usr/bin/node <plugin copy>/scripts/daemon.mjs
 Restart=on-failure
 RestartSec=5
 Environment=PAIRBROWSE_HOME=%h/.pairbrowse
+Environment=TZ=Europe/Amsterdam
 
 [Install]
 WantedBy=default.target

@@ -65,6 +65,15 @@ async function applyGeoipQuietly(pack, fingerprint, proxy) {
     throw new Error(withoutAddresses(error?.message ?? error));
   }
 }
+// A server's clock is usually UTC, a zone few everyday computers use and one pages compare with the
+// region of the address they see (the ordinary-browser measurement, decision 11: BrowserScan took
+// points for it on Linux). When nothing sets the session's time zone and this computer's is one of
+// those, the launch says how to give it the exit's zone. The sentence, or null.
+const CLOCK_ZONES = /^(?:UTC|UCT|GMT|Zulu|Universal|Greenwich|Etc\/.*)$/i;
+export function clockZoneNote(timezone) {
+  if (typeof timezone !== "string" || !CLOCK_ZONES.test(timezone)) return null;
+  return `launch: time zone ${timezone} (this computer's clock): pages compare it with the region of the address they see; set the profile's locale.timezone, or TZ for the helper (docs/server.md), to the zone of your exit`;
+}
 const PLATFORM = { darwin: "macos", linux: "linux", win32: "windows" }[process.platform];
 // D12 (F4, F7): what a launch works out each time when no setting gives it: the build's platform
 // and brand version, and this computer's time zone and languages (else a device's own languages).
@@ -498,6 +507,10 @@ export async function launchNative(chromium, config, directory, options, pack, l
   // Each launch step's time (plans/555 item 4): what a slow first launch spent where.
   log(`launch: fingerprint ${Date.now() - fingerprintAt} ms${steps.length ? ` (${steps.join(", ")})` : ""}`);
   savePersona(pack, personaPath, fingerprint, settings.geoip, settings.personaName);
+  const zoneSet = settings.geoip || settings.overrides.timezone !== undefined || settings.saved.timezone !== undefined;
+  const onServer = !!config.virtualDisplay || config.server?.keepAlive === true;
+  const zoneNote = onServer && !zoneSet ? clockZoneNote(fingerprint.timezone) : null;
+  if (zoneNote) log(zoneNote);
   // config.measuredBackend: the backend the launch measured or kept (daemon/browser/launch.mjs,
   // native/check.mjs probeLauncher), null before any measurement.
   const plan = applyGraphicsPlan(fingerprint, settings, { display: config.virtualDisplay ?? null, measured: config.measuredBackend ?? null, userArgs: options.args ?? [], log });

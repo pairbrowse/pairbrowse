@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync, statSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { launchNative, applyGraphicsPlan, DRIVER_BLINK_SWITCH, DRIVER_BACKGROUND_SWITCH, nativeManifest, declaresOwnPages, macHostProfile, captureMacHost, MEASURING, hostCachePath, screenInfoArg, CANVAS_BRIDGE_DROPPED, isCanvasBridgeSwitch, personaProxyRefusal, PROXY_CREDENTIALS_REFUSAL, proxyCredentials, withoutAddresses, proxyAuthFile, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE, flatWebgpuProfile, personaBindingRefusal, droppedLine } from "../scripts/native-engine.mjs";
+import { launchNative, applyGraphicsPlan, DRIVER_BLINK_SWITCH, DRIVER_BACKGROUND_SWITCH, nativeManifest, declaresOwnPages, macHostProfile, captureMacHost, MEASURING, hostCachePath, screenInfoArg, CANVAS_BRIDGE_DROPPED, isCanvasBridgeSwitch, personaProxyRefusal, PROXY_CREDENTIALS_REFUSAL, proxyCredentials, withoutAddresses, proxyAuthFile, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE, flatWebgpuProfile, personaBindingRefusal, droppedLine, clockZoneNote } from "../scripts/native-engine.mjs";
 import { PAIRBROWSE_ENGINE_KEYS } from "../scripts/config-schema.mjs";
 import { loadEngine } from "../scripts/native/pack.mjs";
 import { normalizeWebgpu, GRAPHICS } from "../scripts/native/graphics.mjs";
@@ -1203,6 +1203,31 @@ test("persona saved under the profile id; another profile's persona refused; a s
   const plain = mkdtempSync(join(tmpdir(), "pairbrowse-persona-plain-"));
   await launch({ pairbrowse: { fingerprint: "seed", fingerprintProfile: PINNED_PROFILE() } }, plain);
   assert.equal(JSON.parse(readFileSync(join(plain, "pairbrowse-persona.json"), "utf8")).name, "pairbrowse");
+});
+
+// A server's UTC clock (decision 11's measurement): the launch says how to give the session the
+// exit's zone, only on a server, only when nothing sets the zone.
+test("a server launch on a UTC clock says how to set the exit's time zone", async () => {
+  assert.equal(clockZoneNote("Europe/Berlin"), null);
+  assert.equal(clockZoneNote(undefined), null);
+  for (const z of ["UTC", "Etc/UTC", "Etc/GMT+2", "GMT", "Universal"]) assert.match(clockZoneNote(z), /set the profile's locale\.timezone, or TZ for the helper \(docs\/server\.md\)/, z);
+  const app = appFixture();
+  const before = process.env.TZ;
+  process.env.TZ = "UTC";
+  try {
+    const run = async (config) => {
+      const lines = [];
+      await launchNative(fakeBrowserType(), { pairbrowse: { fingerprint: "seed", fingerprintProfile: PINNED_PROFILE(), ...config.pairbrowse }, ...config.rest }, mkdtempSync(join(tmpdir(), "pairbrowse-zone-")),
+        { executablePath: app.executablePath, headless: false, args: [] }, recordingPack(), (l) => lines.push(l));
+      return lines.some((l) => /^launch: time zone UTC \(this computer's clock\)/.test(l));
+    };
+    assert.equal(await run({ rest: { virtualDisplay: { width: 1366, height: 900, depth: 24 } } }), true, "a server on UTC");
+    assert.equal(await run({ rest: { server: { keepAlive: true } } }), true, "keepAlive is a server too");
+    assert.equal(await run({ rest: {} }), false, "a desktop's clock is the person's own");
+    assert.equal(await run({ pairbrowse: { timezone: "UTC" }, rest: { virtualDisplay: { width: 1366, height: 900, depth: 24 } } }), false, "a zone set on purpose");
+  } finally {
+    if (before === undefined) delete process.env.TZ; else process.env.TZ = before;
+  }
 });
 
 // Spec E2, E7 and section 13.1: on Linux the launch passes the real backend's strings, no noise and

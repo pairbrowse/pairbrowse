@@ -9,6 +9,9 @@ export function createClickAtTool(conn, api) {
   const { ownTab, participant, remote } = conn;
   return {
     async pairbrowse_click_at(args) {
+      // The adaptive input pace its moves took (rewrite.mjs paceUp), for its result.
+      const pace = conn.paceNote ? `\n${conn.paceNote}` : "";
+      conn.paceNote = "";
       // A final action the agent names (Pay, Delete, Publish, Send, Submit) goes through
       // browser_click, where the user confirms it (and a publish needs its review).
       const cls = clickClass(args.element);
@@ -20,7 +23,7 @@ export function createClickAtTool(conn, api) {
       await popups.dismissOverlay(r.page, { markOwn: true, ...closing });
       await settle(r.page, SETTLE_MS);
       await popups.dismissOverlay(r.page, { closeOffers: true, ...closing });
-      const content = [{ type: "text", text: r.text + popups.drain(r.page) }];
+      const content = [{ type: "text", text: r.text + pace + popups.drain(r.page) }];
       // A joiner's agent's picture leaves this screen, and a tab handed to the person is theirs
       // (yourturn.mjs masked): card fields covered (result.mjs does the same).
       const veiled = remote || !!api.yourTurn?.masked(r.page);

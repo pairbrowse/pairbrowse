@@ -5,6 +5,8 @@
 import { keepFocus } from "../../focus.mjs";
 import { describe } from "../../log.mjs";
 import { fillSettings, humanFill, humanType } from "../../native/humanize.mjs";
+import { inputPaceOf, paceFor, paceLine } from "../../native/pace.mjs";
+import { useMotion } from "../../native/paced-motion.mjs";
 import { isRef, navigationProblem, secretNamesIn } from "../../rules/policy.mjs";
 import { isoDate } from "../../runner.mjs";
 import { within } from "../../util.mjs";
@@ -13,11 +15,29 @@ import { leftAlone, ownerOf } from "../fields.mjs";
 import { busyNow } from "../page.mjs";
 import { sensitiveTarget } from "./pageread.mjs";
 import { runOpensTab, tabRefusal } from "./refuse.mjs";
-import { CLICKING_TOOLS, DECORATED, FIELD_TOOLS, NO_WAIT } from "./wire.mjs";
+import { CLICKING_TOOLS, DECORATED, FIELD_TOOLS, NO_WAIT, PACED_TOOLS } from "./wire.mjs";
 
 export function createHandle(conn, api) {
   const { approvalProblem, argProblem, browserToolProblem, collaboration, config, context, enterAfterTyping, finishResult, followTabs, host, hud, internal, log, myLabel, myTab, openTabs, ownTools, personTab, popups, presence, refusal, reply, respond, secretNames, secrets, serverPage, session, syncServer, tabClaims, whenReady } = api;
   const { callArgs, calls, fieldNotes, openMine, ownTab, participant, refNames, submitAfter, tabActions, traces } = conn;
+
+  // The pace for a pointer tool in the native browser's humanized page: its moves from now on,
+  // and one sentence for the result (the notes; the own tools whose results get none, click_at and
+  // scroll, add conn.paceNote to their text). Called once nothing more refuses the call, so a
+  // refusal's result never leaves a pace line for the next one. Moves that couldn't take the
+  // decided pace in time (useMotion) are said so, and logged.
+  async function paceUp(name, args) {
+    if (!PACED_TOOLS.has(name)) return;
+    const page = conn.actingIn || await serverPage();
+    if (page?._pairbrowseHumanized !== true) return;
+    const target = [args.target, args.startTarget, args.ref].find((t) => isRef(t));
+    const decision = await paceFor(page, target ? page.locator(`aria-ref=${target}`).first() : null, inputPaceOf(config));
+    const moves = await useMotion(page, decision.pace);
+    if (moves && moves !== decision.pace) log(`input pace: ${name} moved at the ${moves} pace, not ${decision.pace} (the swap took too long)`);
+    const line = paceLine([{ label: name, decision, moves }]);
+    if (Object.hasOwn(ownTools, name) && !DECORATED.has(name)) conn.paceNote = line;
+    else fieldNotes.push(line);
+  }
 
   async function handle(msg) {
     if (msg.method !== "tools/call") return api.transport.onmessage?.(msg);
@@ -84,11 +104,14 @@ export function createHandle(conn, api) {
       }
       if (target && target === conn.mine) conn.closedByMe = true;
     }
-    if (Object.hasOwn(ownTools, name) && name !== "browser_drag") return respond(msg.id, name, await ownTools[name](args), args);
+    if (Object.hasOwn(ownTools, name) && name !== "browser_drag") {
+      await paceUp(name, args);
+      return respond(msg.id, name, await ownTools[name](args), args);
+    }
 
     const problem = await browserToolProblem(name, args);
     if (problem) return reply(msg.id, problem, true);
-    if (name === "browser_drag") return respond(msg.id, name, await ownTools.browser_drag(args), args);
+    if (name === "browser_drag") { await paceUp(name, args); return respond(msg.id, name, await ownTools.browser_drag(args), args); }
     // A snapshot or find saved to a file of the agent's choosing would skip the masking every
     // result gets (card numbers, passwords: output.mjs): it comes in the result instead.
     if ((name === "browser_snapshot" || name === "browser_find") && Object.hasOwn(args, "filename")) {
@@ -124,6 +147,8 @@ export function createHandle(conn, api) {
         if (o) return reply(msg.id, leftAlone(o, args.element), true);
       }
     }
+    // The pace, after the refusals above (browser_select_option is a field tool and a paced one).
+    await paceUp(name, args);
     // A date, time, month or week field takes one exact shape (YYYY-MM-DD, hh:mm): typing into it
     // key by key, as the PairBrowse browser does, leaves garbage. PairBrowse sets such fields
     // itself, a date in another spelling turned into YYYY-MM-DD when it can only mean one day.
@@ -212,8 +237,9 @@ export function createHandle(conn, api) {
     if (ownFill) {
       const page = conn.actingIn || await serverPage();
       const items = msg.params.arguments.fields.map((f, i) => ({ ...f, shown: shown.fields[i]?.value }));
-      const { lines, failed } = await humanFill(page, items, fillSettings(config), { trace: log, isoDate });
-      return reply(msg.id, [...lines, ...fieldNotes.splice(0)].join("\n"), failed);
+      const paces = [];
+      const { lines, failed } = await humanFill(page, items, fillSettings(config), { trace: log, isoDate, onPace: (decision, label, moves) => paces.push({ decision, label, moves }) });
+      return reply(msg.id, [...lines, paceLine(paces), ...fieldNotes.splice(0)].filter(Boolean).join("\n"), failed);
     }
     // A single browser_type there: PairBrowse types it itself too (humanType), the field focused
     // by the engine's own reach and click (the press declared above), the text at typingPace with
@@ -221,7 +247,9 @@ export function createHandle(conn, api) {
     // own typing held every key its full time: 41 characters took 6 s. Enter (submit) is PairBrowse's
     // own press, as before; slowly brings a snapshot, as before (a list of suggestions shows up).
     if (ownType) {
-      const { line, failed } = await humanType(typingPage, { target: args.target, name: args.element, value: msg.params.arguments.text, shown: shown.text }, fillSettings(config), { trace: log, slowly: args.slowly === true });
+      const paces = [];
+      const { line, failed } = await humanType(typingPage, { target: args.target, name: args.element, value: msg.params.arguments.text, shown: shown.text }, fillSettings(config), { trace: log, slowly: args.slowly === true, onPace: (decision, label, moves) => paces.push({ decision, label, moves }) });
+      fieldNotes.push(paceLine(paces));
       let text = line;
       if (args.submit && !failed) text = await enterAfterTyping(typingPage, args).catch((e) => { log("enter after typing", e?.message || e); return line; });
       else if (args.slowly === true && !failed) text += `\n${((await within(8000, internal("browser_snapshot", {})).catch(() => null))?.result?.content || []).map((c) => c.text || "").join("\n")}`;

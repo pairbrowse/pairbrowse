@@ -12,6 +12,10 @@ export const PAIRBROWSE_TOOLS = HELPER_TOOLS;
 // the page has loaded and settled for a second: the layout, overlays and images the text
 // snapshot can't show. config.screenshots = false turns it off.
 export const SCREENSHOT_TOOLS = toolsWith("screenshot");
+// The pointer tools whose moves follow the adaptive input pace (native/pace.mjs, rewrite.mjs paceUp):
+// decided for the page and the element acted on as the call starts, said in its result. Typing
+// decides per field (native/humanize.mjs).
+export const PACED_TOOLS = toolsWith("paced");
 // Results after which the page may load new popups (checked again a few seconds later); after
 // Claude's clicks, overlays already on screen count as Claude's own and stay.
 export const LOADING_TOOLS = toolsWith("loading");

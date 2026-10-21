@@ -455,8 +455,18 @@ user's file, readable by others), the section says why and refuses a username or
   `"Claude"`), its distance from the screen's top (default 52), and whether that app's window
   makes room for it (default `false`).
 - `pairbrowse`: the native PairBrowse build's own settings (`humanize`, `showCursor`, `typingPace`,
-  `formMove`, `motion`, `profile`, `profileSelect`, `geoip`, `graphics`): see
-  [The native PairBrowse browser](browser.md#the-native-pairbrowse-browser). `graphics` is the
+  `formMove`, `motion`, `inputPace`, `profile`, `profileSelect`, `geoip`, `graphics`): see
+  [The native PairBrowse browser](browser.md#the-native-pairbrowse-browser). `inputPace` is how
+  quickly humanized input goes: `"adaptive"` (default) types at `typingPace` (0.2, a fast typist)
+  and moves at `motion` (`"fast"`) wherever nothing scores the input, and at an everyday person's
+  rhythm (about 150 ms between keys, moves at the profile's own speed) on a page that carries a
+  verification or scoring widget (visible or invisible, known by its frame, script or container,
+  never by a list of sites; from the moment it loads until the page goes elsewhere) and for a field
+  in a sign-in, sign-up or payment form (known by its fields: a password, new password, user name,
+  one-time code or card field); `"fast"` keeps the fast pace everywhere, `"human"` the everyday
+  one everywhere. Each typing or pointer result says which pace it took ("Pace: fast.",
+  "Pace: everyday (sign-in form).", with "moves stayed fast" when the moves couldn't change pace in
+  time). A browser profile can't set it (a helper-wide setting). `graphics` is the
   `default` profile's graphics backend (a stored profile has its own `graphics.backend`):
   `"auto"` (default) renders as this computer does (on a Linux server's virtual screen that is
   already software); `"software"` forces the engine's own software renderer

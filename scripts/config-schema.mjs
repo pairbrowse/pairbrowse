@@ -109,6 +109,8 @@ export const CONFIG_SCHEMA = {
       geoip: { type: "boolean" },
       typingPace: { type: "number", min: 0.2, max: 1 },
       motion: { values: ["fast", "quick", "combined", "classic"] },
+      // The adaptive input pace (native/pace.mjs): the everyday pace only where the input is scored.
+      inputPace: { values: ["adaptive", "fast", "human"] },
       formMove: { values: ["tab", "mouse"] },
       // The default profile's graphics.backend (spec server-mode E2; native/graphics.mjs graphicsPlan).
       graphics: { values: GRAPHICS_BACKENDS },

@@ -8,6 +8,8 @@ import { NATIVE } from "./native-pack.mjs";
 import { paths } from "./paths.mjs";
 import { within, writeJsonAtomic, sha256, readJson } from "./util.mjs";
 import { TYPING_PACE, clampPace } from "./native/humanize.mjs";
+import { inputPaceOf } from "./native/pace.mjs";
+import { installPacedHumanize } from "./native/paced-motion.mjs";
 import { switchName, withoutNoSandbox } from "./browser-args.mjs";
 import { PAIRBROWSE_ENGINE_KEYS } from "./config-schema.mjs";
 import { normalizeWebgpu, graphicsPlan, backendSwitches, GRAPHICS, SCREEN_KEYS, LEGACY_GPU_KEYS } from "./native/graphics.mjs";
@@ -292,6 +294,17 @@ const withFlatWebgpu = (layer) => (layer?.fingerprintProfile === undefined ? lay
 // its seed and values (daemon/sessions/profiles.mjs; a reassignment removes it, sessions.mjs).
 export const personaBindingRefusal = (name, id) => `The persona kept with this session (${PERSONA_FILE}) belongs to ${/^p-[0-9a-f]{16}$/.test(String(name)) ? `browser profile ${name}` : "no browser profile"}, not ${id}: refused, it is never saved over under another profile. The person reassigns the session to start it on another profile.`;
 
+// The pack's humanized input sets for settings' inputPace (paced-motion.mjs): { fast, human? },
+// each { motion, typingPace }. The everyday pace moves "combined" and types at pace 1 (the pack's
+// own typing; PairBrowse's own takes the human rhythm, humanize.mjs). One set when both would be
+// the same, or with "fast" or "human".
+export function paceSets({ inputPace = "adaptive", motion = "fast", typingPace = TYPING_PACE } = {}) {
+  const fast = { motion, typingPace }, human = { motion: "combined", typingPace: 1 };
+  if (inputPace === "human") return { fast: human };
+  if (inputPace === "fast" || (motion === human.motion && typingPace === human.typingPace)) return { fast };
+  return { fast, human };
+}
+
 // The three layers of settings, lowest first: the persona saved in the profile, a saved profile
 // chosen by name, and config.json. Every layer is checked for options this engine can't honour, and
 // its fingerprintProfile's WebGPU flattened (flatWebgpuProfile).
@@ -302,22 +315,26 @@ export const personaBindingRefusal = (name, id) => `The persona kept with this s
 // are the config-backed default's. config.json's other engine keys (the legacy hardware ones,
 // decision U6) still apply to every profile.
 function readSettings(config, pack, personaPath) {
-  // motion: how humanized mouse moves are shaped: "combined" (the default since the ordinary-
-  // browser measurement of decision 11, which read "fast" moves as about 30% quicker than Fitts'
-  // law allows a hand: PairBrowse's hand-like shape, one reach that lands close, then homes in
-  // without stopping, at the profile's own speed, tremor and habits), "fast" (the same shape at a
-  // quick hand's pace: a hop between fields in about a third of the profile's time, a reach in
-  // under two thirds, a short press; the default before), "quick" (the same shape, a hop in about
-  // half the time and a reach as a hand's) or "classic" (the engine's own). Every click still lands exactly on its point.
+  // motion: how humanized mouse moves are shaped at the fast pace: "fast" (the default: PairBrowse's
+  // hand-like shape, one reach that lands close, then homes in without stopping, at a quick hand's
+  // pace: a hop between fields in about a third of the profile's time, a reach in under two
+  // thirds, a short press), "quick" (the same shape, a hop in about half the time and a reach as a
+  // hand's), "combined" (the same shape at the profile's own speed, tremor and habits) or
+  // "classic" (the engine's own). Every click still lands exactly on its point. inputPace (the
+  // adaptive pace, native/pace.mjs, spec step 51): "adaptive" (the default) moves "combined" and
+  // types at an everyday typist's rhythm only where a verification widget or a sign-in, sign-up
+  // or payment form scores the input (the ordinary-browser measurement of decision 11 read "fast"
+  // moves as about 30% quicker than Fitts' law allows a hand), at motion and typingPace elsewhere;
+  // "fast" always at those, "human" always at the everyday pace (native/paced-motion.mjs).
   // An engine pack without "combined" uses its own. formMove is PairBrowse's own (fillSettings), not the engine's.
   // graphicsNoise: noise over the identity shown on a host without a GPU (decisions 10 and 11, off
   // by default; native/graphics.mjs identityKeys: the engine's fingerprintNoise and canvasNoise);
   // on a host with a GPU the real pixels get no readback noise, whatever this says.
-  const { profile: selection, profileSelect, graphics = "auto", graphicsNoise = false, humanize = true, showCursor = false, geoip = false, typingPace = TYPING_PACE, motion: motionSetting = "combined", formMove, ...given } = config.pairbrowse ?? {};
+  const { profile: selection, profileSelect, graphics = "auto", graphicsNoise = false, humanize = true, showCursor = false, geoip = false, typingPace = TYPING_PACE, motion: motionSetting = "fast", formMove, inputPace, ...given } = config.pairbrowse ?? {};
   // profileSelect only steered the engine pack's persona pick, which PairBrowse no longer asks
   // for (D9 below; config-schema.mjs PROFILE_SELECT keeps it closed, D8).
   // graphics: the default profile's backend, read by profiles/map.mjs into its switches (E2).
-  void formMove, profileSelect;
+  void formMove, profileSelect, inputPace;
   // Only the engine's fingerprint options pass (config-schema.mjs PAIRBROWSE_ENGINE_KEYS): never an
   // unpacked extension, a proxy, launch options or switches from config.json, which would go
   // around the browserArgs screen. An option this engine can't honour still stops the launch below.
@@ -327,7 +344,7 @@ function readSettings(config, pack, personaPath) {
   const fromProfile = Object.entries(chosen?.engineKeys ?? {}).filter(([k]) => PROFILE_ENGINE_KEYS.includes(k));
   const overrides = withFlatWebgpu(Object.fromEntries([...fromConfig, ...fromProfile]));
   const ignored = Object.keys(given).filter((k) => !PAIRBROWSE_ENGINE_KEYS.includes(k) && !UNSUPPORTED.includes(k));
-  const motion = ["classic", "fast", "quick"].includes(motionSetting) ? motionSetting : "combined";
+  const motion = ["classic", "combined", "quick"].includes(motionSetting) ? motionSetting : "fast";
   if (given.canvasBridge !== undefined) throw new Error(canvasBridgeRefusal("config.json's pairbrowse block"));
   // D9: "auto" and "local" are this computer (the macOS host capture, else the seed persona);
   // PairBrowse never has the engine pack pick another device's persona from a library or a service.
@@ -353,7 +370,7 @@ function readSettings(config, pack, personaPath) {
   // the engine's fingerprint options pass; every other option (launch controls, switches, env,
   // extensions, agent and storage options) is named in one log line and dropped, never applied.
   const dropped = { saved: engineOnly(saved), persisted: engineOnly(persisted) };
-  return { thisComputer, graphics: chosen?.graphics ?? graphics, graphicsNoise: graphicsNoise === true, humanize, showCursor, geoip: store ? !!chosen.geoip : chosen?.kind === "config" ? !!(geoip || chosen.geoip) : geoip, typingPace: clampPace(typingPace), motion, overrides, saved, persisted, ignored, dropped, bridgeDropped, personaName: chosen?.id ?? LEGACY_PERSONA };
+  return { thisComputer, graphics: chosen?.graphics ?? graphics, graphicsNoise: graphicsNoise === true, humanize, showCursor, geoip: store ? !!chosen.geoip : chosen?.kind === "config" ? !!(geoip || chosen.geoip) : geoip, typingPace: clampPace(typingPace), motion, inputPace: inputPaceOf(config), overrides, saved, persisted, ignored, dropped, bridgeDropped, personaName: chosen?.id ?? LEGACY_PERSONA };
 }
 
 // Keeps only the engine's fingerprint options in a persona layer, in place: the names of the
@@ -575,7 +592,8 @@ export async function launchNative(chromium, config, directory, options, pack, l
   });
   log(`launch: launchPersistentContext ${Date.now() - contextAt} ms`);
   try {
-    pack.installHumanizeOnContext(context, { humanize: settings.humanize, showCursor: settings.showCursor, typingPace: settings.typingPace, motion: settings.motion, seed: fingerprint.fingerprint });
+    // The pack's humanized input, once for one pace or twice for the adaptive one (paced-motion.mjs).
+    installPacedHumanize(context, (scope, given) => pack.installHumanizeOnContext(scope, given), { humanize: settings.humanize, showCursor: settings.showCursor, seed: fingerprint.fingerprint }, paceSets(settings), log);
     return context;
   } catch (error) {
     try { await context.close?.(); } catch {}

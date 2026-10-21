@@ -197,18 +197,38 @@ actions, for testing):
 { "pairbrowse": { "humanize": false } }
 ```
 
-Typing speed: `typingPace` from 0.2 (fastest) to 1 (an everyday typist). The default, 1 (0.2 up to
-0.17.0), types as an everyday typist does: about 150 ms between keys (the median), each key
-held about 100 ms, so about one key in five is still down when the next goes down, with now and then
-a quick pair or a slow one, a beat after each word and a short thought now and then. The ordinary-
-browser measurement read the old default as about 23 ms a key with nine keys in ten overlapping, a
-rhythm no person keeps up, so the default changed. The gaps between keys scale with `typingPace`;
-how long each key is held doesn't. A lower pace (0.2 to 0.5) is quicker, and looks less like a
-person. A `browser_type` goes the way a form field does (below): the field focused by the engine's
-own reach and click (none when it has the focus already), what it held cleared, the text key by key,
-read back; at the default pace 41 characters take about 7 s. `slowly: true` types at the default
-pace or slower (also when `typingPace` is quicker), at the caret, next to what the field holds, and
-brings a snapshot (a list of suggestions shows up); `submit: true` presses Enter once the text is in.
+Input pace: fast where nothing scores the input, an everyday person's rhythm where something does
+(`inputPace`, `"adaptive"` by default). Typing goes at a fast typist's pace (`typingPace`, below)
+and moves at `motion`'s, except where it matters: on a page that carries a verification or scoring
+widget (a CAPTCHA, or an invisible one such as score-based reCAPTCHA or non-interactive Turnstile,
+known by its frame, its script or its container, as PairBrowse knows a CAPTCHA, never by a list of
+sites), and for a field in a sign-in, sign-up or payment form (a password, a new password, a user
+name, a one-time code or a card field in the same form, read from the fields themselves). There
+PairBrowse types as an everyday typist does, about 150 ms between keys (the median), each key held
+about 100 ms, so about one key in five is still down when the next goes down, with now and then a
+quick pair or a slow one, and moves at the profile's own speed (`"combined"`). The ordinary-browser
+measurement read the fast rhythm as about 23 ms a key with nine keys in ten overlapping, a rhythm no
+person keeps up: harmless where nothing watches, a clear signal where something does. The pace is
+decided for each field and each action as it starts, so a page that loads a widget later goes at the
+everyday pace from then on (until it goes to another address), and the tool result says which pace
+it took ("Pace: fast.", "Pace: everyday (sign-in form).", with "moves stayed fast" when the moves
+couldn't change pace in time). `"fast"` keeps the fast pace everywhere,
+`"human"` the everyday one everywhere:
+
+```json
+{ "pairbrowse": { "inputPace": "human" } }
+```
+
+Typing speed at the fast pace: `typingPace` from 0.2 (fastest) to 1 (slowest, about 60 words a
+minute). The default, 0.2, types with a fast typist's rollover: the gaps between keys and the short
+pauses scale with it; how long each key is held doesn't. A slower pace (0.3 to 0.5) is the setting
+for a more careful, slower hand. The everyday pace doesn't follow it. A `browser_type` goes the way
+a form field does (below): the field focused by the engine's own reach and click (none when it has
+the focus already), what it held cleared, the text key by key, read back; at the fast pace 41
+characters take about 3.5 s, at the everyday pace about 7 s. `slowly: true` types at about 90 ms
+a key at the fast pace (a slower `typingPace` stays slower), at the caret, next to what the field
+holds, and brings a snapshot (a list of suggestions shows up); `submit: true` presses Enter once the
+text is in.
 
 ```json
 { "pairbrowse": { "typingPace": 0.35 } }
@@ -217,12 +237,13 @@ brings a snapshot (a list of suggestions shows up); `submit: true` presses Enter
 A form (`browser_fill_form`) is filled the way a person fills one, field by field in the order
 given: into the first field, then on to the next with the Tab key when it is the next field in the
 page's own order (the mouse reaches for it otherwise, and for any field Tab didn't land on), the value
-typed key by key at `typingPace` with the same rhythm (now and then the next key down before the
-last is up, a beat after each word), a closed select picked by typing its option's first letters, a
+typed key by key at its pace (each field's own, as above) with the same rhythm (the next key often
+down before the last is up at the fast pace, a beat after each word), a closed select picked by typing its option's first letters, a
 box ticked with Space, a date or time field set at once in its turn (its exact shape, YYYY-MM-DD).
 Every field is read back, and a value that didn't stay is said so in the result. A form never types
-quicker than `typingPace` 0.2 allows (lower counts as 0.2 there). How long a form takes follows
-what is typed: about 150 ms a character at the default pace, plus a moment per field. `formMove` picks how
+quicker than `typingPace` 0.2 allows (lower counts as 0.2 there). An 11-field form takes about 9 s
+at the fast pace (the first fill after the browser starts a little longer); at the everyday pace
+about 150 ms a character, plus a moment per field. `formMove` picks how
 PairBrowse goes from field to field:
 
 ```json
@@ -232,9 +253,10 @@ PairBrowse goes from field to field:
 `"tab"` (the default) is described above; `"mouse"` reaches for every field with the mouse, as
 single actions do. Fast mode (`pairbrowse_run`) is unchanged: it skips the human-like input altogether.
 
-Mouse movement: `motion` is `"combined"` by default (`"fast"` from 0.16 up to 0.17.0, `"quick"` in
-0.15, `"combined"` before that; the ordinary-browser measurement read `"fast"` moves as about 30%
-quicker than a hand reaches, by Fitts' law). Every
+Mouse movement: `motion` shapes moves at the fast pace, `"fast"` by default (`"quick"` in 0.15,
+`"combined"` before that); at the everyday pace (above) moves are always `"combined"` (the
+ordinary-browser measurement read `"fast"` moves as about 30% quicker than a hand reaches, by
+Fitts' law). Every
 motion but `"classic"` shapes each move like a hand's: one quick reach that lands close (now and then
 a few pixels past), then homes in without stopping. Every click still lands exactly on its point.
 With `"combined"` the profile keeps its own speed, tremor and habits throughout.
@@ -242,10 +264,12 @@ With `"combined"` the profile keeps its own speed, tremor and habits throughout.
 time, a reach across the page in under two thirds, a brief pause before the press and a short press
 (a click on the next field takes about 0.25 s, one across the page about 0.65 s).
 `"quick"` is the slower, more careful choice: a hop in about half the time, a long reach at the
-profile's own speed and a longer press (about 0.4 s and 1.1 s). `"classic"` uses the engine's own shape instead:
+profile's own speed and a longer press (about 0.4 s and 1.1 s). `"classic"` uses the engine's own shape instead.
+When the pace changes on a page, the moves at the new pace start where the pointer is: it never
+jumps.
 
 ```json
-{ "pairbrowse": { "motion": "fast" } }
+{ "pairbrowse": { "motion": "quick" } }
 ```
 
 **PairBrowse as an extension** (`"browser": "pairbrowse-open"`) has none of the above: no

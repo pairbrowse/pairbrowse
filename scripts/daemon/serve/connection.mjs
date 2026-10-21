@@ -35,6 +35,7 @@ export function createConnectionState(participant, { remote = null, pauseSeen = 
     approvedWhere: new WeakMap(), // args -> the tab and origin that Allow was for (approvals.mjs sameWhere)
     pauseSeen, // pauses before it connected aren't news
     fieldNotes: [], // fields left to the people filling them, for the next result
+    paceNote: "", // the input pace pairbrowse_click_at or pairbrowse_scroll moves at (rewrite.mjs paceUp), for its text
     refNames: createRefNames(), // the main frame's refs plain for Claude (output.mjs)
     submitAfter: new Set(), // browser_type calls whose Enter PairBrowse presses itself
     recorded: false, // in the session's list of who used it

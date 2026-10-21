@@ -14,7 +14,9 @@ import { within } from "./util.mjs";
 // The "Your turn" text while a CAPTCHA is up (the daemon takes it down once the check is gone).
 export const CHALLENGE_TURN = "Solve the check on this page, then Claude continues";
 
-const CHALLENGE = /(recaptcha|hcaptcha|challenges\.cloudflare\.com|turnstile|arkoselabs|funcaptcha|captcha-delivery|geo\.captcha)/i;
+// A challenge or scoring widget, by the address of its frame or script (its maker's, never a site's):
+// the visible check here, and the adaptive input pace (native/pace.mjs) for the invisible ones too.
+export const CHALLENGE = /(recaptcha|hcaptcha|challenges\.cloudflare\.com|turnstile|arkoselabs|funcaptcha|captcha-delivery|geo\.captcha)/i;
 
 const CONSENT_FRAME = /consent|cookie|privacy|cmp|onetrust|sourcepoint|didomi|trustarc|quantcast|usercentrics|cookiebot|iubenda|termly|osano|sp_message/i;
 // null after ms, or on an error: a page or frame that never answers must not hold anything up.

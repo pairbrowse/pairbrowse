@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync, statSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { launchNative, applyGraphicsPlan, DRIVER_BLINK_SWITCH, DRIVER_BACKGROUND_SWITCH, nativeManifest, declaresOwnPages, macHostProfile, captureMacHost, MEASURING, hostCachePath, screenInfoArg, CANVAS_BRIDGE_DROPPED, isCanvasBridgeSwitch, personaProxyRefusal, PROXY_CREDENTIALS_REFUSAL, proxyCredentials, withoutAddresses, proxyAuthFile, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE, flatWebgpuProfile, personaBindingRefusal, droppedLine, clockZoneNote } from "../scripts/native-engine.mjs";
+import { launchNative, applyGraphicsPlan, DRIVER_BLINK_SWITCH, DRIVER_BACKGROUND_SWITCH, nativeManifest, declaresOwnPages, macHostProfile, captureMacHost, MEASURING, hostCachePath, screenInfoArg, CANVAS_BRIDGE_DROPPED, isCanvasBridgeSwitch, personaProxyRefusal, PROXY_CREDENTIALS_REFUSAL, proxyCredentials, withoutAddresses, proxyAuthFile, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE, paceSets, flatWebgpuProfile, personaBindingRefusal, droppedLine, clockZoneNote } from "../scripts/native-engine.mjs";
 import { PAIRBROWSE_ENGINE_KEYS } from "../scripts/config-schema.mjs";
 import { loadEngine } from "../scripts/native/pack.mjs";
 import { normalizeWebgpu, GRAPHICS } from "../scripts/native/graphics.mjs";
@@ -179,18 +179,25 @@ packTest("a native launch leaves out the driver's switches: no automation flag, 
   assert.ok(!args.includes(DRIVER_BACKGROUND_SWITCH));
 });
 
-packTest("humanized mouse moves take the combined shape unless config asks for the fast, the quick or the classic one", async () => {
+packTest("humanized mouse moves take the fast shape unless config asks for another; the adaptive pace adds the combined one", async () => {
   const pack = await loadPack();
-  const seen = [];
-  const spy = { ...pack, installHumanizeOnContext: (context, opts) => seen.push(opts) };
   const app = appFixture();
-  for (const pairbrowse of [{}, { motion: "classic" }, { motion: "fast" }, { motion: "quick" }, { motion: "anything else" }]) {
+  // Each launch: the motions the pack was given, in order (the adaptive pace's two sets take a
+  // page hook each, as the pack's own install does on a context).
+  const launches = [];
+  for (const pairbrowse of [{}, { motion: "classic" }, { motion: "combined" }, { motion: "quick" }, { motion: "anything else" }, { inputPace: "fast" }, { inputPace: "human" }, { motion: "quick", typingPace: 0.5, inputPace: "human" }]) {
+    const seen = [];
+    const spy = { ...pack, installHumanizeOnContext: (scope, opts) => { seen.push(opts); scope.on("page", () => {}); } };
     await launchNative(fakeBrowserType(), { pairbrowse: { fingerprint: "motion-seed", ...pairbrowse } }, mkdtempSync(join(tmpdir(), "pairbrowse-motion-")),
       { executablePath: app.executablePath, headless: false }, spy);
+    launches.push(seen);
   }
-  assert.deepEqual(seen.map((o) => o.motion), ["combined", "classic", "fast", "quick", "combined"]);
-  assert.ok(seen.every((o) => o.humanize === true && o.seed));
-  assert.ok(seen.every((o) => o.typingPace === TYPING_PACE), "single actions type at the default pace");
+  assert.deepEqual(launches.map((seen) => seen.map((o) => o.motion)), [["fast", "combined"], ["classic", "combined"], ["combined", "combined"], ["quick", "combined"], ["fast", "combined"], ["fast"], ["combined"], ["combined"]]);
+  assert.ok(launches.flat().every((o) => o.humanize === true && o.seed));
+  assert.deepEqual(launches[0].map((o) => o.typingPace), [TYPING_PACE, 1], "the fast set types at typingPace, the everyday one at an everyday typist's");
+  assert.deepEqual(launches[0].map((o) => o.showCursor), [false, false]);
+  assert.deepEqual(launches[7].map((o) => o.typingPace), [1], "\"human\" always types as an everyday typist");
+  assert.deepEqual(paceSets({ motion: "combined", typingPace: 1 }), { fast: { motion: "combined", typingPace: 1 } }, "one set when both paces are the same");
 });
 
 // A seeded generator, so a schedule's shape can be checked on fixed numbers.
@@ -199,16 +206,16 @@ function seeded(seed = 7) {
   return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 2 ** 32; };
 }
 
-test("form fill settings: typingPace 1 (an everyday hand) and Tab between fields by default, floored and parsed", () => {
-  assert.equal(TYPING_PACE, 1);
-  assert.deepEqual(fillSettings({}), { typingPace: 1, formMove: "tab" });
-  assert.deepEqual(fillSettings(undefined), { typingPace: 1, formMove: "tab" });
-  assert.deepEqual(fillSettings({ pairbrowse: { typingPace: 0.5, formMove: "mouse" } }), { typingPace: 0.5, formMove: "mouse" });
+test("form fill settings: typingPace 0.2, Tab between fields and the adaptive pace by default, floored and parsed", () => {
+  assert.equal(TYPING_PACE, 0.2);
+  assert.deepEqual(fillSettings({}), { typingPace: 0.2, formMove: "tab", inputPace: "adaptive" });
+  assert.deepEqual(fillSettings(undefined), { typingPace: 0.2, formMove: "tab", inputPace: "adaptive" });
+  assert.deepEqual(fillSettings({ pairbrowse: { typingPace: 0.5, formMove: "mouse", inputPace: "human" } }), { typingPace: 0.5, formMove: "mouse", inputPace: "human" });
   assert.equal(fillSettings({ pairbrowse: { formMove: "anything else" } }).formMove, "tab");
+  assert.equal(fillSettings({ pairbrowse: { inputPace: "slow" } }).inputPace, "adaptive");
   assert.equal(fillSettings({ pairbrowse: { typingPace: 0.1 } }).typingPace, FILL_PACE_FLOOR, "a form never types quicker than the floor");
   assert.equal(fillSettings({ pairbrowse: { typingPace: 3 } }).typingPace, 1);
-  assert.equal(fillSettings({ pairbrowse: { typingPace: "fast" } }).typingPace, 1);
-  assert.equal(fillSettings({ pairbrowse: { typingPace: 0.2 } }).typingPace, 0.2, "a quicker hand is the config's choice");
+  assert.equal(fillSettings({ pairbrowse: { typingPace: "fast" } }).typingPace, 0.2);
 });
 
 test("a keystroke schedule types every key with a person's rhythm: rollover, Shift held, no faster than 40 ms a key", () => {
@@ -235,22 +242,24 @@ test("a keystroke schedule types every key with a person's rhythm: rollover, Shi
   const perChar = (pace, rng) => { let total = 0, n = 0; for (let i = 0; i < 200; i++) { const ev = keystrokeSchedule(text, pace, rng); total += ev[ev.length - 1].at; n += text.length; } return total / n; };
   const rng = seeded(3);
   const floor = perChar(0.2, rng), fast = perChar(0.3, rng), slow = perChar(1, rng);
-  assert.ok(floor >= 40, `the floor is about 40 ms a key or more: ${floor.toFixed(1)}`);
+  assert.ok(floor >= 40, `the floor is about 40 ms a key: ${floor.toFixed(1)}`);
   assert.ok(floor < fast && fast < slow, "a lower pace is quicker");
-  assert.ok(fast < 85, `0.3 is a quick hand: ${fast.toFixed(1)} ms a key`);
-  assert.ok(slow > 140 && slow < 220, `1 is an everyday typist's pace: ${slow.toFixed(1)} ms a key`);
+  assert.ok(fast < 65, `0.3 is a quick hand: ${fast.toFixed(1)} ms a key`);
+  assert.ok(slow > 110, `1 is the engine's own pace: ${slow.toFixed(1)} ms a key`);
   assert.deepEqual(keystrokeSchedule("", 0.3), []);
   assert.deepEqual(keystrokeSchedule("a\n", 0.3, seeded()).filter((e) => e.type === "down").map((e) => e.key), ["a", "Enter"]);
 });
 
 // The ordinary-browser measurement's two numbers for typing (server-mode spec, decision 11): the
 // median time between one key going down and the next, and how many keys are still down when the
-// next goes down. An everyday typist: about 150 ms and about one in five.
-test("the default pace types as an everyday typist: about 150 ms between keys, about one in five overlapping", () => {
+// next goes down. An everyday typist: about 150 ms and about one in five. The fast pace is the
+// quick hand the measurement read (about 23 ms, nearly every key overlapping), kept where nothing
+// scores the input (the adaptive pace, spec step 51).
+const rhythm = (pace, human) => {
   const text = "The quick brown fox jumps over the lazy dog, then types dana.smith@example.com and Some Words.";
   const gaps = [], overlaps = [];
   for (let r = 0; r < 200; r++) {
-    const ev = keystrokeSchedule(text, TYPING_PACE, seeded(r + 1)).filter((e) => e.key !== "Shift");
+    const ev = keystrokeSchedule(text, pace, seeded(r + 1), { human }).filter((e) => e.key !== "Shift");
     const downs = ev.filter((e) => e.type === "down");
     for (let i = 1; i < downs.length; i++) {
       gaps.push(downs[i].at - downs[i - 1].at);
@@ -259,10 +268,20 @@ test("the default pace types as an everyday typist: about 150 ms between keys, a
     }
   }
   gaps.sort((a, b) => a - b);
-  const median = gaps[gaps.length >> 1], share = overlaps.filter(Boolean).length / overlaps.length;
-  assert.ok(median > 125 && median < 185, `median ${median.toFixed(0)} ms between keys`);
-  assert.ok(share > 0.1 && share < 0.35, `${(share * 100).toFixed(0)}% of keys overlap the next`);
-  assert.ok(gaps[0] > 54, "no two keys closer than a hand manages");
+  return { median: gaps[gaps.length >> 1], share: overlaps.filter(Boolean).length / overlaps.length, least: gaps[0] };
+};
+test("the fast pace is a quick typist's rollover, as before: about 25 ms between keys, most overlapping", () => {
+  const { median, share } = rhythm(TYPING_PACE, false);
+  assert.ok(median > 15 && median < 35, `median ${median.toFixed(0)} ms between keys`);
+  assert.ok(share > 0.8, `${(share * 100).toFixed(0)}% of keys overlap the next`);
+});
+test("the everyday pace types as an everyday typist, whatever typingPace says: about 150 ms between keys, about one in five overlapping", () => {
+  for (const pace of [TYPING_PACE, 0.5, 1]) {
+    const { median, share, least } = rhythm(pace, true);
+    assert.ok(median > 125 && median < 185, `median ${median.toFixed(0)} ms between keys`);
+    assert.ok(share > 0.1 && share < 0.35, `${(share * 100).toFixed(0)}% of keys overlap the next`);
+    assert.ok(least > 54, "no two keys closer than a hand manages");
+  }
 });
 
 // A page with fields in tab order: what humanFill asks of it is recorded.
@@ -384,8 +403,8 @@ test("a single browser_type clicks the field once, clears it, types key by key a
   const moves = form.log.filter((l) => /^(click|fill|press)/.test(l));
   assert.deepEqual(moves, ["click e1", "press ControlOrMeta+a", "press Backspace"], "the engine's own click, then a hand's clear; never an instant fill");
   assert.deepEqual(form.log.filter((l) => l.startsWith("down ") && l !== "down Shift").map((l) => l.slice(5)), Array.from(T41), "every character key by key");
-  const everyday = perKey(TYPING_PACE);
-  assert.ok(everyday > 140 && everyday < 220, `an everyday typist's pace by default: ${everyday.toFixed(1)} ms a key`);
+  const quick = perKey(TYPING_PACE);
+  assert.ok(quick >= 22 && quick < 40, `a fast typist's rollover at the default pace: ${quick.toFixed(1)} ms a key`);
   assert.match(traced[0], /^browser_type, 41 characters: Notes by click: check \d+, click \d+, read \d+, clear \d+, type \d+, read \d+ ms$/);
   // The field has the focus now: no second click.
   const again = await humanType(form.page, { target: "e1", name: "Notes", value: "Hi" }, fillSettings({}), { rng: seeded(), wait, trace: (l) => traced.push(l) });
@@ -403,19 +422,63 @@ test("browser_type says so when the keys went nowhere: nothing had the focus and
   assert.deepEqual(r, { line: "Notes didn't take what was typed: it is empty.", failed: true });
 });
 
-test("browser_type slowly types at the everyday pace or slower, at the caret, and still reads the field back", async () => {
+test("browser_type slowly types at about 90 ms a key, at the caret, and still reads the field back", async () => {
   const slow = perKey(SLOW_TYPE_PACE);
-  assert.ok(slow > 140 && slow < 220, `slowly is the everyday hand: ${slow.toFixed(1)} ms a key`);
+  assert.ok(slow > 80 && slow < 100, `slowly is about 90 ms a key: ${slow.toFixed(1)}`);
   const form = fakeForm([{ ref: "e1", type: "textbox", value: "Ams" }]);
   const r = await humanType(form.page, { target: "e1", name: "Search", value: "terdam" }, fillSettings({}), { rng: seeded(), wait: async () => {}, slowly: true });
   assert.deepEqual(r, { line: "Typed into Search.", failed: false });
   assert.equal(form.byRef.get("e1").value, "Amsterdam", "slowly adds to what the field holds, as key-by-key typing did");
   assert.equal(form.log.some((l) => l === "press Backspace"), false);
-  // Slowly waits longer than a quicker typingPace, and as long as the default one.
-  const quick = await waitedBy(fillSettings({ pairbrowse: { typingPace: 0.3 } }), {});
-  const slowly = await waitedBy(fillSettings({ pairbrowse: { typingPace: 0.3 } }), { slowly: true });
-  const everyday = await waitedBy(fillSettings({}), { slowly: true });
-  assert.ok(slowly > quick * 1.5 && Math.abs(everyday - slowly) < slowly * 0.1, `waited ${quick} < ${slowly}, about ${everyday}`);
+  // Slowly waits longer than the default pace; a slower typingPace stays slower than slowly.
+  const quick = await waitedBy(fillSettings({}), {});
+  const slowly = await waitedBy(fillSettings({}), { slowly: true });
+  const slowest = await waitedBy(fillSettings({ pairbrowse: { typingPace: 1 } }), { slowly: true });
+  assert.ok(slowly > quick * 1.5 && slowest > slowly, `waited ${quick} < ${slowly} < ${slowest}`);
+});
+
+// The adaptive input pace (native/pace.mjs, spec step 51): each field typed at the pace decided for
+// it, the decision told to the caller (the result says it).
+test("browser_type types at the everyday rhythm where the pace for its field is human, and says which pace it took", async () => {
+  const human = { pace: "human", why: "sign-in" }, fast = { pace: "fast", why: "" };
+  const told = [];
+  // A mocked clock: each wait is the time from the first key, so the longest is the whole text's.
+  const typed = async (decision, settings = fillSettings({})) => {
+    let waited = 0;
+    const form = fakeForm([{ ref: "e1", type: "textbox" }]);
+    const r = await humanType(form.page, { target: "e1", name: "Email", value: T41 }, settings, { rng: seeded(), wait: async (ms) => { waited = Math.max(waited, ms); }, decide: async (page, loc, setting) => { assert.equal(setting, settings.inputPace); assert.equal(typeof loc.evaluate, "function"); return decision; }, onPace: (d, label) => told.push([d, label]) });
+    assert.deepEqual(r, { line: "Typed into Email.", failed: false });
+    return waited / T41.length;
+  };
+  const quick = await typed(fast), everyday = await typed(human);
+  assert.ok(quick < 45, `fast: ${quick.toFixed(1)} ms a key`);
+  assert.ok(everyday > 120, `everyday: ${everyday.toFixed(1)} ms a key`);
+  assert.deepEqual(told, [[fast, "Email"], [human, "Email"]]);
+  // A quicker or slower typingPace changes the fast pace only.
+  assert.ok(Math.abs(await typed(human, fillSettings({ pairbrowse: { typingPace: 0.5 } })) - everyday) < 1);
+});
+
+test("a form fill decides each field's pace as it reaches it", async () => {
+  const form = fakeForm([{ ref: "e1", type: "textbox" }, { ref: "e2", type: "textbox" }, { ref: "e3", type: "textbox" }]);
+  const items = [
+    { target: "e1", name: "Search", type: "textbox", value: T41 },
+    { target: "e2", name: "Email", type: "textbox", value: T41 },
+    { target: "e3", name: "Password", type: "textbox", value: T41, shown: "SITE_PASSWORD" },
+  ];
+  const told = [], longest = { e1: 0, e2: 0, e3: 0 };
+  let current = null, i = 0;
+  const byField = { e1: { pace: "fast", why: "" }, e2: { pace: "human", why: "sign-in" }, e3: { pace: "human", why: "sign-in" } };
+  // A mocked clock: each wait while typing is the time from the field's first key.
+  const { lines, failed } = await humanFill(form.page, items, fillSettings({ pairbrowse: { formMove: "mouse" } }), {
+    rng: seeded(), wait: async (ms) => { longest[current] = Math.max(longest[current], ms); },
+    decide: async () => { current = items[i++].target; return byField[current]; },
+    onPace: (decision, label) => told.push({ decision, label }),
+  });
+  assert.equal(failed, false);
+  assert.deepEqual(lines, [`Filled Search with ${T41}`, `Filled Email with ${T41}`, "Filled Password with SITE_PASSWORD."]);
+  assert.deepEqual(told.map((t) => [t.label, t.decision.pace]), [["Search", "fast"], ["Email", "human"], ["Password", "human"]]);
+  const perKey = Object.fromEntries(Object.entries(longest).map(([k, v]) => [k, v / T41.length]));
+  assert.ok(perKey.e1 < 45 && perKey.e2 > 120 && perKey.e3 > 120, `ms a key: ${JSON.stringify(perKey)}`);
 });
 
 test("browser_type never says a secret, and says when the value didn't stay", async () => {

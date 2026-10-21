@@ -12,7 +12,7 @@ import { CATALOG, HELPER_TOOLS, OFFERED_PLAYWRIGHT, RUNS_TOOLS, toolsWith, tools
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const RULES = new Set(["blocked", "hidden", "mentionOnly", "screenshot", "loading", "inline", "inlineShort", "clicking", "tab", "field", "pageRead",
-  "noWait", "noPickWait", "decorated", "browserGuarded", "approval", "forwarded", "remote"]);
+  "noWait", "noPickWait", "decorated", "browserGuarded", "approval", "forwarded", "remote", "paced"]);
 
 test("every entry is well formed: a known server, origin and rules, and a definition under its own name", () => {
   for (const [name, t] of Object.entries(CATALOG)) {

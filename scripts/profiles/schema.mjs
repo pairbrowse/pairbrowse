@@ -194,7 +194,7 @@ const NEVER = {
   "proxy server": ["proxy", "proxyServer", "proxies", "proxyAuth", "server", "username", "password"],
   "launch option": ["args", "browserArgs", "switches", "launchOptions", "env", "headless", "ignoreDefaultArgs",
     "ignoredArgs", "browserSandbox", "sandbox", "channel", "devtools", "remoteDebuggingPort", "executableArgs"],
-  "agent option": ["agent", "agentOptions", "humanize", "typingPace", "motion", "formMove", "showCursor"],
+  "agent option": ["agent", "agentOptions", "humanize", "typingPace", "motion", "formMove", "showCursor", "inputPace"],
   "canvas bridge": ["canvasBridge"],
   "hardware value": ["gpuVendor", "gpuRenderer", "gpuStringSpoof", "disableGpuFingerprint", "hardwareConcurrency", "deviceMemory",
     "maxTouchPoints", "platform", "platformVersion", "brand", "brandVersion", "webgl", "webgpu", "fonts", "audio", "speech", "codecs",

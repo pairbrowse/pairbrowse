@@ -1,39 +1,48 @@
 // Humanized input in the native browser: typing with a person's rhythm (humanType) and form fills
 // field by field (humanFill), paced by "pairbrowse" typingPace and formMove in config.json. Used for
-// every engine by daemon/serve.mjs; the engine pack's own humanize covers mouse moves.
+// every engine by daemon/serve.mjs; the engine pack's own humanize covers mouse moves. Each field is
+// typed at the pace native/pace.mjs decides for it: typingPace's quick rhythm, or an everyday
+// typist's where a verification widget or a sign-in, sign-up or payment form scores the input.
 import { within, sleep } from "../util.mjs";
+import { inputPaceOf, paceFor } from "./pace.mjs";
+import { useMotion } from "./paced-motion.mjs";
 
-// typingPace: how fast humanized typing goes, 0.2 (fastest) to 1 (an everyday typist's: about 150 ms
-// between keys, measured as the median, with about one key in five still down when the next goes
-// down, and the engine's own rhythm for the keys it types itself); the gaps between keys scale, how
-// long each key is held doesn't. The default, 1, is that everyday hand: the ordinary-browser
-// measurement (server-mode spec, decision 11) read the old default, 0.2, as about 23 ms a key with
-// nine keys in ten overlapping, a rhythm no person keeps up. A quicker pace is the config's choice.
-// A form fill (humanFill) has its own rhythm at the same pace.
-export const TYPING_PACE = 1;
+// typingPace: how fast humanized typing goes at the fast pace, 0.2 (fastest) to 1 (the engine's
+// own, about 60 words a minute); the gaps between keys scale, how long each key is held doesn't.
+// The default, 0.2, is a fast typist's rollover (measured: 0.3 is about 104 words a minute, 0.5 is
+// 80). Where the input is scored (the adaptive pace, spec step 51), or with inputPace "human",
+// typing takes an everyday typist's rhythm instead (keystrokeSchedule's human one), whatever this
+// says. A form fill (humanFill) has its own rhythm at the same pace.
+export const TYPING_PACE = 0.2;
 export const clampPace = (pace, floor = 0.2) => Math.min(1, Math.max(floor, Number(pace) || TYPING_PACE));
 
 // What a form fill (browser_fill_form) in the native browser follows. typingPace as above, floored at
 // 0.2 here, as single actions are. formMove: "tab" (the
 // default) goes on to the next field with the Tab key when it is next in the page's own order, by
-// mouse otherwise; "mouse" reaches for every field, as single actions do.
+// mouse otherwise; "mouse" reaches for every field, as single actions do. inputPace: "adaptive"
+// (the default), "fast" or "human" (native/pace.mjs).
 export const FILL_PACE_FLOOR = 0.2;
 export function fillSettings(config) {
   const { typingPace = TYPING_PACE, formMove = "tab" } = config?.pairbrowse ?? {};
-  return { typingPace: clampPace(typingPace, FILL_PACE_FLOOR), formMove: formMove === "mouse" ? "mouse" : "tab" };
+  return { typingPace: clampPace(typingPace, FILL_PACE_FLOOR), formMove: formMove === "mouse" ? "mouse" : "tab", inputPace: inputPaceOf(config) };
 }
 
-// Typing a value in a form fill: key by key with a person's rhythm. The gaps between keys and the
-// time each key is held are skewed as people's are (log-normal: mostly near the middle, now and then
-// a quick pair or a slow one), so a quick pair often goes down before the last key comes up
-// (rollover); Shift is held for capitals and signs; a beat after a word or a sign, now and then a
-// thought. The gaps scale with pace, the hold of each key doesn't. Returns
-// [{ at, type: "down" | "up", key }], at in ms from the first key, in order.
+// Typing a value in a form fill: key by key with a person's rhythm. Shift is held for capitals and
+// signs; a beat after a word or a sign, now and then a thought. Two rhythms:
+// - quick (the fast pace): the gaps between keys even (55 to 160 ms at pace 1, scaled by pace), each
+//   key held 40 to 95 ms, so at the default pace the next key goes down before the last one comes
+//   up (rollover), as a fast typist's do;
+// - human (an everyday typist's, at pace 1 whatever typingPace says): gaps and holds skewed as
+//   people's are (log-normal: mostly near the middle, now and then a quick pair or a slow one),
+//   about 150 ms between keys and one key in five still down when the next goes down (the
+//   ordinary-browser measurement's reference, server-mode spec decision 11).
+// The gaps scale with pace, the hold of each key doesn't. Returns [{ at, type: "down" | "up", key }],
+// at in ms from the first key, in order.
 const SHIFTED = /^[A-Z~!@#$%^&*()_+{}|:"<>?]$/;
-const KEY_GAP_MS = 135, KEY_GAP_SPREAD = 0.42, KEY_GAP_RANGE = [55, 480]; // at pace 1
+const KEY_GAP_MS = 135, KEY_GAP_SPREAD = 0.42, KEY_GAP_RANGE = [55, 480]; // the human rhythm
 const KEY_HOLD_MS = 100, KEY_HOLD_SPREAD = 0.25, KEY_HOLD_RANGE = [45, 170];
-export function keystrokeSchedule(text, pace = TYPING_PACE, rng = Math.random) {
-  const p = clampPace(pace, FILL_PACE_FLOOR);
+export function keystrokeSchedule(text, pace = TYPING_PACE, rng = Math.random, { human = false } = {}) {
+  const p = human ? 1 : clampPace(pace, FILL_PACE_FLOOR);
   const between = (a, b) => a + (b - a) * rng();
   // A log-normal draw around median, its spread in natural log units, kept inside range.
   const skewed = (median, spread, [lo, hi]) => {
@@ -49,7 +58,7 @@ export function keystrokeSchedule(text, pace = TYPING_PACE, rng = Math.random) {
     const key = ch === "\n" ? "Enter" : ch === "\t" ? "Tab" : ch;
     const needsShift = SHIFTED.test(ch);
     if (i > 0) {
-      let gap = skewed(KEY_GAP_MS, KEY_GAP_SPREAD, KEY_GAP_RANGE);
+      let gap = human ? skewed(KEY_GAP_MS, KEY_GAP_SPREAD, KEY_GAP_RANGE) : between(55, 160);
       if (/[\s.,;:!?@\-_/]/.test(chars[i - 1])) gap += between(15, 80);
       if (rng() < 0.03) gap += between(150, 350);
       at += gap * p;
@@ -62,7 +71,7 @@ export function keystrokeSchedule(text, pace = TYPING_PACE, rng = Math.random) {
       at += between(40, 110) * p;
     }
     if (upAt.has(key)) at = Math.max(at, upAt.get(key) + between(8, 30));
-    const dwell = skewed(KEY_HOLD_MS, KEY_HOLD_SPREAD, KEY_HOLD_RANGE);
+    const dwell = human ? skewed(KEY_HOLD_MS, KEY_HOLD_SPREAD, KEY_HOLD_RANGE) : between(40, 95);
     events.push({ at, type: "down", key });
     lastUp = at + dwell;
     upAt.set(key, lastUp);
@@ -72,15 +81,16 @@ export function keystrokeSchedule(text, pace = TYPING_PACE, rng = Math.random) {
   return events.sort((a, b) => a.at - b.at || (a.type === b.type ? 0 : a.type === "down" ? -1 : 1));
 }
 
-// browser_type with slowly: never quicker than the everyday hand (pace 1), also when typingPace is
-// set quicker.
-export const SLOW_TYPE_PACE = 1;
+// browser_type with slowly at the fast pace: a slower hand, about 90 ms a key (a slower typingPace
+// stays slower; the everyday pace is slower anyway).
+export const SLOW_TYPE_PACE = 0.7;
 const defaultWait = sleep;
 
-// Types text on the page's keyboard: each key down and up when the schedule says.
-async function typeKeys(keys, text, pace, rng, wait) {
+// Types text on the page's keyboard: each key down and up when the schedule says. human: the
+// everyday typist's rhythm.
+async function typeKeys(keys, text, pace, rng, wait, human = false) {
   const start = Date.now();
-  for (const e of keystrokeSchedule(text, pace, rng)) {
+  for (const e of keystrokeSchedule(text, pace, rng, { human })) {
     const due = start + e.at - Date.now();
     if (due > 0) await wait(due);
     await (e.type === "down" ? keys.down(e.key) : keys.up(e.key));
@@ -115,16 +125,21 @@ const errorLine = (error) => String(error?.message || error).split("\n")[0].slic
 // browser_type in the native browser: the field focused by the engine's own reach and click (none
 // when it has the focus already), what it holds cleared (slowly: typed at the caret, as the key-by-key
 // path always did), the text key by key (keystrokeSchedule) at settings.typingPace, or slowly at
-// SLOW_TYPE_PACE when that is slower; read back. item: { target (aria ref), name, value, shown } as
-// in humanFill. Returns { line, failed }. trace: one line on how it went (the daemon log).
-export async function humanType(page, item, settings, { rng = Math.random, wait = defaultWait, trace = null, slowly = false } = {}) {
+// SLOW_TYPE_PACE when that is slower, or with an everyday typist's rhythm where the pace for the
+// field is "human" (decide: native/pace.mjs paceFor; the moves follow it, paced-motion.mjs; told
+// to onPace(decision, label, moves), moves the pace they went at, useMotion); read back. item: { target (aria ref), name, value, shown } as in
+// humanFill. Returns { line, failed }. trace: one line on how it went (the daemon log).
+export async function humanType(page, item, settings, { rng = Math.random, wait = defaultWait, trace = null, slowly = false, decide = paceFor, onPace = null } = {}) {
   const between = (a, b) => a + (b - a) * rng();
   const keys = page.keyboard;
   const label = item.name || item.target;
   const value = String(item.value ?? "");
   const plain = String(item.shown ?? value) === value;
-  const pace = slowly ? Math.max(settings.typingPace, SLOW_TYPE_PACE) : settings.typingPace;
   const loc = page.locator(`aria-ref=${item.target}`).first();
+  const decision = await decide(page, loc, settings.inputPace);
+  onPace?.(decision, label, await useMotion(page, decision.pace));
+  const human = decision.pace === "human";
+  const pace = slowly ? Math.max(settings.typingPace, SLOW_TYPE_PACE) : settings.typingPace;
   // How long each step took (the trace line): the daemon log shows where a slow page spent it.
   const steps = [];
   let at = Date.now();
@@ -140,7 +155,7 @@ export async function humanType(page, item, settings, { rng = Math.random, wait 
     const had = (await readFocused(page)) ?? await readBack(loc);
     step("read");
     if (!slowly && had?.length) { await clearField(keys, between, wait); step("clear"); }
-    await typeKeys(keys, value, pace, rng, wait);
+    await typeKeys(keys, value, pace, rng, wait, human);
     step("type");
     // Nothing with the focus (the click never focused it): the field itself says what it took.
     const now = (await readFocused(page)) ?? await readBack(loc);
@@ -202,14 +217,15 @@ function selectByTyping(el, label) {
 // value (what goes in), shown (what the result may say: a secret shows its name) }].
 // Returns { lines, failed }. A field whose value doesn't stay is said so; the rest go on. trace: one
 // line on how each field was reached and how long it took (the daemon log). isoDate: a date in
-// another spelling as YYYY-MM-DD, or null (runner.mjs).
+// another spelling as YYYY-MM-DD, or null (runner.mjs). Each field at its own pace, decided as
+// it is reached (decide and onPace as in humanType).
 const DATE_SHAPES = { date: "YYYY-MM-DD", "datetime-local": "YYYY-MM-DDThh:mm", month: "YYYY-MM", week: "YYYY-Www", time: "hh:mm" };
-export async function humanFill(page, items, settings, { rng = Math.random, wait = defaultWait, trace = null, isoDate: toIso = () => null } = {}) {
+export async function humanFill(page, items, settings, { rng = Math.random, wait = defaultWait, trace = null, isoDate: toIso = () => null, decide = paceFor, onPace = null } = {}) {
   const between = (a, b) => a + (b - a) * rng();
   const keys = page.keyboard;
   const lines = [], took = [];
-  let failed = false;
-  const type = (text) => typeKeys(keys, text, settings.typingPace, rng, wait);
+  let failed = false, human = false;
+  const type = (text) => typeKeys(keys, text, settings.typingPace, rng, wait, human);
   for (const item of items) {
     const label = item.name || item.target;
     const value = String(item.value ?? "");
@@ -217,6 +233,9 @@ export async function humanFill(page, items, settings, { rng = Math.random, wait
     const plain = shown === value; // the value may be said in the result
     const loc = page.locator(`aria-ref=${item.target}`).first();
     const started = Date.now();
+    const decision = await decide(page, loc, settings.inputPace);
+    onPace?.(decision, label, await useMotion(page, decision.pace));
+    human = decision.pace === "human";
     let how = "mouse", typedAt = null;
     try {
       let focused = false;

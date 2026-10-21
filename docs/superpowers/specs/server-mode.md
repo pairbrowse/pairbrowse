@@ -2762,6 +2762,62 @@ it depends on.
     `proxy-docker`, `canvas-bridge-dead`; the native proxy credential cases in
     `test/integration/proxy.test.mjs`), step 50 (`docs/server.md`, `docs/profiles.md`, the docs above,
     ADR 9, `.claude/CLAUDE.md`, CHANGELOG 0.17.0, the version bump and the tag `v0.17.0`, made locally).
+51. Adaptive input pace (user, 2026-10-22: keep fast typing for sites without detection). Commits
+    935acfd and 9df7181 made humanized typing (an everyday typist's rhythm) and moves (`"combined"`)
+    slow everywhere; now fast by default (the pace before them) and the everyday rhythm only where it
+    matters: (1) the page carries a verification or scoring widget, read by structure as PairBrowse
+    already knows a CAPTCHA (frames and scripts of challenge and scoring widgets, invisible ones
+    included), never by a list of sites; (2) the field is in a sign-in, sign-up or payment form
+    (password, one-time code, card or account-creation fields, read as the form scans do). Decided per
+    page and per field as the typing or move starts; a page that loads a widget later switches from
+    then on. The tool result says which pace in a few words. Config `pairbrowse.inputPace`
+    `"adaptive"` (default), `"fast"`, `"human"`.
+    Landed as: `scripts/native/pace.mjs` (new): `inputPaceOf`, `decidePace(setting, { widget, form })`
+    (`{ pace: "fast" | "human", why }`), `formKind(hints)` (`payment`: a `cc-number`/`cc-csc`/`cc-exp`
+    token or `rules/cards.mjs` `CARD_NAME`; `sign-up`: a `new-password` or two password fields;
+    `sign-in`: a password or a user name; `one-time code`; `sensitive`: another field
+    `rules/policy.mjs` `sensitiveHints` calls sensitive), `paceFor(page, loc, setting)` (the page's
+    frames as the driver knows them, matched by `popups.mjs` `CHALLENGE`, now exported, without its
+    "visible only" filter, so score-based reCAPTCHA's invisible anchor frame and non-interactive
+    Turnstile count; plus one bounded in-page scan on the element acted on: a `script[src]` or
+    frame of a widget maker in its document, or a widget's container `WIDGET_BOXES` (`.g-recaptcha`,
+    `.grecaptcha-badge`, `.h-captcha`, `.cf-turnstile`, `[data-sitekey]`), and the hints of each field
+    of its form, the `<form>` or the nearest element around it holding another field; a widget seen
+    stays seen for the page until its main frame's address changes), `paceWords` and `paceLine`
+    ("Pace: fast.", "Pace: everyday (sign-in form).", or per field "Pace: everyday for Email,
+    Password (sign-in form); fast for the rest.", the rest said only when a field went fast; moves
+    that couldn't take the decided pace in time add "moves stayed fast"). Typing: `native/humanize.mjs` `TYPING_PACE` back to
+    0.2 and the quick rhythm before 935acfd (even gaps 55 to 160 ms scaled by pace, holds 40 to 95
+    ms, `SLOW_TYPE_PACE` 0.7); `keystrokeSchedule(text, pace, rng, { human })` keeps 935acfd's
+    log-normal rhythm as the everyday one, always at pace 1; `humanType` and `humanFill` decide per
+    field as they reach it (`decide`, `onPace`), `fillSettings` carries `inputPace`. Moves: the engine
+    pack reads a page's motion once, when it takes the page over, so the implementation differs from
+    "decide at the moment of moving" inside the pack: `native/paced-motion.mjs` (new) has the pack take
+    each page over twice under `"adaptive"` (its context hook given a scope of one page per set: the
+    fast set at `motion`, default `"fast"` again, and `typingPace`; the everyday set at `"combined"`
+    and pace 1; the cursor's script the fast set's alone), keeps each set's methods on the page, its
+    mouse and keyboard, and `useMotion(page, pace)` swaps the set in use and returns the pace the
+    moves go at now (the old one when the swap couldn't happen in time). The two share one pointer:
+    the set not in use follows each move silently (its own moves swallowed, a moment after the other
+    stops, and before a swap at the latest, bounded at 4 s), so a swap never jumps the pointer.
+    `"fast"`, `"human"`, humanize off, or a pack that takes no page hook: the pack takes the context
+    once, as before (the last with a line in the log). `native-engine.mjs` `paceSets` and `readSettings`
+    (`inputPace`, `motion` default `"fast"`); `daemon/serve/rewrite.mjs` `paceUp` decides for the
+    pointer tools, once nothing more refuses the call, so a refusal leaves no pace line for the next
+    result (the catalog's new rule `paced`, `tools/catalog.mjs`, read as `serve/wire.mjs` `PACED_TOOLS`: `browser_click`, hover, select, drag, drop, file upload, press key,
+    `pairbrowse_click_at`, `pairbrowse_scroll`, `pairbrowse_upload`) on the page and the element
+    acted on, and says the pace in the result's notes (`pairbrowse_click_at` and `pairbrowse_scroll`
+    in their own text, `conn.paceNote`); typing results say it per call or per form. Config:
+    `config-schema.mjs` `pairbrowse.inputPace`; a profile can't set it (`profiles/map.mjs`
+    `GLOBAL_KEYS`, `profiles/schema.mjs` agent options). Docs: `docs/configuration.md`,
+    `docs/browser.md`. Measured on the native build (macOS, `test/integration/input-pace.test.mjs`, 30
+    characters each): a plain page 23 ms between keys with 97% overlapping; a page with only a
+    score-based widget's script 158 ms, 24%; a sign-in form's email field 136 ms, 28%; a page whose
+    widget frame loads after a first typing 21 ms, 100% before and 135 ms, 17% after; the clicks to
+    those fields took 0.4 to 0.5 s at the fast pace and 0.7 to 1 s at the everyday one. Tests:
+    `test/input-pace.test.mjs` (new: the decision with and without a widget, a sensitive form or not,
+    a widget loading later; the two move sets and the swap without a jump), `test/native-engine.test.mjs`,
+    `test/integration/input-pace.test.mjs` (new).
 
 ## 12. Security implications
 
@@ -2978,9 +3034,13 @@ binding for implementation; where a phase section above says otherwise, this sec
     off the `browserArgs` allowlist: it turns the browser's WebGPU blocklist off, a security check
     the allowlist never relaxes, and the run with it (setup d) could not be made; WebGPU on a host
     without a GPU waits for the engine to offer an adapter under the identity without it (an
-    engine gap, measured again then). Also from it: humanized typing defaults to an everyday
-    typist's rhythm (`typingPace` 1: about 150 ms between keys, one key in five overlapping) and
-    moves to the profile's own speed (`motion` `"combined"`); the live view's tab icons cost no
+    engine gap, measured again then). Also from it: humanized input takes an everyday person's
+    rhythm (about 150 ms between keys, one key in five overlapping; moves at the profile's own
+    speed, `"combined"`) where it is scored, and keeps the fast pace elsewhere (user, 2026-10-22:
+    "keep this for non detection sites"; step 51, `pairbrowse.inputPace` `"adaptive"` by default:
+    `typingPace` 0.2 and `motion` `"fast"` stay the fast pace's defaults, the everyday pace on a
+    page carrying a verification or scoring widget and for a field in a sign-in, sign-up or payment
+    form, both read by structure; `"fast"` and `"human"` fix one pace); the live view's tab icons cost no
     request outside the browser; a server's UTC clock is named at launch and `docs/server.md` sets
     the exit's zone. WebRTC's default deny for a session without a proxy (no candidates, where an
     everyday browser shows a hidden local and a public address) stays until the person decides

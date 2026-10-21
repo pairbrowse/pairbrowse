@@ -73,14 +73,20 @@ try {
   let seq = 0;
   const send = async (batch) => { seq++; return retried("POST", `${new URL("input", view).href}?run=${run}&seq=${seq}`, batch); };
   const X = Number(x), Y = Number(y);
+  let t1 = Date.now();
   const tapped = await send([
     { type: "mouse", action: "mouseMoved", x: X, y: Y, button: "none", buttons: 0 },
     { type: "mouse", action: "mousePressed", x: X, y: Y, button: "left", buttons: 1, clickCount: 1 },
     { type: "mouse", action: "mouseReleased", x: X, y: Y, button: "left", buttons: 0, clickCount: 1 },
   ]);
-  step("tap", { status: tapped.status });
+  step("tap", { status: tapped.status, ms: Date.now() - t1 });
+  t1 = Date.now();
   const typedR = await send([...typed].map((c) => ({ type: "char", text: c, modifiers: 0 })));
-  step("typed", { status: typedR.status });
+  step("typed", { status: typedR.status, ms: Date.now() - t1 });
+  // The typed text back in a picture: the frames before it and the first one after it.
+  const framesAt = events("frame").length;
+  for (const end = Date.now() + 15_000; Date.now() < end && events("frame").length === framesAt; await sleep(20));
+  step("echo", { ms: Date.now() - t1, frame: events("frame").length > framesAt });
   // A few seconds of pictures through the slow link, then Done.
   await sleep(4000);
   step("frames", { count: events("frame").length });

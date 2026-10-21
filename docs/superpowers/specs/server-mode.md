@@ -1644,7 +1644,8 @@ it depends on.
    `test/liveview-mobile.test.mjs` (the viewer on the public port, its WebSocket stream); opt-in `test/optin/public-handoff.test.mjs`
    (`PAIRBROWSE_TEST_REAL_TUNNEL=1` and `PAIRBROWSE_TEST_DOCKER=1`: a real Quick Tunnel, the person's
    side from a Linux container with `tc netem` 300 ms delay and 2% loss, the turn viewer driven there,
-   the step finished, the tunnel gone after).
+   the step finished, the tunnel gone after; a second hand-off then starts a fresh tunnel, gone after
+   it too, and the person's input round trips and first picture after typing are timed).
 22. `browser_wait_for` early wake, `handedOff` refusals, card-field refusals in every session,
     fast-mode step, `turn.json` recovery (B9, B13, B15, B16). -> 21, 8
    Landed as: B9: `yourturn.handedOff(page)` answers `"open"`, `"held"` or `""`; `tabRefusal(...,

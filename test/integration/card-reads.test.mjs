@@ -5,13 +5,12 @@
 import "../helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createRequire } from "node:module";
 import { createServer } from "node:http";
-import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { session, testBase } from "../helpers/live.mjs";
 import { sleep, text } from "../helpers/util.mjs";
-import { spawnDaemon, stopDaemon } from "../helpers/daemon.mjs";
+import { spawnDaemon, stopDaemon, testBrowser, linkInstalls } from "../helpers/daemon.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const serve = (pages) => createServer((req, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end(pages[req.url.split("?")[0]] ?? pages["/"]); });
@@ -44,9 +43,8 @@ ${typed({ c: MAIN_CARD, s: "4471", k: MAIN_CVC, z: "94107" })}`,
   const base = testBase();
   mkdirSync(base, { recursive: true });
   const h = mkdtempSync(join(base, "cards-"));
-  symlinkSync(runtime, join(h, "runtime"), "dir");
-  const executablePath = createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
-  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, browserArgs: ["--headless=new"], display: "none", screenshots: false }));
+  linkInstalls(h, runtime);
+  writeFileSync(join(h, "config.json"), JSON.stringify({ ...testBrowser(runtime), browserArgs: ["--headless=new"], display: "none", screenshots: false }));
   const daemon = spawnDaemon(h);
   const socketPath = join(h, "run", "browser.sock");
   for (let i = 0; i < 600 && !existsSync(socketPath); i++) await sleep(50);

@@ -18,9 +18,22 @@ export async function until(what, check, ms = 30_000, every = 300) {
 // The text of a tool call's answer (its text parts, or the error's message).
 export const text = (r) => (r.result?.content || []).map((c) => c.text || "").join("\n") || r.error?.message || "";
 
+// The native build measures its graphics once per home at its first start (a few seconds on a Mac
+// with a GPU), and refuses tool calls meanwhile with "retry" (daemon/browser/graphics.mjs
+// MEASURING_BUSY). throughMeasuring(ask) asks again, as an agent would, for up to 3 minutes, and
+// returns the first other answer.
+const MEASURING = /^PairBrowse is measuring this browser's graphics once/;
+export async function throughMeasuring(ask) {
+  for (const end = Date.now() + 180_000; ;) {
+    const r = await ask();
+    if (!MEASURING.test(text(r)) || Date.now() > end) return r;
+    await sleep(1000);
+  }
+}
+
 // JSON-RPC over a line stream: write(line) sends, input is read line by line for answers. Returns
 // call(method, params, ms) that resolves with the answer of the same id, or rejects after ms
-// (by default `ms` here).
+// (by default `ms` here). A tools/call goes through throughMeasuring.
 export function rpc(write, input, { prefix = "t", ms: fallback = 60_000 } = {}) {
   const waiting = new Map();
   createInterface({ input }).on("line", (line) => {
@@ -29,12 +42,13 @@ export function rpc(write, input, { prefix = "t", ms: fallback = 60_000 } = {}) 
     if (m.id !== undefined && waiting.has(m.id)) { waiting.get(m.id)(m); waiting.delete(m.id); }
   });
   let seq = 0;
-  return (method, params = {}, ms = fallback) => new Promise((resolve, reject) => {
+  const once = (method, params, ms) => new Promise((resolve, reject) => {
     const id = `${prefix}${++seq}`;
     const timer = setTimeout(() => reject(new Error(`timed out: ${method} ${params.name || ""}`)), ms);
     waiting.set(id, (m) => { clearTimeout(timer); resolve(m); });
     write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
   });
+  return (method, params = {}, ms = fallback) => (method === "tools/call" ? throughMeasuring(() => once(method, params, ms)) : once(method, params, ms));
 }
 
 // The MCP opening as Claude Code sends it, on a call from rpc() and its socket.

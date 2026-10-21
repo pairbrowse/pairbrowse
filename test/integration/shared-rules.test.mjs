@@ -7,13 +7,12 @@
 import "../helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createRequire } from "node:module";
 import { createServer } from "node:http";
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, rmSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { testBase, attachDaemon } from "../helpers/live.mjs";
 import { rpc, sleep, text, until } from "../helpers/util.mjs";
-import { spawnDaemon, stopDaemon } from "../helpers/daemon.mjs";
+import { spawnDaemon, stopDaemon, testBrowser, linkInstalls } from "../helpers/daemon.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const shortBase = testBase();
@@ -36,13 +35,11 @@ const tool = (call, name, args = {}) => call("tools/call", { name, arguments: ar
 function home(prefix) {
   mkdirSync(shortBase, { recursive: true });
   const dir = mkdtempSync(join(shortBase, prefix));
-  symlinkSync(runtime, join(dir, "runtime"), "dir");
+  linkInstalls(dir, runtime);
   return dir;
 }
 
 test("shared sessions: agent turns across computers, scroll presence, payment forms by structure, card values", { skip: !runtime, timeout: 300_000 }, async () => {
-  const require = createRequire(join(runtime, "package.json"));
-  const executablePath = require("patchright").chromium.executablePath();
   let submitted = 0;
   const fixture = createServer((req, res) => {
     if (req.url.startsWith("/submitted")) submitted++;
@@ -54,8 +51,8 @@ test("shared sessions: agent turns across computers, scroll presence, payment fo
   const browserArgs = ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${port}`];
   const hostHome = home("sh-");
   const joinHome = home("sj-");
-  writeFileSync(join(hostHome, "config.json"), JSON.stringify({ executablePath, browserArgs, display: "none", screenshots: false, participantName: "Bob" }));
-  writeFileSync(join(joinHome, "config.json"), JSON.stringify({ executablePath, browserArgs, display: "none", screenshots: false, participantName: "Alice" }));
+  writeFileSync(join(hostHome, "config.json"), JSON.stringify({ ...testBrowser(runtime), browserArgs, display: "none", screenshots: false, participantName: "Bob" }));
+  writeFileSync(join(joinHome, "config.json"), JSON.stringify({ ...testBrowser(runtime), browserArgs, display: "none", screenshots: false, participantName: "Alice" }));
   const env = (h) => ({ ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1", PAIRBROWSE_TEST_FILL: "1" });
   const daemons = [];
   const connect = async (h) => {

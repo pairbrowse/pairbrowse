@@ -9,16 +9,16 @@
 import "../helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, existsSync, readFileSync, readlinkSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync, existsSync, readFileSync, readlinkSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { session, testBase, attachDaemon } from "../helpers/live.mjs";
 import { text, until } from "../helpers/util.mjs";
-import { root, driverBrowserPath, stopDaemon } from "../helpers/daemon.mjs";
-import { startProbeSite, probe, profilesCli, sessionFolder } from "../helpers/profiles-live.mjs";
+import { root, testBrowser, linkInstalls, stopDaemon } from "../helpers/daemon.mjs";
+import { startProbeSite, probe, profilesCli, sessionFolder, browserFolder, BROWSER_KIND } from "../helpers/profiles-live.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
-const OPEN = (languages) => ({ browser: { kind: "pairbrowse-open" }, locale: { languages, timezone: null, source: "set" } });
+const SETTINGS = (languages) => ({ browser: { kind: BROWSER_KIND }, locale: { languages, timezone: null, source: "set" } });
 
 test("two instances on separate profiles share nothing; one session can't open in two browsers", { skip: !runtime && "set PAIRBROWSE_TEST_RUNTIME", timeout: 240_000 }, async () => {
   const site = await startProbeSite();
@@ -27,13 +27,13 @@ test("two instances on separate profiles share nothing; one session can't open i
   const account = mkdtempSync(join(base, "pbi-"));
   const shared = join(account, ".pairbrowse");
   mkdirSync(shared, { recursive: true });
-  symlinkSync(runtime, join(shared, "runtime"), "dir");
+  linkInstalls(shared, runtime);
   // An instance's environment: this account folder, the instance named, no PAIRBROWSE_HOME.
   const envOf = (name) => { const env = { ...process.env, HOME: account, PAIRBROWSE_INSTANCE: name }; delete env.PAIRBROWSE_HOME; return env; };
   const homeOf = (name) => join(shared, "instances", name);
   for (const name of ["ia", "ib"]) {
     mkdirSync(homeOf(name), { recursive: true });
-    writeFileSync(join(homeOf(name), "config.json"), JSON.stringify({ executablePath: driverBrowserPath(runtime), browserArgs: ["--headless=new"], display: "none", screenshots: false, sessionPicker: false }));
+    writeFileSync(join(homeOf(name), "config.json"), JSON.stringify({ ...testBrowser(runtime), browserArgs: ["--headless=new"], display: "none", screenshots: false, sessionPicker: false }));
   }
   const start = async (name) => {
     const daemon = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: account, env: envOf(name), stdio: "ignore" });
@@ -44,8 +44,8 @@ test("two instances on separate profiles share nothing; one session can't open i
   const cli = (name, args) => profilesCli(null, args, envOf(name));
   const running = [];
   try {
-    assert.equal(cli("ia", ["create", "alpha", "--settings", JSON.stringify(OPEN(["de-DE"]))]).code, 0);
-    assert.equal(cli("ib", ["create", "beta", "--settings", JSON.stringify(OPEN(["fr-FR"]))]).code, 0);
+    assert.equal(cli("ia", ["create", "alpha", "--settings", JSON.stringify(SETTINGS(["de-DE"]))]).code, 0);
+    assert.equal(cli("ib", ["create", "beta", "--settings", JSON.stringify(SETTINGS(["fr-FR"]))]).code, 0);
     assert.doesNotMatch(cli("ib", ["list"]).out, /alpha/, "an instance lists its own profiles only");
 
     // Instance ia: a login in its session "work" on alpha.
@@ -54,7 +54,7 @@ test("two instances on separate profiles share nothing; one session can't open i
     let agent = await session(join(homeOf("ia"), "run", "browser.sock"), "a");
     assert.match(text(await agent.tool("pairbrowse_session", { action: "new", name: "work", profile: "alpha" })), /on browser profile "alpha"/);
     assert.equal((await probe(agent, `${site.base}/p?set=1`)).ls, "kept");
-    assert.match(readlinkSync(join(sessionFolder(homeOf("ia"), "work"), "SingletonLock")), /-\d+$/, "the browser holds the session's folder");
+    assert.match(readlinkSync(join(browserFolder(homeOf("ia"), "work"), "SingletonLock")), /-\d+$/, "the browser holds the session's folder");
     // One session, one browser: a second helper on the same instance leaves without a browser...
     const second = spawn(process.execPath, [join(root, "scripts", "daemon.mjs")], { cwd: account, env: envOf("ia"), stdio: "ignore" });
     const code = await new Promise((r) => second.once("exit", r));

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { readFileSync } from "node:fs";
 import net from "node:net";
 import { createInterface } from "node:readline";
-import { sleep } from "./util.mjs";
+import { sleep, throughMeasuring } from "./util.mjs";
 
 // Where live tests make their helper homes: the system's temporary folder, on the machine's own
 // disk (an external disk a build saturates holds every helper up for seconds), or /tmp when the
@@ -73,5 +73,7 @@ export async function session(socketPath, name, clientInfo = {}) {
   });
   await call("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "claude-code", version: "1", ...clientInfo } });
   sock.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
-  return { sock, answers, tool: (tool, args = {}, ms) => call("tools/call", { name: tool, arguments: args }, ms) };
+  // Through the native build's one graphics measurement (util.mjs throughMeasuring).
+  const tool = (name, args = {}, ms) => throughMeasuring(() => call("tools/call", { name, arguments: args }, ms));
+  return { sock, answers, tool };
 }

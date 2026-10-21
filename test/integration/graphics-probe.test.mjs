@@ -1,9 +1,10 @@
 // The graphics probe's page side in a real browser (spec server-mode E4; native/probe.mjs): the
-// open build, started twice on one throwaway folder as probeLaunch starts a probe browser, answers
-// every part on a local page (WebGL and WebGL2 strings and limits, WebGPU or why not, the canvas
-// scenes on two origins and across the two starts, fonts against a control list, screen, media,
-// locale, user agent), the browser process names its backend, and the record is the one
-// measuredRecord keeps and validate() reads. Nothing is left behind. Needs PAIRBROWSE_TEST_RUNTIME.
+// open build (the native build with PAIRBROWSE_TEST_EXECUTABLE, helpers/daemon.mjs nativeExe),
+// started twice on one throwaway folder as probeLaunch starts a probe browser, answers every part
+// on a local page (WebGL and WebGL2 strings and limits, WebGPU or why not, the canvas scenes on two
+// origins and across the two starts, fonts against a control list, screen, media, locale, user
+// agent), the browser process names its backend, and the record is the one measuredRecord keeps
+// and validate() reads. Nothing is left behind. Needs PAIRBROWSE_TEST_RUNTIME.
 import "../helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -14,6 +15,7 @@ import { join } from "node:path";
 import { probeLaunch, graphicsStep, PROBE_FONTS } from "../../scripts/native/probe.mjs";
 import { validate } from "../../scripts/native/validate.mjs";
 import { runtimeKey } from "../../scripts/native/graphics.mjs";
+import { nativeExe } from "../helpers/daemon.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const BUILD = "150.0.7871.114";
@@ -26,7 +28,7 @@ test("the probe measures a real browser in every part, twice started, and leaves
   const sandbox = { on: true, reason: null, refused: null, blocked: null, required: null };
   try {
     const measured = await probeLaunch({
-      launch: (dir) => { starts.push(dir); return chromium.launchPersistentContext(dir, { headless: true }); },
+      launch: (dir) => { starts.push(dir); return chromium.launchPersistentContext(dir, { headless: true, ...(nativeExe ? { executablePath: nativeExe } : {}) }); },
       directory, build: BUILD, pack: PACK, display: "native", sandbox, stepMs: 20_000, launchMs: 60_000,
     });
     assert.equal(starts.length, 2, "started twice");

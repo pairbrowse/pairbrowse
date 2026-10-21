@@ -4,13 +4,12 @@
 import "../helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createRequire } from "node:module";
 import { createServer } from "node:http";
-import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, rmSync, existsSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { session, testBase } from "../helpers/live.mjs";
 import { sleep, text } from "../helpers/util.mjs";
-import { spawnDaemon, stopDaemon } from "../helpers/daemon.mjs";
+import { spawnDaemon, stopDaemon, testBrowser, linkInstalls } from "../helpers/daemon.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 
@@ -79,9 +78,8 @@ test("fast mode fills a form inside a frame, opens a styled dropdown, ticks a st
   const base = testBase();
   mkdirSync(base, { recursive: true });
   const h = mkdtempSync(join(base, "forms-"));
-  symlinkSync(runtime, join(h, "runtime"), "dir");
-  const executablePath = createRequire(join(runtime, "package.json"))("patchright").chromium.executablePath();
-  writeFileSync(join(h, "config.json"), JSON.stringify({ executablePath, browserArgs: ["--headless=new"], display: "none", screenshots: false }));
+  linkInstalls(h, runtime);
+  writeFileSync(join(h, "config.json"), JSON.stringify({ ...testBrowser(runtime), browserArgs: ["--headless=new"], display: "none", screenshots: false }));
   const daemon = spawnDaemon(h);
   let a;
   try {

@@ -13,10 +13,10 @@ import { join, relative, sep } from "node:path";
 import { session } from "../helpers/live.mjs";
 import { text } from "../helpers/util.mjs";
 import { helperHome, startHelper } from "../helpers/daemon.mjs";
-import { startProbeSite, probe, profilesCli, sessionFolder, filesUnder, fileHolds } from "../helpers/profiles-live.mjs";
+import { startProbeSite, probe, profilesCli, sessionFolder, browserFolder, filesUnder, fileHolds, BROWSER_KIND } from "../helpers/profiles-live.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
-const SHARED = { browser: { kind: "pairbrowse-open" }, locale: { languages: ["en-GB"], timezone: null, source: "set" } };
+const SHARED = { browser: { kind: BROWSER_KIND }, locale: { languages: ["en-GB"], timezone: null, source: "set" } };
 // The engine's own stores, by their file or folder name.
 const STORES = new Set(["Cookies", "Login Data", "History", "Cache_Data", "IndexedDB", "Local Storage", "Extensions"]);
 
@@ -65,8 +65,8 @@ test("cookie, localStorage, IndexedDB and history in one session are absent in t
   assert.deepEqual(seen.oneAgain, { cookies: "login=kept", ls: "kept", idb: "kept" }, "session one keeps what it set");
   assert.deepEqual(seen.two, { cookies: "(none)", ls: "null", idb: "none" }, "no login, localStorage or IndexedDB of session one");
   // History: the address only session one visited is in its History, not in session two's.
-  assert.ok(fileHolds(join(seen.one, "Default", "History"), "visit=one-only"), "session one's history has the visit");
-  assert.equal(fileHolds(join(seen.twoDir, "Default", "History"), "visit=one-only"), false, "session two's history doesn't");
+  assert.ok(fileHolds(join(browserFolder(home, "iso-one"), "Default", "History"), "visit=one-only"), "session one's history has the visit");
+  assert.equal(fileHolds(join(browserFolder(home, "iso-two"), "Default", "History"), "visit=one-only"), false, "session two's history doesn't");
 });
 
 test("a cached resource is fetched again in the other session; cache files under each session's folder", live, () => {

@@ -6,13 +6,12 @@
 import "../helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createRequire } from "node:module";
 import { createServer } from "node:http";
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, rmSync, readFileSync, chmodSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync, readFileSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 import { testBase, attachDaemon } from "../helpers/live.mjs";
 import { rpc, sleep, text, until } from "../helpers/util.mjs";
-import { spawnDaemon, stopDaemon } from "../helpers/daemon.mjs";
+import { spawnDaemon, stopDaemon, testBrowser, linkInstalls } from "../helpers/daemon.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const shortBase = testBase();
@@ -40,13 +39,11 @@ const reach = (socketPath, daemon, home, ms = 90_000) => attachDaemon({ socketPa
 function home(prefix) {
   mkdirSync(shortBase, { recursive: true });
   const dir = mkdtempSync(join(shortBase, prefix));
-  symlinkSync(runtime, join(dir, "runtime"), "dir");
+  linkInstalls(dir, runtime);
   return dir;
 }
 
 test("join with a code: approval first, then the same tabs in the joiner's own browser, both ways for drive, one way for watch", { skip: !runtime, timeout: 240_000 }, async () => {
-  const require = createRequire(join(runtime, "package.json"));
-  const executablePath = require("patchright").chromium.executablePath();
   // Public-looking names that the browsers resolve to the fixture (127.0.0.1 itself never crosses).
   const fixture = createServer((req, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end(`<title>${req.headers.host}${req.url}</title><main>shared fixture</main><input aria-label='Name'>`); });
   await new Promise((r) => fixture.listen(0, "127.0.0.1", r));
@@ -54,10 +51,10 @@ test("join with a code: approval first, then the same tabs in the joiner's own b
   const browserArgs = ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${port}`];
   const hostHome = home("jh-");
   const joinHome = home("jj-");
-  writeFileSync(join(hostHome, "config.json"), JSON.stringify({ executablePath, browserArgs, display: "none", screenshots: false, participantName: "Bob" }));
+  writeFileSync(join(hostHome, "config.json"), JSON.stringify({ ...testBrowser(runtime), browserArgs, display: "none", screenshots: false, participantName: "Bob" }));
   writeFileSync(join(hostHome, "secrets.env"), "SHOP_PASSWORD=hunter2hunter2\nSHOP_PASSWORD_DOMAINS=shop.pbtest.example\n");
   chmodSync(join(hostHome, "secrets.env"), 0o600);
-  writeFileSync(join(joinHome, "config.json"), JSON.stringify({ executablePath, browserArgs, display: "none", screenshots: false, participantName: "Alice" }));
+  writeFileSync(join(joinHome, "config.json"), JSON.stringify({ ...testBrowser(runtime), browserArgs, display: "none", screenshots: false, participantName: "Alice" }));
   const env = (h) => ({ ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1" });
   const daemons = [];
   const connect = async (h) => {
@@ -195,8 +192,6 @@ test("join with a code: approval first, then the same tabs in the joiner's own b
 });
 
 test("co-browsing: form values both ways (never sensitive ones), no echo, pointers, sparks and presence across browsers", { skip: !runtime, timeout: 300_000 }, async () => {
-  const require = createRequire(join(runtime, "package.json"));
-  const executablePath = require("patchright").chromium.executablePath();
   let submitted = 0;
   const fixture = createServer((req, res) => {
     if (req.url.startsWith("/submitted")) submitted++;
@@ -209,10 +204,10 @@ test("co-browsing: form values both ways (never sensitive ones), no echo, pointe
   const hostHome = home("fh-");
   const joinHome = home("fj-");
   // No participantName on the host: its name comes from PAIRBROWSE_PARTICIPANT (env below).
-  writeFileSync(join(hostHome, "config.json"), JSON.stringify({ executablePath, browserArgs, display: "none", screenshots: false }));
+  writeFileSync(join(hostHome, "config.json"), JSON.stringify({ ...testBrowser(runtime), browserArgs, display: "none", screenshots: false }));
   writeFileSync(join(hostHome, "secrets.env"), "SHOP_PASSWORD=hunter2hunter2\nSHOP_PASSWORD_DOMAINS=shop.pbtest.example\n");
   chmodSync(join(hostHome, "secrets.env"), 0o600);
-  writeFileSync(join(joinHome, "config.json"), JSON.stringify({ executablePath, browserArgs, display: "none", screenshots: false, participantName: "Alice" }));
+  writeFileSync(join(joinHome, "config.json"), JSON.stringify({ ...testBrowser(runtime), browserArgs, display: "none", screenshots: false, participantName: "Alice" }));
   const env = (h) => ({ ...process.env, PAIRBROWSE_HOME: h, PAIRBROWSE_TEST_TUNNEL: "direct", PAIRBROWSE_TEST_JOIN_LOCAL: "1", PAIRBROWSE_TEST_FILL: "1", PAIRBROWSE_PARTICIPANT: h === hostHome ? "Bob" : "" });
   const daemons = [];
   const connect = async (h) => {
@@ -286,7 +281,11 @@ test("co-browsing: form values both ways (never sensitive ones), no echo, pointe
     const f = Object.fromEntries(wire.form.fields.map((x) => [x.k, x]));
     assert.equal(f["n:agree=yes"]?.v ?? f["#agree"]?.v, true);
     assert.deepEqual(f["#size"].v, ["m"]);
-    assert.deepEqual(f["#card"], { f: "top", k: "#card", t: "text", m: 1, filled: true });
+    // The card was set as the person there would (FILL): read within a few seconds of that it
+    // also names them (fieldOwner's o), later it doesn't; never its value.
+    const { o: cardBy, ...card } = f["#card"];
+    assert.deepEqual(card, { f: "top", k: "#card", t: "text", m: 1, filled: true });
+    assert.ok(cardBy === undefined || cardBy === "Bob", `filled by the person on the host, if named: ${cardBy}`);
     if (!typedPw.result.isError) assert.deepEqual(f["#pw"], { f: "top", k: "#pw", t: "password", m: 1, filled: true });
     const carolAll = seen.raw;
     { const m = carolAll.match(/hunter2|42424242|4242 4242/); if (m) console.error("DEBUGMATCH", JSON.stringify(carolAll.slice(Math.max(0, m.index - 400), m.index + 200))); }

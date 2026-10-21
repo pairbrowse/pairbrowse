@@ -11,10 +11,10 @@ import { join } from "node:path";
 import { session } from "../helpers/live.mjs";
 import { text } from "../helpers/util.mjs";
 import { helperHome, startHelper } from "../helpers/daemon.mjs";
-import { startProbeSite, probe, profilesCli, bindingPath, assignmentPath } from "../helpers/profiles-live.mjs";
+import { startProbeSite, probe, profilesCli, bindingPath, assignmentPath, BROWSER_KIND, CHECKED_ON } from "../helpers/profiles-live.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
-const SHOP = { browser: { kind: "pairbrowse-open" }, locale: { languages: ["de-DE"], timezone: null, source: "set" }, window: { width: 1280, height: 860 } };
+const SHOP = { browser: { kind: BROWSER_KIND }, locale: { languages: ["de-DE"], timezone: null, source: "set" }, window: { width: 1280, height: 860 } };
 
 test("after a helper restart the session reopens on its profile and revision with its cookie and storage", { skip: !runtime && "set PAIRBROWSE_TEST_RUNTIME", timeout: 180_000 }, async () => {
   const site = await startProbeSite();
@@ -32,7 +32,7 @@ test("after a helper restart the session reopens on its profile and revision wit
     assert.match(text(await agent.tool("pairbrowse_session", { action: "new", name: "keep", profile: "shop" })), /Created and switched.* on browser profile "shop"/s);
     assert.deepEqual(await probe(agent, `${site.base}/p?set=1`), { cookies: "(none)", ls: "kept", idb: "kept" });
     assert.deepEqual(await probe(agent, `${site.base}/p`), { cookies: "login=kept", ls: "kept", idb: "kept" });
-    assert.match(text(await agent.tool("pairbrowse_status", { kind: "agent", text: "checking" })), /Profile: shop \(rev 1, unverified on PairBrowse as an extension\)/);
+    assert.match(text(await agent.tool("pairbrowse_status", { kind: "agent", text: "checking" })), new RegExp(`Profile: shop \\(rev 1, ${CHECKED_ON}\\)`));
     agent.sock.destroy();
     await helper.stop();
     helper = null;
@@ -43,7 +43,7 @@ test("after a helper restart the session reopens on its profile and revision wit
     agent = await session(helper.socketPath, "b");
     assert.match(text(await agent.tool("pairbrowse_session", { action: "use", name: "keep" })), /Now using session "keep"/);
     assert.deepEqual(await probe(agent, `${site.base}/p`), { cookies: "login=kept", ls: "kept", idb: "kept" }, "login and storage came back");
-    assert.match(text(await agent.tool("pairbrowse_status", { kind: "agent", text: "checking" })), /Profile: shop \(rev 1, unverified on PairBrowse as an extension\)/, "the same profile and revision");
+    assert.match(text(await agent.tool("pairbrowse_status", { kind: "agent", text: "checking" })), new RegExp(`Profile: shop \\(rev 1, ${CHECKED_ON}\\)`), "the same profile and revision");
     const log = readFileSync(join(home, "daemon.log"), "utf8");
     assert.equal(log.match(new RegExp(`launch: Session "keep" on browser profile "shop" \\(${id}\\), revision 1`, "g"))?.length, 2, "both starts on it");
     agent.sock.destroy();

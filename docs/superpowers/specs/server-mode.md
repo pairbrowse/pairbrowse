@@ -3046,6 +3046,31 @@ where each name starts in that file, read on the first navigation checked; a loo
 name's bytes from the file. Three runs after: 257.3, 256.8 and 242.4 MB, 0.6, 0.5 and 0.6%
 (`docs/engineering-progress.md`). Tests: `test/phishing.test.mjs`.
 
+### 13.3 Native pass of the integration tests (2026-10-21)
+
+The main integration files ran on the native macOS build (`PAIRBROWSE_TEST_EXECUTABLE` the installed
+build's `Contents/MacOS/pairbrowse`, `PAIRBROWSE_TEST_ENGINE` the engine pack; each helper on a test
+home of its own, the build launched where it is installed, read-only): your-turn, handoff, proxy,
+net-browsercheck, the four profiles files, graphics-probe, graphics-diagnostics, card-reads,
+click-flows, shared-rules, join, fastmode-forms and desktop-unchanged all pass there and on the open
+build. No product change was needed; what differed was the harness and tests written for the
+extension shell:
+- The harness ran every helper on Playwright's build. `test/helpers/daemon.mjs` now gives the native
+  build when both switches name one (`nativeExe`, `testBrowser`, `linkInstalls` copying the engine
+  pack into each home), and a test's first calls wait through the one graphics measurement per home
+  as an agent does (`throughMeasuring` in `test/helpers/util.mjs`; a few seconds on a Mac).
+- Profiles: the tests' profiles named the open build (`browser.kind`), which the native build
+  rightly refuses (D11); the native build keeps a session's browser data in its `pairbrowse-native`
+  folder and its cookies under the home's Safe Storage key, so a session folder opened as before
+  profiles uses both. A profile's status there is its measured verdict on the build's version:
+  "failed" on `webgpu.device` until patch 961, as recorded above.
+- WebRTC: the native build denies non-proxied UDP with no switch at all, so the egress check's
+  leak half needs the policy set back to the engine's default there (a switch the helper never
+  passes).
+- Co-browsing: a card field the person filled carries their name (`o`, never the value) when the
+  form is read within a few seconds of the edit (`fields.mjs` `OWN_MS`); the test accepts it on
+  either build.
+
 ## 14. Definition of done
 
 The work is done when every item below holds, each shown by the named tests passing in CI or, for

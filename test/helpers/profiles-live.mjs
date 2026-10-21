@@ -7,8 +7,15 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, lstatSync } from "node:fs";
 import { join } from "node:path";
-import { root } from "./daemon.mjs";
+import { root, nativeExe, nativeVersion } from "./daemon.mjs";
 import { text } from "./util.mjs";
+
+// The browser a test's profiles are for: the one its helpers run (daemon.mjs nativeExe).
+export const BROWSER_KIND = nativeExe ? "pairbrowse" : "pairbrowse-open";
+// A session's profile check as pairbrowse_status names it, for a RegExp: on the native build its
+// version and the check's verdict (measured at the start; "failed" while the engine's WebGPU limits
+// are the persona's, spec server-mode 961), on PairBrowse as an extension "unverified".
+export const CHECKED_ON = nativeExe ? `(?:validated|failed|unverified) on ${nativeVersion.replaceAll(".", "\\.")}` : "unverified on PairBrowse as an extension";
 
 // The page: with ?set=1 it sets the cookie, localStorage and IndexedDB; then it shows all three
 // ("storage: ls=<value|null> idb=<value|none> done") and loads /cached.js.
@@ -65,6 +72,9 @@ export function profilesCli(home, args, env = null) {
 
 // A session's browser folder in a helper's home (paths.mjs sessionProfile).
 export const sessionFolder = (home, name) => (name === "default" ? join(home, "profile") : join(home, "sessions", name));
+// The browser's own folder for a session (its user data: Default/, Local State, SingletonLock):
+// the session's folder, or on the native build its pairbrowse-native folder (engine.mjs nativeProfile).
+export const browserFolder = (home, name) => (nativeExe ? join(sessionFolder(home, name), "pairbrowse-native") : sessionFolder(home, name));
 // A session's assignment (sessions.mjs assignmentFile) and binding (bindingFile) in that home.
 export const assignmentPath = (home, name) => (name === "default" ? join(home, "assignment.json") : join(home, "sessions", `${name}.assignment.json`));
 export const bindingPath = (home, name) => join(sessionFolder(home, name), "pairbrowse-binding.json");

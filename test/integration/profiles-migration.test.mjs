@@ -11,8 +11,8 @@ import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { session, patchright } from "../helpers/live.mjs";
 import { text } from "../helpers/util.mjs";
-import { helperHome, startHelper, driverBrowserPath } from "../helpers/daemon.mjs";
-import { startProbeSite, probe, profilesCli, sessionFolder, assignmentPath, bindingPath } from "../helpers/profiles-live.mjs";
+import { helperHome, startHelper, driverBrowserPath, nativeExe } from "../helpers/daemon.mjs";
+import { startProbeSite, probe, profilesCli, browserFolder, assignmentPath, bindingPath, CHECKED_ON } from "../helpers/profiles-live.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 
@@ -42,7 +42,7 @@ test("today's layout migrates with cookies kept; undo then the previous layout l
     agent = await session(helper.socketPath, "b");
     assert.match(text(await agent.tool("pairbrowse_session", { action: "use", name: "shop" })), /Now using session "shop"/);
     assert.deepEqual(await probe(agent, `${site.base}/p`), { cookies: "login=kept", ls: "kept", idb: "kept" }, "the login and storage kept through the move");
-    assert.match(text(await agent.tool("pairbrowse_status", { kind: "agent", text: "checking" })), /Profile: default \(rev 1, unverified on PairBrowse as an extension\)/);
+    assert.match(text(await agent.tool("pairbrowse_status", { kind: "agent", text: "checking" })), new RegExp(`Profile: default \\(rev 1, ${CHECKED_ON}\\)`));
     agent.sock.destroy();
     await helper.stop();
     helper = null;
@@ -71,8 +71,12 @@ test("today's layout migrates with cookies kept; undo then the previous layout l
     assert.equal(existsSync(join(home, "engine-profiles")), false);
 
     // The previous layout: the session's folder opened as a PairBrowse from before profiles would
-    // (the same folder, nothing of profiles read) has the same login and storage.
-    const ctx = await patchright(runtime).chromium.launchPersistentContext(sessionFolder(home, "shop"), { executablePath: driverBrowserPath(runtime), headless: true });
+    // (the same folder, nothing of profiles read) has the same login and storage. The native build
+    // keeps them in the session's pairbrowse-native folder, its cookies under this home's Safe
+    // Storage key (browser/safe-storage.mjs), so it opens that folder with that key, as the helper does.
+    const ctx = await patchright(runtime).chromium.launchPersistentContext(browserFolder(home, "shop"), nativeExe
+      ? { executablePath: nativeExe, headless: true, args: [`--pairbrowse-safe-storage-key-file=${join(home, "safe-storage-key")}`], ignoreDefaultArgs: ["--use-mock-keychain"] }
+      : { executablePath: driverBrowserPath(runtime), headless: true });
     try {
       const page = ctx.pages()[0] || await ctx.newPage();
       await page.goto(`${site.base}/p`);

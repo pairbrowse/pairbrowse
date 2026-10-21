@@ -6,14 +6,12 @@ import "../helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import net from "node:net";
-import { createRequire } from "node:module";
 import { createServer } from "node:http";
-import { createInterface } from "node:readline";
-import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, rmSync, existsSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { sleep } from "../helpers/util.mjs";
-import { spawnDaemon, stopDaemon } from "../helpers/daemon.mjs";
+import { sleep, rpc, initialize } from "../helpers/util.mjs";
+import { spawnDaemon, stopDaemon, testBrowser, linkInstalls } from "../helpers/daemon.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 
@@ -54,29 +52,15 @@ const PAGES = {
 
 function connect(socketPath, app) {
   const sock = net.createConnection(socketPath);
-  const waiting = new Map();
-  createInterface({ input: sock }).on("line", (line) => {
-    let m; try { m = JSON.parse(line); } catch { return; }
-    if (m.id !== undefined && waiting.has(m.id)) { waiting.get(m.id)(m); waiting.delete(m.id); }
-  });
-  let seq = 0;
-  const call = (method, params = {}) => new Promise((resolve, reject) => {
-    const id = `c${++seq}`;
-    const timer = setTimeout(() => reject(new Error(`timed out: ${method} ${params.name || ""}`)), 60_000);
-    waiting.set(id, (m) => { clearTimeout(timer); resolve(m); });
-    sock.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
-  });
+  const call = rpc((line) => sock.write(line), sock, { prefix: "c" });
   return new Promise((ok, no) => { sock.once("error", no); sock.once("connect", async () => {
-    await call("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: app, version: "1" } });
-    sock.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
+    await initialize(call, sock, app);
     ok({ sock, call });
   }); });
 }
 
 test("ordinary flows never interrupt; real commitments ask", { skip: !runtime, timeout: 180_000 }, async () => {
   const { decide } = await import("../../scripts/guard.mjs");
-  const require = createRequire(join(runtime, "package.json"));
-  const executablePath = require("patchright").chromium.executablePath();
   const posted = [];
   const fixture = createServer((req, res) => {
     const path = req.url.split("?")[0];
@@ -88,9 +72,9 @@ test("ordinary flows never interrupt; real commitments ask", { skip: !runtime, t
   const base = join(tmpdir(), "pbt");
   mkdirSync(base, { recursive: true });
   const home = mkdtempSync(join(base, "cf-"));
-  symlinkSync(runtime, join(home, "runtime"), "dir");
+  linkInstalls(home, runtime);
   const browserArgs = ["--headless=new", `--host-resolver-rules=MAP *.pbtest.example 127.0.0.1:${fixture.address().port}`];
-  writeFileSync(join(home, "config.json"), JSON.stringify({ executablePath, browserArgs, display: "none", screenshots: false }));
+  writeFileSync(join(home, "config.json"), JSON.stringify({ ...testBrowser(runtime), browserArgs, display: "none", screenshots: false }));
   const daemon = spawnDaemon(home, { env: { PAIRBROWSE_APPROVAL_WAIT_MS: "1500" } });
   const socketPath = join(home, "run", "browser.sock");
   const site = "http://shop.pbtest.example";

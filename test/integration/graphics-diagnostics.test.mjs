@@ -8,7 +8,9 @@
 // own state. A GPU-less Linux host reports software. Linux runs it under CI's xvfb-run (DISPLAY
 // set, headed as the probe starts there); macOS hidden, as its probe always is (the open build's
 // hidden browser renders in software there, and says so: only the native build's probe runs in
-// the product). Needs PAIRBROWSE_TEST_RUNTIME.
+// the product). Needs PAIRBROWSE_TEST_RUNTIME. On macOS with the native build
+// (PAIRBROWSE_TEST_EXECUTABLE and PAIRBROWSE_TEST_ENGINE, helpers/daemon.mjs nativeExe) the
+// product's own measurement (cli.mjs validate's measureGraphics) runs on it too: hardware.
 import "../helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -16,9 +18,12 @@ import { createRequire } from "node:module";
 import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { graphicsCheck, probeLauncher } from "../../scripts/native/check.mjs";
+import { graphicsCheck, probeLauncher, measureGraphics } from "../../scripts/native/check.mjs";
 import { validate } from "../../scripts/native/validate.mjs";
 import { SANDBOX } from "../../scripts/engine.mjs";
+import { testHome } from "../helpers/home.mjs";
+import { nativeExe, nativeVersion, linkInstalls } from "../helpers/daemon.mjs";
+import { NATIVE } from "../../scripts/native-pack.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const linux = process.platform === "linux";
@@ -68,4 +73,21 @@ test("open build under CI's xvfb-run: probe runs, backend measured, WebGL string
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
+});
+
+test("native build on macOS: the product's measurement names this Mac's GPU, WebGL strings agree with SystemInfo, sandbox on", { skip: !runtime ? "set PAIRBROWSE_TEST_RUNTIME" : process.platform !== "darwin" ? "macOS only" : !nativeExe && "set PAIRBROWSE_TEST_EXECUTABLE (a native build) and PAIRBROWSE_TEST_ENGINE", timeout: 300_000 }, async () => {
+  // This file's own home (helpers/home.mjs) gets the runtime and the engine pack, as an install has them.
+  linkInstalls(testHome, runtime);
+  const logs = [];
+  const { measured, line, display } = await measureGraphics(nativeExe, { config: {}, log: (l) => logs.push(l) });
+  assert.ok(measured, `the probe ran: ${line}\n${logs.join("\n")}`);
+  assert.equal(display, "native");
+  assert.match(line, /^graphics: hardware, WebGL 2, WebGPU /, "a Mac's GPU, measured");
+  assert.equal(measured.backend.source, "systeminfo");
+  assert.equal(measured.backend.kind, "hardware", `${measured.backend.renderer}`);
+  const entry = validate({ requested: { graphics: { backend: "auto" }, switches: [] }, derived: { build: nativeVersion, pack: NATIVE.engine?.sha256 ?? null, runtimeKey: measured.runtimeKey, platform: process.platform }, measured });
+  const rule = (id) => entry.items.find((i) => i.rule === id);
+  assert.equal(rule("webgl.strings-vs-backend")?.status, "matched", `page ${measured.webgl.unmaskedRenderer}, process ${measured.backend.renderer}`);
+  assert.equal(measured.runtime.sandbox.on, true, "the launch ran with its sandbox");
+  assert.equal(rule("sandbox.on")?.status, "matched");
 });

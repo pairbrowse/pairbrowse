@@ -56,6 +56,18 @@ test("Linux without a GPU: backend software, the engine's identity shown in WebG
   assert.ok(Array.isArray(r.wheel) && r.wheel.length >= 2, `wheel events recorded: ${JSON.stringify(r.wheel)} (${r.scroll})`);
   for (const [deltaY, wheelDeltaY] of r.wheel) assert.deepEqual([deltaY, wheelDeltaY], [100, -120], `one whole Windows notch: ${JSON.stringify(r.wheel)}`);
   assert.deepEqual([p.screen.width, p.screen.height, p.screen.availHeight], [SCREEN.width, SCREEN.height, SCREEN.height - GPU_LESS_IDENTITY.taskbar], "the screen pages read is the virtual screen, less the identity's taskbar");
+  // The Windows identity's system colours (engine patch 969: a Windows browser's light theme, where
+  // the build's own defaults read as a platform mismatch), its voices (970: the three local SAPI
+  // voices and the brand's nineteen network voices), and WebRTC in a direct session (no deny:
+  // the browser's everyday candidates, the local address an mDNS name, never a private address).
+  assert.deepEqual([p.css.ActiveText, p.css.LinkText, p.css.VisitedText, p.css.GrayText, p.css.Highlight, p.css.ButtonFace], ["rgb(0, 102, 204)", "rgb(0, 102, 204)", "rgb(0, 102, 204)", "rgb(109, 109, 109)", "rgb(0, 120, 215)", "rgb(240, 240, 240)"], JSON.stringify(p.css));
+  assert.deepEqual([p.css.Canvas, p.css.CanvasText], ["rgb(255, 255, 255)", "rgb(0, 0, 0)"]);
+  assert.deepEqual([p.voices.local, p.voices.remote], [3, 19], JSON.stringify(p.voices));
+  assert.match(p.voices.first[0], /^Microsoft David/);
+  assert.equal(p.voices.firstRemote[0], "Google Deutsch");
+  assert.ok(Array.isArray(p.webrtc.candidates), JSON.stringify(p.webrtc));
+  assert.ok(p.webrtc.candidates.some((c) => c.type === "host" && c.kind === "mdns"), `a host candidate behind an mDNS name: ${JSON.stringify(p.webrtc)}`);
+  assert.ok(!p.webrtc.candidates.some((c) => c.kind === "private"), `never a private address: ${JSON.stringify(p.webrtc)}`);
   // PairBrowse's own diagnostics stay honest.
   assert.ok(new RegExp(`Graphics: software \\(.+\\), shown as ${NAME}, requested auto, consistent on \\d+\\.\\d+\\.\\d+\\.\\d+`).test(r.status), r.status);
   assert.doesNotMatch(r.status, /sandbox is off/i);

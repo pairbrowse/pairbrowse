@@ -40,6 +40,30 @@ export const GRAPHICS_PAGE = `<!doctype html><title>graphics</title><p id=g>grap
   out.fonts = { found: ["DejaVu Sans", "Liberation Sans", "Noto Sans", "Arial", "Helvetica", "Times New Roman", "Segoe UI", "Verdana"].filter(has), controlFound: ["PairBrowse Control Sans 7f3a", "Zq Control Mono 4be1"].filter(has), colorEmojiPixels: emoji };
   out.screen = { width: screen.width, height: screen.height, availWidth: screen.availWidth, availHeight: screen.availHeight, colorDepth: screen.colorDepth, dpr: devicePixelRatio };
   out.navigator = { platform: navigator.platform, cores: navigator.hardwareConcurrency, memory: navigator.deviceMemory === undefined ? null : navigator.deviceMemory };
+  // The CSS system colours a page reads (under the Windows identity a Windows browser's light theme: engine patch 969).
+  out.css = {};
+  for (const name of ["ActiveText", "LinkText", "VisitedText", "GrayText", "Highlight", "ButtonFace", "Canvas", "CanvasText"]) {
+    const el = document.createElement("span"); el.style.color = name; document.body.appendChild(el);
+    out.css[name] = getComputedStyle(el).color; el.remove();
+  }
+  // Speech voices (the Windows persona's local and network sets: engine patch 970); they may load a moment after the page.
+  const voicesNow = () => speechSynthesis.getVoices();
+  if (!voicesNow().length) await new Promise((r) => { const t = setTimeout(r, 2500); speechSynthesis.addEventListener("voiceschanged", () => { clearTimeout(t); r(); }, { once: true }); });
+  const voices = voicesNow();
+  out.voices = { local: voices.filter((v) => v.localService).length, remote: voices.filter((v) => !v.localService).length, first: voices.slice(0, 2).map((v) => v.name), firstRemote: voices.filter((v) => !v.localService).slice(0, 1).map((v) => v.name) };
+  // WebRTC's candidates, by type and kind only (never an address): mdns (a .local name), private
+  // (an RFC 1918 or loopback IPv4), public4, ipv6. A direct session shows the browser's everyday
+  // candidates (an mDNS host, a server-reflexive one where STUN is reachable), never a private address.
+  out.webrtc = await new Promise((resolve) => {
+    const found = [];
+    let pc;
+    try { pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.cloudflare.com:3478" }] }); } catch (e) { resolve({ error: String(e && e.message || e) }); return; }
+    const kind = (addr) => /[.]local$/.test(addr) ? "mdns" : /^(10[.]|192[.]168[.]|172[.](1[6-9]|2[0-9]|3[01])[.]|127[.])/.test(addr) ? "private" : addr.includes(":") ? "ipv6" : "public4";
+    pc.onicecandidate = (e) => { if (e.candidate && e.candidate.candidate) { const parts = e.candidate.candidate.split(" "); found.push({ type: e.candidate.type || parts[7], kind: kind(e.candidate.address || parts[4]) }); } };
+    pc.createDataChannel("p");
+    pc.createOffer().then((o) => pc.setLocalDescription(o)).catch(() => {});
+    setTimeout(() => { try { pc.close(); } catch {} resolve({ candidates: found, state: pc.iceGatheringState }); }, 5000);
+  });
   try {
     if (!navigator.gpu) out.webgpu = { available: false, reason: "navigator.gpu undefined" };
     else {

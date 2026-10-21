@@ -3036,6 +3036,12 @@ binding for implementation; where a phase section above says otherwise, this sec
     GPU (user, 2026-10-22, clarified): not the Intel UHD 770; the same as the reference, the NVIDIA
     RTX 3060 entry of the engine's Windows pool, as the default. Linux hosts stay fully supported; only
     the identity they show changes. The Intel choice stays in code only as a measured comparison.
+    Fonts for that identity (user, 2026-10-22): free fonts only, for every user, no license route built.
+    The server setup installs Microsoft's freely distributable core fonts for the web (Arial, Courier
+    New, Times New Roman, Verdana, Georgia, Trebuchet MS, Comic Sans MS, Impact, Andale Mono, Webdings)
+    through the distribution's own package, with Microsoft's EULA shown and accepted by the person once,
+    plus colour emoji and CJK fonts. Segoe UI, Calibri, Consolas and the other Windows-only fonts are
+    not provided; diagnostics name them as absent and the measurement records what that costs.
     Decided by the first measurement (2026-10-22, baseline in the native repo's plans): canvas
     noise on a host without a GPU, measured on and off on the same Linux host, changed one verdict
     (BrowserScan's canvas check, lost with noise on) and gained nothing measured, so

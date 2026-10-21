@@ -5,6 +5,7 @@
 import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import { existsSync, mkdtempSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -25,7 +26,7 @@ const tick = () => new Promise((r) => setImmediate(r));
 const linesOf = (f) => { try { return readFileSync(f, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)); } catch { return []; } };
 
 function pageAt(url, tabs = []) {
-  const page = { url: () => url, isClosed: () => false, context: () => ({ pages: () => [...tabs, page] }) };
+  const page = Object.assign(new EventEmitter(), { url: () => url, isClosed: () => false, context: () => ({ pages: () => [...tabs, page] }) });
   return page;
 }
 
@@ -260,9 +261,14 @@ test("a payment hand-off masks every agent result from scope tabs and covers pic
   // Random keys and ids are hex and can hold these digits by chance; the check is on the rest.
   const plain = everything.replace(/[0-9a-f]{8,}/g, "");
   assert.ok(!plain.includes("4242") && !plain.includes("737"), everything);
-  // After the grant ended and the tab was released, the agent reads the page again as it is.
+  // After the grant ended and the tab was released, what the person typed is still in the page's
+  // fields: masked until the tab loads its next page, then the agent reads it as it is.
   s.yt.personUsed(page);
-  assert.equal(s.yt.masked(page), false);
+  assert.equal(s.yt.masked(page), true, "the fields the person typed in stay masked");
+  assert.equal(s.yt.masked(popup), true);
+  page.emit("domcontentloaded");
+  assert.equal(s.yt.masked(page), false, "the next page reads as it is");
+  assert.equal(s.yt.masked(elsewhere), false);
 });
 
 test("the browser closing ends hand-offs (browser-restarted); the helper stopping (helper-stopped) waits for the ended messages", async () => {

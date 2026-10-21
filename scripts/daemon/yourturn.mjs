@@ -26,8 +26,9 @@
 // the deadline. Otherwise (no tab, no time left, no channel, or a crash loop that keeps the browser
 // down) the ended message tells the person the step was stopped safely.
 //
-// While a grant is open on a tab, and while it is held, masked(page) is true: every agent's
-// results from it are masked as a joiner's agent's are and its pictures covered (B10, serve/result.mjs).
+// While a grant is open on a tab, while it is held, and after it ended until that tab loads its next
+// page (what the person typed is still in its fields), masked(page) is true: every agent's results
+// from it are masked as a joiner's agent's are and its pictures covered (B10, serve/result.mjs).
 // In a session whose browser has a saved card on (B12, savedCard()), that holds for every tab, not
 // only during a hand-off: agents never read or see what autofill put in a page.
 // Nothing typed by the person passes through here: messages and audit lines carry words from
@@ -276,7 +277,16 @@ export function createYourTurn({ config, grants, notifier, sends, handoffs, jour
   // A grant ended (any reason): its timer stops; at expiry the B11 steps; else one note for the
   // agents (B15) and the person's channels hear that the link is over, unless they ended it
   // themselves (Done) or a restart's replacement link may follow (B16, recover).
+  // Tabs a hand-off ended on, until each loads its next page: what the person typed there (a card
+  // number, a code) is still in its fields after Done, and reaches no agent from them (masked).
+  const typedIn = new WeakSet();
+  const keepMasked = (page) => {
+    if (!page || typeof page !== "object" || typedIn.has(page)) return;
+    typedIn.add(page);
+    try { page.once?.("domcontentloaded", () => typedIn.delete(page)); } catch {}
+  };
   grants.onEnd((view, reason) => {
+    if (!KEEP.has(reason)) for (const p of [view.page, ...(view.scope || [])]) keepMasked(p);
     const t = turns.get(view.id);
     if (!t) return;
     turns.delete(t.id);
@@ -381,9 +391,10 @@ export function createYourTurn({ config, grants, notifier, sends, handoffs, jour
       const own = participant ? [...turns.values()].find((t) => t.key === `status:${participant}` || t.key === `run:${participant}`) : null;
       return own ? grants.ended(own.page) : page ? grants.ended(page) : null;
     },
-    // Whether agents' results from page are masked and its pictures covered (B10); in a saved-card
+    // Whether agents' results from page are masked and its pictures covered (B10): during a hand-off,
+    // while its tab is held, and after it ended until the tab loads its next page; in a saved-card
     // session every tab's are (B12).
-    masked: (page) => !!page && (savedCard() === true || grants.inScope(page) || grants.held(page)),
+    masked: (page) => !!page && (savedCard() === true || grants.inScope(page) || grants.held(page) || typedIn.has(page)),
     // Whether the running browser has a saved card on (B12): agents' key presses into a card's
     // autofill fields are refused then (serve/refuse.mjs, fast mode's press step).
     savedCard: () => savedCard() === true,

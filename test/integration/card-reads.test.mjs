@@ -1,6 +1,6 @@
 // The host's own agent reads a checkout page as it is (card fields in the page and in a payment
-// frame), and a snapshot or find asked into a file of the agent's naming comes in the result
-// instead. (A joiner's agent reads card numbers masked: test/integration/shared-mode.test.mjs,
+// frame, as the person entered them), never enters a card itself (spec server-mode B13: refused),
+// and a snapshot or find asked into a file of the agent's naming comes in the result instead. (A joiner's agent reads card numbers masked: test/integration/shared-mode.test.mjs,
 // test/output.test.mjs.) Live: a real helper and browser (PAIRBROWSE_TEST_RUNTIME), headless.
 import "../helpers/home.mjs";
 import { test } from "node:test";
@@ -25,15 +25,20 @@ const MAIN_CVC = "731";
 const FRAME_CVC = "864";
 const ORDER = "1234 5678 9012 3456"; // 16 digits, not a card (its checksum fails)
 
-test("the host's agent reads card fields as they are, in the page and in a payment frame; no agent-named files", { skip: !runtime, timeout: 180_000 }, async () => {
+// The person's typing, as the page sees it: each value set and an input event, once the page loads.
+const typed = (values) => `<script>addEventListener("load", () => { for (const [id, v] of Object.entries(${JSON.stringify(values)})) { const e = document.getElementById(id); e.focus(); e.value = v; e.dispatchEvent(new InputEvent("input", { bubbles: true })); e.blur(); } });</script>`;
+
+test("the host's agent reads card fields as the person entered them, in the page and in a payment frame; its own card entry is refused; no agent-named files", { skip: !runtime, timeout: 180_000 }, async () => {
   // The payment frame, as a payment provider's is: its CVC unlabeled, known by its autocomplete.
   // (Same origin: the browser blocks a loopback page's frames on other loopback ports.)
   const site = serve({
     "/frame": `<!doctype html><title>Pay frame</title><label>Card number <input id=cn autocomplete=cc-number inputmode=numeric placeholder="1234 1234 1234 1234"></label>
-<input id=ex aria-label="Expiration date MM / YY" placeholder="MM / YY"><input id=cv autocomplete=cc-csc placeholder="123"><label>ZIP <input id=zf></label>`,
+<input id=ex aria-label="Expiration date MM / YY" placeholder="MM / YY"><input id=cv autocomplete=cc-csc placeholder="123"><label>ZIP <input id=zf></label>
+${typed({ cn: FRAME_CARD, ex: EXPIRY, cv: FRAME_CVC })}`,
     "/": `<!doctype html><title>Checkout</title><h1>Checkout</h1><p>Last time you paid with ${MAIN_CARD}. Order ${ORDER}.</p>
 <form onsubmit="return false"><label>Card number <input id=c></label><label>Security code <input id=s></label><input id=k autocomplete=cc-csc aria-label="Code"><label>ZIP code <input id=z></label><label>Order number <input id=o></label></form>
-<iframe src="/frame" width=500 height=300></iframe>`,
+<iframe src="/frame" width=500 height=300></iframe>
+${typed({ c: MAIN_CARD, s: "4471", k: MAIN_CVC, z: "94107" })}`,
   });
   const port = await listen(site);
   const base = testBase();
@@ -54,24 +59,20 @@ test("the host's agent reads card fields as they are, in the page and in a payme
     for (let i = 0; i < 40 && !/f\d+e\d+/.test(snap); i++) { snap = await got("browser_snapshot"); if (!/f\d+e\d+/.test(snap)) await sleep(250); }
     const ref = (re) => { const m = snap.match(re); assert.ok(m, `${re} in\n${snap}`); return m[1]; };
     const card = ref(/textbox "Card number" \[ref=(e\d+)\]/);
-    const sec = ref(/textbox "Security code" \[ref=(e\d+)\]/);
     const code = ref(/textbox "Code" \[ref=(e\d+)\]/);
     const zip = ref(/textbox "ZIP code" \[ref=(e\d+)\]/);
     const order = ref(/textbox "Order number" \[ref=(e\d+)\]/);
     const fCard = ref(/textbox "Card number" \[ref=(f\d+e\d+)\]/);
-    const fExp = ref(/textbox "Expiration date MM \/ YY" \[ref=(f\d+e\d+)\]/);
-    const fCvc = ref(/textbox(?: "123")? \[ref=(f\d+e\d+)\]/);
-    const filled = await got("browser_fill_form", { fields: [
-      { name: "Card number", type: "textbox", target: card, value: MAIN_CARD },
-      { name: "Security code", type: "textbox", target: sec, value: "4471" },
-      { name: "Code", type: "textbox", target: code, value: MAIN_CVC },
-      { name: "ZIP code", type: "textbox", target: zip, value: "94107" },
-      { name: "Order number", type: "textbox", target: order, value: ORDER },
-    ] });
-    assert.ok(!/### Error/.test(filled), filled);
-    await got("browser_type", { element: "Card number", target: fCard, text: FRAME_CARD });
-    await got("browser_type", { element: "Expiry", target: fExp, text: EXPIRY });
-    await got("browser_type", { element: "Security code", target: fCvc, text: FRAME_CVC });
+    // The agent never enters a card: a card field, or a card number anywhere, is refused, and the
+    // person's values stay as they are.
+    for (const [tool, args] of [
+      ["browser_type", { element: "Card number", target: card, text: "4000 0566 5566 5556" }],
+      ["browser_type", { element: "Card number", target: fCard, text: "4000 0566 5566 5556" }],
+      ["browser_type", { element: "ZIP code", target: zip, text: "4000056655665556" }],
+      ["browser_fill_form", { fields: [{ name: "Code", type: "textbox", target: code, value: "999" }] }],
+    ]) assert.match(await got(tool, args), /Refused \(/, `${tool} ${JSON.stringify(args)}`);
+    const filled = await got("browser_fill_form", { fields: [{ name: "Order number", type: "textbox", target: order, value: ORDER }] });
+    assert.ok(!/### Error|Refused/.test(filled), filled);
     snap = await got("browser_snapshot");
     const find = await got("browser_find", { text: "textbox" });
     const findFile = await got("browser_find", { regex: "/card number/i", filename: "cards.md" });
@@ -83,6 +84,8 @@ test("the host's agent reads card fields as they are, in the page and in a payme
     assert.match(snap, /text: 5555 5555 5555 4444/, snap);
     assert.match(snap, /text: 11 \/ 29/, snap);
     assert.match(find, /textbox "Security code" \[ref=e\d+\]: "?4471/, find);
+    assert.match(snap, /textbox "ZIP code" \[ref=e\d+\]: "?94107/, snap);
+    assert.ok(!snap.includes("4000 0566") && !snap.includes("4000056655665556") && !/: "?999\b/.test(snap), snap);
     assert.ok(snap.includes(ORDER) && /paid with 4242 4242 4242 4242\./.test(snap), snap);
     // Asked into a file of its naming, a find comes in the result (the file would skip the
     // saved-password masking every result gets).

@@ -2768,6 +2768,12 @@ binding for implementation; where a phase section above says otherwise, this sec
     rendering, shown as <identity>", so the person can see why a site may still be wary (rendering
     speed and exact pixels stay software). Recommended deployment for the fewest blocks: a host with a
     real GPU (`docs/server.md`).
+    `docs/server.md` leads with that advice (user, 2026-10-21): first choice a host with a real GPU
+    (for example a Linux mini PC with Intel graphics, or a Mac mini, whose own profile the helper
+    already captures); then a residential or office egress for the proxy; a host without a GPU is the
+    fallback, with the limits above stated plainly. The server setup installs a normal desktop font set,
+    and the engine step measures the result against fingerprint test pages served locally and reports
+    what a strict site would see.
 
 Implementation conditions (from the user):
 - Keep the five phases and every agreed requirement: profile import and export, per-profile isolation,

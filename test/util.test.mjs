@@ -105,9 +105,10 @@ test("every config.json key the code reads has its default (or is one of the old
   // Still read, never written (browser/choice.mjs browserChoice, browser-args.mjs); browserProfile is
   // set by the launch (launch.mjs: the session's profile's engine layer for native-engine.mjs), and so
   // is virtualDisplay (the helper's Xvfb geometry, spec E7) and measuredBackend (the backend the
-  // launch measured or kept, decision 10), never in config.json; json, mjs and map are file names
+  // launch measured or kept, decision 10) and webrtcExit (the proxy's exit the helper's probe read
+  // for the launch, daemon/network.mjs), never in config.json; json, mjs and map are file names
   // and a rule name (profiles/map.mjs "config.map"), not keys.
-  const older = new Set(["browserEngine", "executablePath", "browserProfile", "virtualDisplay", "measuredBackend", "chromeArgs", "chromeSandbox", "json", "mjs", "map"]);
+  const older = new Set(["browserEngine", "executablePath", "browserProfile", "virtualDisplay", "measuredBackend", "webrtcExit", "chromeArgs", "chromeSandbox", "json", "mjs", "map"]);
   for (const k of read) assert.ok(Object.hasOwn(DEFAULT_CONFIG, k) || older.has(k), `config.${k} has no default in DEFAULT_CONFIG`);
 });
 

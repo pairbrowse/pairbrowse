@@ -2824,6 +2824,13 @@ binding for implementation; where a phase section above says otherwise, this sec
     still exists. Open question for after the first measurement: whether a host without a GPU should
     present as the most common desktop platform rather than Linux (a bigger identity change: platform,
     fonts, which needs a font set we may ship, so licenses first).
+    Reference and target (user, 2026-10-21): the best published source-patched browser for automation is
+    run through the same measurement, as a black box under its own license (its free build, internal
+    use, no reverse engineering), on the same machines and network. PairBrowse's bar is to match or beat
+    it on every check (detector verdicts, contradictions, challenge rate) and on what it lacks: the
+    person in the loop, the sandbox, credentials off argv and logs, failing closed instead of leaking the
+    real IP, and no calls home. Each check where the reference scores better becomes a gap to fix at its
+    cause. Input timing and the CPU cost of headed rendering on a host without a GPU are measured too.
 
 Implementation conditions (from the user):
 - Keep the five phases and every agreed requirement: profile import and export, per-profile isolation,

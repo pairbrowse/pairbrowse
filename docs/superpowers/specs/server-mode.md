@@ -624,8 +624,12 @@ fail closed, also after recovery.
   that answers 401, cache disabled), a loopback relay (any local user could use it).
 - **C2. Schemes.** `http:` and `https:` (TLS to the proxy, system trust store, no "insecure" option)
   on both builds without credentials, on native builds with `proxyAuthFile` with credentials.
-  `socks5:` without credentials on both builds (names sent to the proxy); with credentials refused
-  (decision U4). `socks4:`, PAC and `direct:` refused.
+  `socks5:` without credentials on both builds (names sent to the proxy); with credentials on
+  native builds with `proxyAuthFile` (RFC 1929 username/password in the engine's SOCKS client,
+  from the same auth file; decision 9, landed with step 47: the U4 refusal is gone from
+  `net/config.mjs`, `net/settings.mjs` and the helper's probe, which offers both methods and sends
+  the credentials only when the proxy chooses username/password). `socks4:`, PAC and `direct:`
+  refused.
 - **C3. Credential storage** in `secrets.env` as `PAIRBROWSE_PROXY_<ID>_USERNAME` and `_PASSWORD`
   (reserved, B6). Values shorter than 4 characters are refused (`redact` masks 4 and more,
   `secrets.mjs:73`); ids at most 34 characters (`validSecretName`, 60). Set through
@@ -1035,10 +1039,12 @@ inconsistency; remove the canvas bridge; keep the sandbox on.
   now: `canvasBridge` refused in a saved persona, `config.json` and profiles; dropped from the persisted
   persona with one log line; `savePersona` never writes it; any `--canvas-bridge-*` stripped from the
   final switch list. pn: tail patch `960-no-canvas-bridge.patch` stubs `canvas_bridge_client.cc`
-  (`Get()` returns null, no socket, no thread), drops the codec from its `BUILD.gn`, removes the
-  initializer call and the six switches from the renderer forward list. The header stays so patches
-  060 and 070 compile (every call site null-checks). Rejected: dropping 065 from `series` (forks 060,
-  070, 998).
+  (`Get()` returns null, no socket, no thread), trims its `BUILD.gn` to `deps = [ "//base" ]` (no
+  switches dep, no Windows socket lib), removes the initializer call and the six switches from the
+  renderer forward list. The header stays so patches 060 and 070 compile (every call site
+  null-checks), and the codec stays compiled: 060 and 070 call its `Encode` and use its message
+  structs, so dropping it would not link; it encodes into buffers nothing sends. Rejected: dropping
+  065 from `series` (forks 060, 070, 998).
 - **E2. Backend is the profile's `graphics.backend`** (`"auto"` default, `"software"`, `"gpu"`); the
   `default` profile reads `pairbrowse.graphics` (new key). Under D-AP2 graphics are always the
   runtime's own:
@@ -2888,6 +2894,17 @@ binding for implementation; where a phase section above says otherwise, this sec
     person in the loop, the sandbox, credentials off argv and logs, failing closed instead of leaking the
     real IP, and no calls home. Each check where the reference scores better becomes a gap to fix at its
     cause. Input timing and the CPU cost of headed rendering on a host without a GPU are measured too.
+    Study of the best published source-patched browser (2026-10-22, private notes in the native repo):
+    its own issues show canvas, WebGL and audio noise trips tampering checks (fingerprint playgrounds,
+    Pixelscan, BrowserScan, CreepJS) and its recommended setup turns noise off. So canvas noise on a
+    host without a GPU (decision 10) is a setting the measurement decides, measured on and off; the
+    helper keeps it switchable. Added to the measurement and fix batch: Pixelscan and a fingerprint
+    playground among the public pages; emoji, CJK and a full desktop font set in server setup with an
+    emoji canvas probe; the engine kept within two weeks of the current stable release as a release
+    gate; third-party cookie default matching an everyday browser; proxy-path timing and header
+    differences; WebRTC strict mode versus showing the exit address; Accept-Language as a real list and
+    the virtual screen's keyboard layout; CPU cores and memory following the GPU identity; automation
+    traces and humanized input timing (wheel notches, pointer rate, key hold) audited each build.
 
 12. **Server mode needs the native PairBrowse browser (user, 2026-10-21).** The open build with the side
     panel extension stays supported on a desktop and is kept aligned with the native build wherever it

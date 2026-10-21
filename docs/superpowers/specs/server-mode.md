@@ -2917,6 +2917,10 @@ binding for implementation; where a phase section above says otherwise, this sec
     person in the loop, the sandbox, credentials off argv and logs, failing closed instead of leaking the
     real IP, and no calls home. Each check where the reference scores better becomes a gap to fix at its
     cause. Input timing and the CPU cost of headed rendering on a host without a GPU are measured too.
+    Release gate (user, 2026-10-22): "it really has to be better". The ordinary-browser work is done only
+    when, on every setup measured (macOS, Linux without a GPU, and a GPU host when available), PairBrowse
+    scores equal or better than that reference on every check, with the engine on the same browser major
+    version as the reference (the port to the current stable release counts toward this gate).
     Study of the best published source-patched browser (2026-10-22, private notes in the native repo):
     its own issues show canvas, WebGL and audio noise trips tampering checks (fingerprint playgrounds,
     Pixelscan, BrowserScan, CreepJS) and its recommended setup turns noise off. So canvas noise on a

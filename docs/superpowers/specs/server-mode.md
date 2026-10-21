@@ -3042,6 +3042,16 @@ binding for implementation; where a phase section above says otherwise, this sec
     through the distribution's own package, with Microsoft's EULA shown and accepted by the person once,
     plus colour emoji and CJK fonts. Segoe UI, Calibri, Consolas and the other Windows-only fonts are
     not provided; diagnostics name them as absent and the measurement records what that costs.
+    Font checks, a second legal route (to measure): open, metric-compatible fonts installed under
+    fontconfig aliases for the Windows-only names, so width-based font detection finds a font of the
+    right size where the Windows font would be: Selawik (Microsoft's own OFL 1.1 stand-in for Segoe UI,
+    close but not exact, kerning differs), Carlito for Calibri and Caladea for Cambria (both OFL,
+    metric-compatible), Liberation for Arial, Times New Roman and Courier New where the core fonts are
+    absent. The fonts keep their own names and licences (no renamed or modified font is shipped); only
+    the system's font matching points the Windows names at them. Measured against the free-fonts-only
+    setup on every font check (FingerprintJS, CreepJS, BrowserScan, Pixelscan, our font probe); kept
+    only if it scores better and adds no new contradiction (for example glyph hashes that match no
+    real Windows browser).
     Decided by the first measurement (2026-10-22, baseline in the native repo's plans): canvas
     noise on a host without a GPU, measured on and off on the same Linux host, changed one verdict
     (BrowserScan's canvas check, lost with noise on) and gained nothing measured, so

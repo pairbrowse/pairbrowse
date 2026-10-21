@@ -18,12 +18,19 @@ const id = (v) => (Number.isSafeInteger(v) && v >= 0 ? v : null);
 // A record that says nothing was learnt, with the reason (no IDs, no strings).
 export const unverifiedBackend = (reason) => ({ kind: "unverified", vendor: null, device: null, renderer: null, driver: null, source: "systeminfo", reason });
 
+// The GPU found but not used: compositing in software and no WebGL at all (not even the software
+// fallback, "unavailable_software", whose renderer the answer then names).
+const gpuRefused = (status) => plainObject(status) && /^(disabled|unavailable)_software/.test(String(status.gpu_compositing))
+  && /^(disabled|unavailable)_off/.test(String(status.webgl));
+
 // SystemInfo.getInfo's answer as { kind: "hardware" | "software" | "unverified", vendor, device
 // (the active GPU's PCI vendor and device IDs), renderer (the GL renderer the GPU process uses,
 // ANGLE's string), driver (its version), source: "systeminfo", reason (unverified only) }.
-// software: GPU rendering turned off (gl=disabled, --disable-gpu: the browser rasterizes on the CPU)
-// or a software renderer's name in the renderer, the device or ANGLE's implementation (Mesa's
-// llvmpipe under Xvfb, SwiftShader). hardware: any other renderer that names itself. Anything else
+// software: GPU rendering turned off (gl=disabled, --disable-gpu: the browser rasterizes on the CPU;
+// or the engine's blocklist refused the GPU it found, which still names it: compositing then runs
+// in software and pages get no WebGL, as the open build does over Mesa's llvmpipe under Xvfb) or a
+// software renderer's name in the renderer, the device or ANGLE's implementation (Mesa's llvmpipe
+// under Xvfb, SwiftShader). hardware: any other renderer that names itself. Anything else
 // (no gpu part, no devices, an empty renderer) is unverified. Never throws.
 export function parseSystemInfo(info) {
   const gpu = plainObject(info) && plainObject(info.gpu) ? info.gpu : null;
@@ -35,7 +42,7 @@ export function parseSystemInfo(info) {
   const renderer = clean(aux.glRenderer, 160) || clean(device?.deviceString, 160);
   const parts = clean(aux.glImplementationParts, 80);
   const base = { vendor: id(device?.vendorId), device: id(device?.deviceId), renderer: renderer || null, driver: clean(device?.driverVersion, 80) || null, source: "systeminfo" };
-  if (/\bgl=disabled\b/.test(parts) || /^disabled$/i.test(renderer)) return { kind: "software", ...base, renderer: "software rasterizer (GPU rendering off)" };
+  if (/\bgl=disabled\b/.test(parts) || /^disabled$/i.test(renderer) || gpuRefused(gpu.featureStatus)) return { kind: "software", ...base, renderer: "software rasterizer (GPU rendering off)" };
   if (!device && !renderer) return unverifiedBackend("the browser named no graphics device");
   if (SOFTWARE.test(renderer) || SOFTWARE.test(clean(device?.deviceString, 160)) || /\bangle=swiftshader\b/.test(parts)) return { kind: "software", ...base };
   if (!renderer) return unverifiedBackend("the browser named no renderer");

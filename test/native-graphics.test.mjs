@@ -178,6 +178,19 @@ test("parseSystemInfo: Metal hardware, Xvfb software, garbage unverified", () =>
   }
   const off = parseSystemInfo(systemInfo("linux-disable-gpu"));
   assert.deepEqual([off.kind, off.renderer], ["software", "software rasterizer (GPU rendering off)"]);
+  // A GPU the engine's blocklist refused is still named, but nothing renders on it (measured: the
+  // open build 153 under Xvfb over Mesa's llvmpipe, no WebGL); the software fallback names its own.
+  const named = { devices: [{ vendorId: 0, deviceId: 0, deviceString: "ANGLE (Mesa/X.org, llvmpipe (LLVM 15.0.6 128 bits))", driverVersion: "22.3.6" }],
+    auxAttributes: { glRenderer: "ANGLE (Mesa/X.org, llvmpipe (LLVM 15.0.6 128 bits))", glImplementationParts: "(gl=egl-angle,angle=opengl)" } };
+  const refused = parseSystemInfo({ gpu: { ...named, featureStatus: { gpu_compositing: "disabled_software", opengl: "disabled_off", webgl: "disabled_off" } } });
+  assert.deepEqual([refused.kind, refused.renderer, refused.driver], ["software", "software rasterizer (GPU rendering off)", "22.3.6"]);
+  const nvidia = { devices: [{ vendorId: 4318, deviceId: 7, deviceString: "NVIDIA GeForce" }], auxAttributes: { glRenderer: "NVIDIA GeForce" } };
+  assert.equal(parseSystemInfo({ gpu: { ...nvidia, featureStatus: { gpu_compositing: "disabled_software", webgl: "unavailable_off" } } }).renderer, "software rasterizer (GPU rendering off)", "a refused hardware GPU is no hardware backend");
+  assert.equal(parseSystemInfo({ gpu: { ...nvidia, featureStatus: { gpu_compositing: "enabled", webgl: "enabled" } } }).kind, "hardware");
+  const fallback = parseSystemInfo({ gpu: { devices: [{ deviceString: "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero)), SwiftShader driver)" }],
+    auxAttributes: { glRenderer: "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero)), SwiftShader driver)", glImplementationParts: "(gl=egl-angle,angle=swiftshader)" },
+    featureStatus: { gpu_compositing: "disabled_software", webgl: "unavailable_software" } } });
+  assert.deepEqual([fallback.kind, /SwiftShader/.test(fallback.renderer)], ["software", true], "WebGL on the software fallback names it");
   for (const garbage of [null, undefined, 7, "x", [], {}, { gpu: null }, { gpu: { devices: [] } }, { gpu: { devices: "x", auxAttributes: 3 } }, { gpu: { devices: [{}], auxAttributes: { glRenderer: "" } } }]) {
     const b = parseSystemInfo(garbage);
     assert.equal(b.kind, "unverified", JSON.stringify(garbage));

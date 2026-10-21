@@ -2357,7 +2357,10 @@ it depends on.
     with `gpu` or a requirement), `runtimeKey({ build, pack, platform, arch, display, backend,
     switches })` (SHA-256; null without build, platform, arch or display kind; only backend switches
     count). `scripts/native/backend.mjs`: pure `parseSystemInfo` (`software` for `gl=disabled`,
-    named "software rasterizer (GPU rendering off)", and for a software name in the renderer, the
+    named "software rasterizer (GPU rendering off)", and the same for a GPU the engine's blocklist
+    refused, which the answer still names (`featureStatus`: compositing in software and no WebGL,
+    not even the software fallback; found at the Phase A and E gate: the open build 153 under
+    Xvfb names Mesa's llvmpipe while it rasterizes on the CPU and gives pages no WebGL), and for a software name in the renderer, the
     device or `angle=swiftshader`; `hardware` for any other named renderer; else `unverified` with a
     reason; strings cut and cleaned, IDs whole numbers only) and `readBackend(ctx, { ms })` (a
     browser-level session over the pipe, each step bounded by `within`, the session detached).

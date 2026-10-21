@@ -1,0 +1,71 @@
+{
+  "source": "the Windows identity a Linux host without a GPU shows (native/graphics.mjs WINDOWS_IDENTITY; engine patches 967 and 968), as the engine's Windows persona reports it over llvmpipe: the strings of the engine's NVIDIA pool entry (002), the WebGPU adapter 961 reports over the software adapter 968 lets through",
+  "platform": "linux",
+  "arch": "x64",
+  "candidate": "auto",
+  "mode": "windows-identity",
+  "args": ["--fingerprint-gpu-pool=nvidia", "--use-webgpu-adapter=swiftshader", "--enable-features=WebGPUService"],
+  "version": "150.0.7871.114",
+  "sandbox": {
+    "on": true,
+    "required": "in server mode",
+    "noSandboxSwitch": false,
+    "page": [
+      "Sandbox Status",
+      "Layer 1 Sandbox\tNamespace",
+      "PID namespaces\tYes",
+      "Network namespaces\tYes",
+      "Seccomp-BPF sandbox\tNo",
+      "Seccomp-BPF sandbox supports TSYNC\tNo",
+      "Ptrace Protection with Yama LSM (Broker)\tNo",
+      "Ptrace Protection with Yama LSM (Non-broker)\tNo",
+      "You are NOT adequately sandboxed."
+    ]
+  },
+  "probe": {
+    "webgl": {
+      "available": true,
+      "vendor": "WebKit",
+      "renderer": "WebKit WebGL",
+      "version": "WebGL 1.0 (OpenGL ES 2.0 Chromium)",
+      "unmaskedVendor": "Google Inc. (NVIDIA)",
+      "unmaskedRenderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "maxTextureSize": 16384,
+      "maxRenderbufferSize": 16384,
+      "extensions": 35
+    },
+    "webgl2": {
+      "available": true,
+      "vendor": "WebKit",
+      "renderer": "WebKit WebGL",
+      "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)",
+      "unmaskedVendor": "Google Inc. (NVIDIA)",
+      "unmaskedRenderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "maxTextureSize": 16384,
+      "maxRenderbufferSize": 16384,
+      "extensions": 32
+    },
+    "webgpu": {
+      "available": true,
+      "reason": null,
+      "vendor": "nvidia",
+      "architecture": "ampere",
+      "isFallbackAdapter": false,
+      "features": ["core-features-and-limits", "depth-clip-control", "depth32float-stencil8", "texture-compression-bc", "timestamp-query", "indirect-first-instance", "shader-f16", "float32-filterable", "subgroups"],
+      "limits": { "maxTextureDimension2D": 8192, "maxBindGroups": 4, "maxBindGroupsPlusVertexBuffers": 24, "maxComputeInvocationsPerWorkgroup": 256, "maxComputeWorkgroupSizeX": 256, "maxBufferSize": 268435456, "maxUniformBufferBindingSize": 65536 },
+      "requestDevice": "ok",
+      "compute": "2,4,6,8"
+    },
+    "navigator": {
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
+      "platform": "Win32",
+      "hardwareConcurrency": 8,
+      "screen": [
+        1366,
+        768,
+        24
+      ],
+      "dpr": 1
+    }
+  }
+}

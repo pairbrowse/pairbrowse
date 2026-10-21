@@ -12,7 +12,7 @@ import { readFileSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { probeLaunch, runProbe, probeRecord, probeOptions, runsEmulated, graphicsStep, readSandboxPage, boundedStep, launchWithin, localSite, PROBE_PARTS, PROBE_FONTS, CONTROL_FONTS, SANDBOX_PAGE } from "../scripts/native/probe.mjs";
-import { GRAPHICS, GPU_LESS_IDENTITY, runtimeKey } from "../scripts/native/graphics.mjs";
+import { GRAPHICS, GPU_LESS_IDENTITY, LINUX_IDENTITY, runtimeKey } from "../scripts/native/graphics.mjs";
 import { parseSystemInfo } from "../scripts/native/backend.mjs";
 import { validate } from "../scripts/native/validate.mjs";
 
@@ -60,7 +60,7 @@ function standIn(page, systemInfoName, { hang = [], onStart = () => {}, gotoFail
     log.starts.push(directory);
     log.measured.push(measured);
     const start = log.starts.length;
-    if (identity) GRAPHICS.shown = measured?.kind === "software" ? GPU_LESS_IDENTITY.name : null;
+    if (identity) GRAPHICS.shown = measured?.kind === "software" ? (identity === true ? LINUX_IDENTITY.name : identity) : null;
     onStart(start);
     let url = "";
     const tab = {
@@ -120,7 +120,7 @@ test("probe results parsed: WebGL vendor, extensions and limits; WebGPU unavaila
   assert.equal(m.webgl2.extensions, 32);
   assert.deepEqual({ available: m.webgpu.available, reason: m.webgpu.reason }, { available: false, reason: "requestAdapter returned null" });
   assert.deepEqual(m.canvas, { stable: true, repeat: true, noise: false });
-  assert.deepEqual(m.fonts, { checked: PROBE_FONTS.linux.length, missing: [], controlFound: [] });
+  assert.deepEqual(m.fonts, { checked: PROBE_FONTS.linux.length, missing: [], controlFound: [], emoji: null });
   assert.equal(m.media['video/mp4; codecs="avc1.42E01E"'], "probably");
   assert.deepEqual(m.locale, { timezone: "Europe/Berlin", languages: ["de-DE", "de"] });
   assert.equal(m.screen.width, 1366);
@@ -152,7 +152,7 @@ test("a host without a GPU: the page is measured under the identity shown, the r
     const { launch, log } = standIn(answers("probe-linux-llvmpipe-persona"), "linux-xvfb-llvmpipe", { identity: true });
     const m = await probeLaunch({ launch, directory: dir(), ...linux({ sandbox: { on: true } }) });
     assert.equal(log.starts.length, 3);
-    assert.equal(m.shown, GPU_LESS_IDENTITY.name);
+    assert.equal(m.shown, LINUX_IDENTITY.name, "an older build's identity: the stand-in's");
     assert.match(m.webgl.unmaskedRenderer, /UHD Graphics 770/);
     assert.equal(m.backend.kind, "software", "the backend is still the host's, read in the start that showed the identity");
     assert.equal(graphicsStep(m), "graphics: software (shown as Intel UHD Graphics 770), WebGL 2, WebGPU unavailable");
@@ -312,7 +312,8 @@ test("the self-check's line names the kind, WebGL's level and WebGPU's adapter, 
   assert.equal(graphicsStep(null), "graphics: unverified, no WebGL, WebGPU unavailable");
   assert.doesNotMatch(graphicsStep(llvm), /llvmpipe|4318/);
   // The identity shown on a host without a GPU is the engine's, never this computer's: named.
-  assert.equal(graphicsStep({ ...llvm, shown: GPU_LESS_IDENTITY.name, webgpu: { available: true, isFallbackAdapter: false } }), "graphics: software (shown as Intel UHD Graphics 770), WebGL 2, WebGPU adapter");
+  assert.equal(graphicsStep({ ...llvm, shown: GPU_LESS_IDENTITY.name, webgpu: { available: true, isFallbackAdapter: false } }), "graphics: software (shown as Windows 11 with NVIDIA GeForce RTX 3060), WebGL 2, WebGPU adapter");
+  assert.equal(graphicsStep({ ...llvm, shown: LINUX_IDENTITY.name }), "graphics: software (shown as Intel UHD Graphics 770), WebGL 2, WebGPU unavailable", "an older build's identity");
   assert.equal(graphicsStep({ ...llvm, shown: "Some Other GPU" }), "graphics: software, WebGL 2, WebGPU unavailable", "an identity PairBrowse doesn't know isn't repeated");
 });
 

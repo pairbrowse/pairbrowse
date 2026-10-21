@@ -8,7 +8,7 @@ import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { GRAPHICS_BACKENDS, SOFTWARE_SWITCH, GPU_LESS_IDENTITY, PASSING_STATUSES, identityKeys, graphicsPlan, compatErrors, runtimeKey, backendSwitches, graphicsStatusPart, shownIdentity, GRAPHICS } from "../scripts/native/graphics.mjs";
+import { GRAPHICS_BACKENDS, SOFTWARE_SWITCH, GPU_LESS_IDENTITY, WINDOWS_IDENTITY, LINUX_IDENTITY, IDENTITIES, GPU_POOL_SWITCH, WEBGPU_SOFTWARE_SWITCHES, PASSING_STATUSES, identityKeys, identityNamed, identityFor, personaPlatform, graphicsPlan, compatErrors, runtimeKey, backendSwitches, graphicsStatusPart, shownIdentity, GRAPHICS } from "../scripts/native/graphics.mjs";
 import { parseSystemInfo, readBackend, unverifiedBackend } from "../scripts/native/backend.mjs";
 import { applyGraphicsPlan } from "../scripts/native-engine.mjs";
 import { configProblem, PAIRBROWSE_ENGINE_KEYS } from "../scripts/config-schema.mjs";
@@ -65,10 +65,10 @@ test("Linux plan sets disableGpuFingerprint and noise off", () => {
   assert.deepEqual(graphicsPlan({ platform: "linux", display: XVFB, screenSet: true }).engineKeys, { disableGpuFingerprint: true, fingerprintNoise: false });
   // macOS keeps the host capture (its own GPU): the plan adds only no noise over its pixels, whatever
   // graphicsNoise says (that setting is for a host without a GPU).
-  assert.deepEqual(graphicsPlan({ platform: "darwin", display: XVFB }), { switches: [], engineKeys: { fingerprintNoise: false }, refusals: [], identity: null });
+  assert.deepEqual(graphicsPlan({ platform: "darwin", display: XVFB }), { switches: [], identitySwitches: [], engineKeys: { fingerprintNoise: false }, refusals: [], identity: null });
   assert.deepEqual(graphicsPlan({ platform: "darwin", graphicsNoise: true }).engineKeys, { fingerprintNoise: false });
   // The open build: nothing, and anything but auto is refused (E9).
-  assert.deepEqual(graphicsPlan({ platform: "linux", browserKind: "pairbrowse-open", display: XVFB }), { switches: [], engineKeys: {}, refusals: [], identity: null });
+  assert.deepEqual(graphicsPlan({ platform: "linux", browserKind: "pairbrowse-open", display: XVFB }), { switches: [], identitySwitches: [], engineKeys: {}, refusals: [], identity: null });
   assert.match(messages(graphicsPlan({ requested: "software", platform: "linux", browserKind: "pairbrowse-open" }).refusals)[0], /only the native PairBrowse build can do/);
   // A hardware read on Linux keeps the real plan.
   const hardware = graphicsPlan({ platform: "linux", display: XVFB, measured: { kind: "hardware", renderer: "ANGLE (NVIDIA, NVIDIA GeForce RTX 4070)" } });
@@ -81,12 +81,37 @@ test("Linux plan sets disableGpuFingerprint and noise off", () => {
 // plan; a GPU asked for over software is refused, never shown an identity.
 test("a software read on Linux shows the engine's identity (decision 10): identity keys, canvas noise switchable, screen still the virtual screen", () => {
   const software = { kind: "software", renderer: "ANGLE (Mesa/X.org, llvmpipe (LLVM 15.0.6 128 bits))" };
+  // A build whose engine takes the pool switch (patch 967): the Windows identity, as the reference
+  // presents a Linux host without a GPU (decision 11, "go same as the reference"): the engine's
+  // Windows persona, its NVIDIA GeForce RTX 3060, the virtual screen less a 48 px taskbar, the
+  // engine switches for the pool entry and WebGPU's software adapter by name (968).
+  const windows = graphicsPlan({ requested: "auto", platform: "linux", display: XVFB, measured: software, gpuPool: true });
+  assert.equal(windows.identity, GPU_LESS_IDENTITY.name);
+  assert.equal(GPU_LESS_IDENTITY, WINDOWS_IDENTITY);
+  assert.equal(GPU_LESS_IDENTITY.name, "Windows 11 with NVIDIA GeForce RTX 3060");
+  assert.deepEqual([GPU_LESS_IDENTITY.gpu, GPU_LESS_IDENTITY.family, GPU_LESS_IDENTITY.platform, GPU_LESS_IDENTITY.taskbar, GPU_LESS_IDENTITY.webgpu], ["NVIDIA GeForce RTX 3060", "nvidia", "windows", 48, { vendor: "nvidia", architecture: "ampere" }]);
+  assert.ok(GPU_LESS_IDENTITY.renderer.test("ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)"), "the engine's pool entry");
+  assert.ok(!GPU_LESS_IDENTITY.renderer.test("ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Ti Direct3D11 vs_5_0 ps_5_0, D3D11)"));
+  assert.deepEqual(windows.engineKeys, { disableGpuFingerprint: false, fingerprintNoise: false, canvasNoise: false, platform: "windows", screenWidth: 1366, screenHeight: 900, availWidth: 1366, availHeight: 852, colorDepth: 24, devicePixelRatio: 1 });
+  assert.deepEqual(windows.identitySwitches, ["--fingerprint-gpu-pool=nvidia", "--use-webgpu-adapter=swiftshader", "--enable-features=WebGPUService"]);
+  assert.deepEqual([GPU_POOL_SWITCH, ...WEBGPU_SOFTWARE_SWITCHES], windows.identitySwitches);
+  assert.ok(!windows.identitySwitches.some((s) => /unsafe/.test(s)), "never the unsafe WebGPU switch");
+  assert.deepEqual(windows.switches, [], "no backend switch: Xvfb already renders in software");
+  for (const k of Object.keys(windows.engineKeys)) assert.ok(PAIRBROWSE_ENGINE_KEYS.includes(k), `${k} is an engine key`);
+  assert.equal(graphicsPlan({ platform: "linux", display: { width: 1366, height: 80, depth: 24 }, measured: software, gpuPool: true }).engineKeys.availHeight, 80, "a screen too small for a taskbar keeps its height");
+  assert.equal(graphicsPlan({ platform: "linux", measured: software, gpuPool: true }).engineKeys.availHeight, undefined, "no display, no screen keys");
+  // An older build (no pool switch): the Linux identity, the engine's own platform, no switches.
   const plan = graphicsPlan({ requested: "auto", platform: "linux", display: XVFB, measured: software });
-  assert.equal(plan.identity, GPU_LESS_IDENTITY.name);
-  assert.equal(GPU_LESS_IDENTITY.name, "Intel UHD Graphics 770");
+  assert.equal(plan.identity, LINUX_IDENTITY.name);
+  assert.equal(LINUX_IDENTITY.name, "Intel UHD Graphics 770");
+  assert.deepEqual([identityFor({ gpuPool: true }), identityFor({}), identityFor()], [WINDOWS_IDENTITY, LINUX_IDENTITY, LINUX_IDENTITY]);
+  assert.deepEqual([identityNamed(WINDOWS_IDENTITY.name), identityNamed(LINUX_IDENTITY.name), identityNamed("Zq GPU 9000"), identityNamed(null)], [WINDOWS_IDENTITY, LINUX_IDENTITY, null, null]);
+  assert.deepEqual(IDENTITIES, [WINDOWS_IDENTITY, LINUX_IDENTITY]);
   assert.deepEqual(plan.engineKeys, { disableGpuFingerprint: false, fingerprintNoise: false, canvasNoise: false, screenWidth: 1366, screenHeight: 900, availWidth: 1366, availHeight: 900, colorDepth: 24, devicePixelRatio: 1 });
-  assert.deepEqual(plan.switches, []);
+  assert.deepEqual([plan.switches, plan.identitySwitches], [[], []]);
   for (const k of Object.keys(plan.engineKeys)) assert.ok(PAIRBROWSE_ENGINE_KEYS.includes(k), `${k} is an engine key`);
+  // The platform pages are told about: the identity's under one, else this computer's.
+  assert.deepEqual([personaPlatform({ shown: WINDOWS_IDENTITY.name }), personaPlatform({ shown: LINUX_IDENTITY.name }, "darwin"), personaPlatform({ shown: null }, "darwin"), personaPlatform({ shown: "Zq" }, "linux"), personaPlatform({}, "win32")], ["windows", "linux", "macos", "linux", "windows"]);
   assert.deepEqual(identityKeys(false), { disableGpuFingerprint: false, fingerprintNoise: false, canvasNoise: false });
   const quiet = graphicsPlan({ platform: "linux", measured: software, graphicsNoise: false }).engineKeys;
   assert.deepEqual([quiet.fingerprintNoise, quiet.canvasNoise], [false, false], "noise off when config.json says so");
@@ -95,8 +120,8 @@ test("a software read on Linux shows the engine's identity (decision 10): identi
   const noisy = graphicsPlan({ platform: "linux", measured: software, graphicsNoise: true }).engineKeys;
   assert.deepEqual([noisy.fingerprintNoise, noisy.canvasNoise], [true, true], "on when config.json says so");
   // software asked for and measured: the identity too (the engine's software path renders in software).
-  const soft = graphicsPlan({ requested: "software", platform: "linux", measured: software });
-  assert.deepEqual([soft.identity, soft.switches], [GPU_LESS_IDENTITY.name, [SOFTWARE_SWITCH]]);
+  const soft = graphicsPlan({ requested: "software", platform: "linux", measured: software, gpuPool: true });
+  assert.deepEqual([soft.identity, soft.switches, soft.identitySwitches], [GPU_LESS_IDENTITY.name, [SOFTWARE_SWITCH], [...WINDOWS_IDENTITY.switches]]);
   // gpu over software: refused, no identity; unmeasured or unverified: the real plan.
   const gpu = graphicsPlan({ requested: "gpu", platform: "linux", measured: software, name: "p" });
   assert.deepEqual([gpu.identity, gpu.engineKeys, gpu.refusals.length], [null, {}, 1]);
@@ -105,8 +130,8 @@ test("a software read on Linux shows the engine's identity (decision 10): identi
     assert.deepEqual([real.identity, real.engineKeys.disableGpuFingerprint, real.engineKeys.fingerprintNoise], [null, true, false], JSON.stringify(measured));
   }
   // Never off Linux, never on the open build.
-  assert.equal(graphicsPlan({ platform: "darwin", measured: software }).identity, null);
-  assert.equal(graphicsPlan({ platform: "linux", browserKind: "pairbrowse-open", measured: software }).identity, null);
+  assert.equal(graphicsPlan({ platform: "darwin", measured: software, gpuPool: true }).identity, null);
+  assert.equal(graphicsPlan({ platform: "linux", browserKind: "pairbrowse-open", measured: software, gpuPool: true }).identity, null);
   // config.json's pairbrowse.graphicsNoise is a PairBrowse setting, true or false (the engine's
   // own canvasNoise option stays an engine key, which the plan writes over on Linux).
   assert.equal(configProblem({ pairbrowse: { graphicsNoise: false } }), "");
@@ -115,13 +140,15 @@ test("a software read on Linux shows the engine's identity (decision 10): identi
   assert.ok(PAIRBROWSE_ENGINE_KEYS.includes("canvasNoise"));
   // What the status part and a record say: the identity, never this computer's GPU, and "consistent".
   assert.equal(graphicsStatusPart({ kind: "software", renderer: "llvmpipe (LLVM 15)", shown: GPU_LESS_IDENTITY.name, requested: "auto", status: "consistent" }, { build: "150.0.7871.114" }),
-    "Graphics: software (llvmpipe (LLVM 15)), shown as Intel UHD Graphics 770, requested auto, consistent on 150.0.7871.114");
+    "Graphics: software (llvmpipe (LLVM 15)), shown as Windows 11 with NVIDIA GeForce RTX 3060, requested auto, consistent on 150.0.7871.114");
   assert.equal(graphicsStatusPart({ kind: "software", renderer: "llvmpipe", shown: GPU_LESS_IDENTITY.name, requested: "auto", status: "consistent" }, { build: "b", renderer: false }),
-    "Graphics: software, shown as Intel UHD Graphics 770, requested auto, consistent on b");
+    "Graphics: software, shown as Windows 11 with NVIDIA GeForce RTX 3060, requested auto, consistent on b");
+  assert.equal(graphicsStatusPart({ kind: "software", renderer: "llvmpipe", shown: LINUX_IDENTITY.name, requested: "auto", status: "consistent" }, { build: "b", renderer: false }),
+    "Graphics: software, shown as Intel UHD Graphics 770, requested auto, consistent on b", "an older build's identity is named as it is");
   assert.equal(graphicsStatusPart({ kind: "software", renderer: "llvmpipe", shown: "Zq GPU 9000", requested: "auto", status: "validated" }, { build: "b" }),
     "Graphics: software (llvmpipe), requested auto, validated on b", "an identity PairBrowse doesn't know isn't repeated");
   assert.deepEqual([...PASSING_STATUSES], ["validated", "consistent"]);
-  assert.deepEqual([shownIdentity({ shown: GPU_LESS_IDENTITY.name }), shownIdentity({ shown: "x" }), shownIdentity({ shown: null }), shownIdentity(null)], [GPU_LESS_IDENTITY.name, null, null, null]);
+  assert.deepEqual([shownIdentity({ shown: GPU_LESS_IDENTITY.name }), shownIdentity({ shown: LINUX_IDENTITY.name }), shownIdentity({ shown: "x" }), shownIdentity({ shown: null }), shownIdentity(null)], [GPU_LESS_IDENTITY.name, LINUX_IDENTITY.name, null, null, null]);
 });
 
 test("the Linux plan on a launch's fingerprint: persona untouched, legacy GPU keys named and left out", () => {
@@ -142,10 +169,26 @@ test("the Linux plan on a launch's fingerprint: persona untouched, legacy GPU ke
   const shownLogs = [];
   const shownPrint = { fingerprint: "seed", disableGpuFingerprint: true, timezone: "UTC" };
   const shown = applyGraphicsPlan(shownPrint, { overrides: { disableGpuFingerprint: true }, saved: {}, graphicsNoise: true }, { platform: "linux", display: XVFB, measured: { kind: "software", renderer: "llvmpipe" }, log: (l) => shownLogs.push(l) });
-  assert.equal(shown.identity, "Intel UHD Graphics 770");
-  assert.deepEqual([shownPrint.disableGpuFingerprint, shownPrint.fingerprintNoise, shownPrint.canvasNoise, shownPrint.screenWidth], [false, true, true, 1366]);
+  assert.equal(shown.identity, "Intel UHD Graphics 770", "an older build: the Linux identity");
+  assert.deepEqual([shownPrint.disableGpuFingerprint, shownPrint.fingerprintNoise, shownPrint.canvasNoise, shownPrint.screenWidth, shownPrint.platform], [false, true, true, 1366, undefined]);
   assert.ok(shownLogs.some((l) => /disableGpuFingerprint not applied on Linux: graphics there follow the measured backend \(the engine's identity over software rendering\)/.test(l)));
   assert.ok(shownLogs.some((l) => /graphics: software rendering, shown as Intel UHD Graphics 770 \(the engine's one graphics identity for a host without a GPU, decision 10; canvas noise on\), screen 1366x900 \(the virtual screen\)/.test(l)));
+  // A build whose engine takes the pool switch: the Windows identity, its platform over the
+  // build's derived one without a word, over one a layer set with a word; the taskbar off the
+  // available height; the identity's switches for the launch to add.
+  const winLogs = [];
+  const winPrint = { fingerprint: "seed", platform: "linux", timezone: "UTC" };
+  const win = applyGraphicsPlan(winPrint, { overrides: {}, saved: {} }, { platform: "linux", display: XVFB, measured: { kind: "software", renderer: "llvmpipe" }, gpuPool: true, log: (l) => winLogs.push(l) });
+  assert.equal(win.identity, "Windows 11 with NVIDIA GeForce RTX 3060");
+  assert.deepEqual([winPrint.platform, winPrint.availHeight, winPrint.screenHeight, winPrint.canvasNoise], ["windows", 852, 900, false]);
+  assert.deepEqual(win.identitySwitches, ["--fingerprint-gpu-pool=nvidia", "--use-webgpu-adapter=swiftshader", "--enable-features=WebGPUService"]);
+  assert.ok(winLogs.some((l) => /graphics: software rendering, shown as Windows 11 with NVIDIA GeForce RTX 3060 \(the engine's one graphics identity for a host without a GPU, decision 10; canvas noise off\), screen 1366x900 \(the virtual screen\)/.test(l)), winLogs.join("\n"));
+  assert.ok(!winLogs.some((l) => /platform not applied/.test(l)), "the derived platform gives way without a word");
+  const setLogs = [];
+  const setPrint = { fingerprint: "seed", platform: "linux" };
+  applyGraphicsPlan(setPrint, { overrides: { platform: "linux" }, saved: {} }, { platform: "linux", display: XVFB, measured: { kind: "software", renderer: "llvmpipe" }, gpuPool: true, log: (l) => setLogs.push(l) });
+  assert.equal(setPrint.platform, "windows");
+  assert.ok(setLogs.some((l) => /platform not applied on Linux: the identity shown over software rendering brings its own \(Windows 11 with NVIDIA GeForce RTX 3060\)/.test(l)), setLogs.join("\n"));
   const quiet = {};
   applyGraphicsPlan(quiet, { overrides: {}, saved: {}, graphicsNoise: false }, { platform: "linux", measured: { kind: "software", renderer: "llvmpipe" }, log: (l) => shownLogs.push(l) });
   assert.deepEqual([quiet.fingerprintNoise, quiet.canvasNoise], [false, false]);

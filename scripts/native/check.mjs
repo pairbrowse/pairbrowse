@@ -19,6 +19,7 @@ import { needsVirtualDisplay, screenGeometry, serverMode, startVirtualDisplay } 
 import { loadBrowserDriver, patchrightNodeMinimum } from "../driver.mjs";
 import { readJson, sleep, within, withTimeout } from "../util.mjs";
 import { probeLaunch, probeOptions, graphicsStep, PROBE_STEP_MS } from "./probe.mjs";
+import { readFontFamilies, windowsFontsLine } from "./winfonts.mjs";
 
 const CHECK_TIMEOUT_MS = 180_000;
 // The graphics step runs on the helper's launch path (an update's first start waits for it), so
@@ -249,6 +250,9 @@ export async function selfCheck(exec, { config = loadConfig(), log = () => {}, t
     log("measuring the new browser's graphics");
     const launch = probeLauncher({ chromium, engine, config, shell, screen, env, executablePath: exec, profileArgs, server: serverMode(config, env), log });
     result.push(await graphicsCheck({ launch, build: nativeManifest(exec).version, pack: NATIVE.engine?.sha256 ?? null, display: screen ? "xvfb" : "native", scratch, log, onMeasured: onGraphics, timeoutMs: graphicsMs }));
+    // On Linux, the Windows fonts the identity a host without a GPU shows would want (never a
+    // failure: the setup names them, docs/server.md).
+    if (process.platform === "linux") { const fonts = windowsFontsLine(readFontFamilies()); log(fonts); result.push(fonts); }
     return result;
   } finally {
     await ctx?.close().catch(() => {});

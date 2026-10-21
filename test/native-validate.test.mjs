@@ -11,7 +11,7 @@ import { readFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { validate, measuredRecord, entryStatus, RULES, RULE_IDS } from "../scripts/native/validate.mjs";
-import { GPU_LESS_IDENTITY } from "../scripts/native/graphics.mjs";
+import { GPU_LESS_IDENTITY, LINUX_IDENTITY } from "../scripts/native/graphics.mjs";
 import { rendererFamily, COHERENCE_RULES } from "../scripts/rules/coherence.mjs";
 import { COHERENCE } from "../scripts/native/validate.mjs";
 import { PROPERTIES, RUNTIMES, property, classOf, runtimeOf } from "../scripts/native/properties.mjs";
@@ -83,7 +83,7 @@ test("the property matrix: every runtime classed, mechanisms from the known list
   const sev = Object.fromEntries(RULES.map((r) => [r.id, r.severity]));
   for (const id of ["backend.requested", "backend.stable", "require.webgl", "require.webgpu", "require.platforms", "webgl.strings-vs-backend", "webgl.limits-vs-backend", "webgl.context",
     "webgpu.vendor", "webgpu.device", "canvas.stable", "canvas.repeat", "screen.display", "locale", "ua.build", "sandbox.on", "bridge.absent"]) assert.equal(sev[id], "error", id);
-  for (const id of ["webgl.same-origins", "webgpu.features-vs-limits", "fonts.available"]) assert.equal(sev[id], "warning", id);
+  for (const id of ["webgl.same-origins", "webgpu.features-vs-limits", "fonts.available", "fonts.emoji"]) assert.equal(sev[id], "warning", id);
   for (const id of ["media.capabilities", "memory"]) assert.equal(sev[id], "info", id);
   // The coherence rules the validator runs: the shared module's severities, each named by a property.
   for (const r of COHERENCE) {
@@ -267,10 +267,31 @@ test("under the identity shown on a host without a GPU the persona strings are c
   const adapter = { available: true, reason: null, vendor: "intel", architecture: "gen-12-lp", isFallbackAdapter: false, features: ["depth-clip-control", "texture-compression-bc"],
     limits: { maxTextureDimension2D: 8192, maxBindGroups: 4, maxBindGroupsPlusVertexBuffers: 24, maxComputeInvocationsPerWorkgroup: 256, maxComputeWorkgroupSizeX: 256, maxBufferSize: 1073741824, maxUniformBufferBindingSize: 65536 },
     requestDevice: "ok", compute: "2,4,6,8" };
-  const under = (extra = {}) => measurement("probe-linux-llvmpipe-persona", "systeminfo-linux-xvfb-llvmpipe", { shown: GPU_LESS_IDENTITY.name, webgpu: adapter, screen: { width: 1366, height: 768, availWidth: 1366, availHeight: 768, colorDepth: 24, devicePixelRatio: 1 }, ...extra });
+  // The Windows identity (the engine's Windows persona over llvmpipe: the NVIDIA pool entry's
+  // D3D11 strings, a nvidia/ampere adapter over the software one, Win32, the screen less a taskbar).
+  const windows = (extra = {}) => measurement("probe-linux-llvmpipe-windows", "systeminfo-linux-xvfb-llvmpipe", { shown: GPU_LESS_IDENTITY.name, screen: { width: 1366, height: 768, availWidth: 1366, availHeight: 720, colorDepth: 24, devicePixelRatio: 1 }, ...extra });
+  const win = validate({ requested: requested(), derived: LINUX, measured: windows() });
+  assert.equal(win.status, "consistent", JSON.stringify(win.items.filter((i) => i.status === "mismatch" || i.status === "unverified")));
+  assert.equal(win.graphics.shown, "Windows 11 with NVIDIA GeForce RTX 3060");
+  assert.deepEqual([itemOf(win, "webgl.strings-vs-backend").status, itemOf(win, "webgl.strings-vs-backend").requested], ["matched", "Windows 11 with NVIDIA GeForce RTX 3060"]);
+  assert.equal(itemOf(win, "webgpu.vendor").reason, "the adapter follows the identity shown (nvidia/ampere)");
+  assert.match(itemOf(win, "gpu.software-as-hardware").reason, /one identity over software rendering \(Windows 11 with NVIDIA GeForce RTX 3060\), WebGL and WebGPU agreeing/);
+  assert.equal(itemOf(win, "gpu.vs-platform").status, "matched", "an NVIDIA GPU fits the Windows pages are told about");
+  assert.equal(itemOf(win, "gpu.vs-platform").requested, "Win32");
+  assert.equal(itemOf(win, "screen.display").status, "matched", "the taskbar off the available height is no mismatch with the virtual screen");
+  assert.equal(entryStatus(win, { pack: PACK, runtimeKey: KEY }), "consistent");
+  // An Intel adapter, or the Intel pool entry's strings, under the Windows identity: not it.
+  assert.equal(validate({ requested: requested(), derived: LINUX, measured: windows({ webgpu: { ...windows().webgpu, vendor: "intel", architecture: "gen-12-lp" } }) }).status, "failed");
+  const intelUnderWindows = validate({ requested: requested(), derived: LINUX, measured: measurement("probe-linux-llvmpipe-persona", "systeminfo-linux-xvfb-llvmpipe", { shown: GPU_LESS_IDENTITY.name, webgpu: noWebgpu }) });
+  assert.equal(intelUnderWindows.status, "failed");
+  assert.match(itemOf(intelUnderWindows, "webgl.strings-vs-backend").reason, /^pages read ANGLE \(Intel, Mesa Intel\(R\) UHD Graphics 770.* while the launch shows Windows 11 with NVIDIA GeForce RTX 3060$/);
+  // The 3060 Ti is another card.
+  assert.equal(validate({ requested: requested(), derived: LINUX, measured: windows({ webgl: { ...windows().webgl, unmaskedRenderer: "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Ti Direct3D11 vs_5_0 ps_5_0, D3D11)" } }) }).status, "failed");
+  // An older build's Linux identity (the Intel UHD 770 under the engine's Linux persona).
+  const under = (extra = {}) => measurement("probe-linux-llvmpipe-persona", "systeminfo-linux-xvfb-llvmpipe", { shown: LINUX_IDENTITY.name, webgpu: adapter, screen: { width: 1366, height: 768, availWidth: 1366, availHeight: 768, colorDepth: 24, devicePixelRatio: 1 }, ...extra });
   const entry = validate({ requested: requested(), derived: LINUX, measured: under() });
   assert.equal(entry.status, "consistent", JSON.stringify(entry.items.filter((i) => i.status === "mismatch" || i.status === "unverified")));
-  assert.equal(entry.graphics.shown, GPU_LESS_IDENTITY.name);
+  assert.equal(entry.graphics.shown, LINUX_IDENTITY.name);
   assert.equal(entry.graphics.backend.kind, "software", "the host's backend stays what it is");
   const strings = itemOf(entry, "webgl.strings-vs-backend");
   assert.deepEqual([strings.status, strings.requested], ["matched", "Intel UHD Graphics 770"]);
@@ -290,7 +311,7 @@ test("under the identity shown on a host without a GPU the persona strings are c
   assert.match(itemOf(fallback, "webgpu.vendor").reason, /^the WebGPU adapter says google\/swiftshader \(a fallback adapter\) while the launch shows Intel UHD Graphics 770 \(intel\/gen-12-lp\)/);
   assert.match(itemOf(fallback, "gpu.software-as-hardware").reason, /the WebGPU adapter says google\/swiftshader \(a fallback adapter\) while the launch shows Intel UHD Graphics 770 over software rendering/);
   // The real llvmpipe strings under a launch that says it shows the identity: pages don't read it.
-  const real = validate({ requested: requested(), derived: LINUX, measured: measurement("probe-linux-llvmpipe-real", "systeminfo-linux-xvfb-llvmpipe", { shown: GPU_LESS_IDENTITY.name, webgpu: noWebgpu }) });
+  const real = validate({ requested: requested(), derived: LINUX, measured: measurement("probe-linux-llvmpipe-real", "systeminfo-linux-xvfb-llvmpipe", { shown: LINUX_IDENTITY.name, webgpu: noWebgpu }) });
   assert.equal(real.status, "failed");
   assert.match(itemOf(real, "webgl.strings-vs-backend").reason, /^pages read ANGLE \(Mesa\/X\.org, llvmpipe.* while the launch shows Intel UHD Graphics 770$/);
   assert.match(itemOf(real, "gpu.software-as-hardware").reason, /^WebGL reads ANGLE \(Mesa\/X\.org, llvmpipe.* while the launch shows Intel UHD Graphics 770 over software rendering$/);
@@ -307,6 +328,20 @@ test("under the identity shown on a host without a GPU the persona strings are c
   assert.equal(validate({ requested: requested(), derived: LINUX, measured: under({ shown: null }) }).status, "failed");
   // A gpu request under the identity is still a software backend: refused as before.
   assert.equal(itemOf(validate({ requested: requested({ graphics: { backend: "gpu", require: null } }), derived: LINUX, measured: under() }), "backend.requested").status, "mismatch");
+});
+
+// Colour emoji (the probe's fonts.emoji): a warning when they draw in black and white, nothing
+// when the probe couldn't tell.
+test("fonts.emoji warns when emoji draw in black and white", () => {
+  const withEmoji = (emoji) => measurement("probe-linux-llvmpipe-real", "systeminfo-linux-xvfb-llvmpipe", { fonts: { checked: 8, missing: [], controlFound: [], emoji } });
+  assert.equal(itemOf(validate({ requested: requested(), derived: LINUX, measured: withEmoji(true) }), "fonts.emoji").status, "matched");
+  const mono = itemOf(validate({ requested: requested(), derived: LINUX, measured: withEmoji(false) }), "fonts.emoji");
+  assert.deepEqual([mono.status, mono.severity], ["mismatch", "warning"]);
+  assert.match(mono.reason, /emoji draw in black and white.*fonts-noto-color-emoji/);
+  assert.equal(validate({ requested: requested(), derived: LINUX, measured: withEmoji(false) }).status, "validated", "a warning never fails the entry");
+  assert.equal(itemOf(validate({ requested: requested(), derived: LINUX, measured: withEmoji(null) }), "fonts.emoji"), undefined, "unmeasured: no item");
+  assert.equal(measuredRecord({ ...withEmoji("yes") }).fonts.emoji, null, "a non-boolean is unmeasured");
+  assert.equal(measuredRecord({ ...withEmoji(false) }).fonts.emoji, false);
 });
 
 test("backend.stable compares this launch's read with the measurement", () => {

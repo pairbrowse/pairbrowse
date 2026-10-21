@@ -27,7 +27,7 @@
 // Host GPU strings stay in the profile's 0600 file (reasons may name the renderer); nothing here
 // writes or logs. Pure; Node's standard library only.
 import { classOf, runtimeOf } from "./properties.mjs";
-import { GPU_LESS_IDENTITY, PASSING_STATUSES, shownIdentity } from "./graphics.mjs";
+import { PASSING_STATUSES, identityNamed, shownIdentity } from "./graphics.mjs";
 import { rendererFamily, softwareRenderer as softwareName, gpuVsPlatform, gpuSoftwareAsHardware, screenBelievable, platformOf } from "../rules/coherence.mjs";
 
 const SHA256 = /^[0-9a-f]{64}$/;
@@ -121,7 +121,7 @@ export function measuredRecord(raw) {
       device: num(b.device) ?? text(b.device, 80), renderer: text(b.renderer, 160), driver: text(b.driver, 80), source: "systeminfo" } : null,
     webgl: glPart(raw.webgl), webgl2: glPart(raw.webgl2), webgpu: webgpuPart(raw.webgpu),
     canvas: plainObject(canvas) ? { stable: bool(canvas.stable), repeat: bool(canvas.repeat), noise: bool(canvas.noise) } : null,
-    fonts: plainObject(fonts) ? { checked: num(fonts.checked), missing: names(fonts.missing, 12), controlFound: names(fonts.controlFound, 12) } : null,
+    fonts: plainObject(fonts) ? { checked: num(fonts.checked), missing: names(fonts.missing, 12), controlFound: names(fonts.controlFound, 12), emoji: bool(fonts.emoji) } : null,
     media: answers(raw.media),
     screen: plainObject(scr) ? { width: num(scr.width), height: num(scr.height), availWidth: num(scr.availWidth), availHeight: num(scr.availHeight),
       colorDepth: num(scr.colorDepth), devicePixelRatio: num(scr.devicePixelRatio) } : null,
@@ -136,10 +136,11 @@ export function measuredRecord(raw) {
 // Renderer families and software names: rules/coherence.mjs (rendererFamily), shared with the
 // coherence rules below.
 const backendFamily = (b) => (b.kind === "software" ? "software" : rendererFamily(b.renderer) || (b.kind === "hardware" ? null : "software"));
-// The identity a measurement was made under (decision 10): GPU_LESS_IDENTITY when the record names
-// it; { unknown: true, name } for a name PairBrowse doesn't know (never checked as consistent); null
-// for the runtime's own graphics.
-const identityOf = (m) => (typeof m?.shown === "string" && m.shown ? (shownIdentity(m) ? GPU_LESS_IDENTITY : { unknown: true, name: m.shown }) : null);
+// The identity a measurement was made under (decision 10): the one the record names (the Windows
+// identity, or the Linux one of an older build; native/graphics.mjs IDENTITIES); { unknown: true,
+// name } for a name PairBrowse doesn't know (never checked as consistent); null for the runtime's
+// own graphics.
+const identityOf = (m) => (typeof m?.shown === "string" && m.shown ? (shownIdentity(m) ? identityNamed(m.shown) : { unknown: true, name: m.shown }) : null);
 // Whether the WebGL renderer pages read is the identity's: its family and its name.
 const rendererIsIdentity = (identity, renderer) => !identity.unknown && rendererFamily(renderer) === identity.family && identity.renderer.test(String(renderer || ""));
 // Whether an available WebGPU adapter is the identity's: vendor and architecture, not a fallback.
@@ -377,6 +378,14 @@ export const RULES = Object.freeze([
       if (f.controlFound.length) return mismatch(`the page says fonts that aren't installed are there (${f.controlFound.slice(0, 3).join(", ")})`, null, f.controlFound.length);
       return f.missing.length ? mismatch(`${f.missing.length} of the persona's fonts don't resolve (${f.missing.slice(0, 3).join(", ")})`, null, f.missing.length)
         : matched("every persona font resolves", null, f.checked);
+    } },
+  // Emoji draw in colour (a colour emoji font is within the browser's reach: fonts-noto-color-emoji
+  // on a server; sites hash an emoji drawn on a canvas, and a monochrome one is no desktop's).
+  { id: "fonts.emoji", severity: "warning", field: "fonts",
+    check(ctx) {
+      const f = ctx.measured?.fonts;
+      if (!f || typeof f.emoji !== "boolean") return null;
+      return f.emoji ? matched("emoji draw in colour", null, true) : mismatch("emoji draw in black and white: no colour emoji font is within the browser's reach (on a server install fonts-noto-color-emoji, docs/server.md)", null, false);
     } },
   { id: "media.capabilities", severity: "info", field: "media.capabilities",
     check(ctx, rule) {

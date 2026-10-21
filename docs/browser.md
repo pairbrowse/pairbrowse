@@ -155,15 +155,17 @@ install `xvfb` and `xauth` first. On Linux the browser runs with a fingerprint s
 profile (the capture from your own computer is macOS only), and its graphics follow the computer:
 with a graphics card, pages read the real renderer's WebGL and WebGPU strings and limits, with no
 fingerprint noise over its pixels; on a computer without one (a server's virtual screen renders in
-software, which sites block before any CAPTCHA), pages are shown one ordinary desktop identity the
-browser carries, an Intel UHD Graphics 770 in WebGL (and in WebGPU wherever an adapter is
-available; without a graphics card there is usually none), with no canvas noise unless you
-turn it on (noise made fingerprint checks read the canvas as tampered and gained nothing measured;
-sessions on one such computer then share its canvas reading, as they do on one computer with a
-graphics card), while PairBrowse's own status and reports say "software rendering, shown
-as Intel UHD Graphics 770". On PairBrowse's virtual screen the screen pages read is that screen
-either way (`pairbrowse.graphics`, `pairbrowse.graphicsNoise` and `virtualScreen` in
-[Configuration](configuration.md); [Running on a server](server.md) for which computer to pick).
+software, which sites block before any CAPTCHA), pages are shown one ordinary desktop the browser
+carries: a Windows 11 desktop with an NVIDIA GeForce RTX 3060, in WebGL (on Direct3D 11) and in
+WebGPU (on a software adapter the browser offers there) alike, with the engine's Windows persona
+around it (user agent and client hints, speech voices, keyboard layout, the virtual screen less a
+taskbar), with no canvas noise unless you turn it on (noise made fingerprint checks read the
+canvas as tampered and gained nothing measured; sessions on one such computer then share its
+canvas reading, as they do on one computer with a graphics card), while PairBrowse's own status
+and reports say "software rendering, shown as Windows 11 with NVIDIA GeForce RTX 3060". On
+PairBrowse's virtual screen the screen pages read is that screen either way (`pairbrowse.graphics`,
+`pairbrowse.graphicsNoise` and `virtualScreen` in [Configuration](configuration.md); [Running on a
+server](server.md) for which computer to pick and which Windows fonts it lacks).
 
 The native browser keeps its logins in its own profile, so after switching to it you sign in to
 your sites once more.

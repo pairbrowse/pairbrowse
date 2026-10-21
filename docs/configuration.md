@@ -478,15 +478,17 @@ user's file, readable by others), the section says why and refuses a username or
   the computer: on a Mac the captured values of this Mac; on Linux with a graphics card the
   browser reports the real backend's WebGL and WebGPU strings and limits and adds no fingerprint
   noise over its real pixels; on a Linux computer without one (software rendering measured, which
-  sites block before any CAPTCHA) the browser shows pages one ordinary desktop identity it carries,
-  an Intel UHD Graphics 770 in WebGL (and in WebGPU wherever an adapter is available; without a
-  graphics card there is usually none), with the engine's canvas and readback
+  sites block before any CAPTCHA) the browser shows pages one ordinary desktop it carries, a
+  Windows 11 desktop with an NVIDIA GeForce RTX 3060 (the engine's Windows persona: that card in
+  WebGL on Direct3D 11 and in WebGPU on a software adapter the browser offers there, Windows in
+  the user agent and client hints, Windows speech voices and keyboard layout, the virtual screen
+  less a taskbar), with the engine's canvas and readback
   noise off unless `graphicsNoise` is `true` (a boolean in the `pairbrowse` block, default `false`
   since the ordinary-browser measurement: noise made fingerprint checks read the canvas as
   tampered and gained nothing; `true` gives each session its own canvas reading again, at that
   cost; it changes nothing on a computer with a graphics card), while the helper log, `pairbrowse_status` and
-  reports say "software rendering, shown as Intel UHD Graphics 770" and a profile checked there is
-  "consistent" (which `requireValidatedProfiles` takes like "validated"); a GPU asked for
+  reports say "software rendering, shown as Windows 11 with NVIDIA GeForce RTX 3060" and a profile
+  checked there is "consistent" (which `requireValidatedProfiles` takes like "validated"); a GPU asked for
   (`"gpu"`) over software rendering is refused, never shown an identity. Either way on
   PairBrowse's virtual screen the browser reports that screen (`virtualScreen`'s size and depth,
   pixel ratio 1 or your `--force-device-scale-factor`); a screen `screenWidth` and

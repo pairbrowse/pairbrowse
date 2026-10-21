@@ -23,7 +23,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { within } from "../util.mjs";
 import { readBackend, BACKEND_MS } from "./backend.mjs";
-import { GRAPHICS, runtimeKey, shownIdentity } from "./graphics.mjs";
+import { GRAPHICS, runtimeKey, shownIdentity, identityNamed } from "./graphics.mjs";
 import { measuredRecord } from "./validate.mjs";
 
 // How long one step may take (a page part, a navigation), and a probe browser's start.
@@ -37,12 +37,16 @@ const SANDBOX_LINES = 30;
 export const PROBE_PARTS = Object.freeze(["webgl", "webgl2", "webgpu", "canvas", "fonts", "screen", "media", "locale", "navigator"]);
 // Fonts every persona on this platform shows pages (fonts.available, a warning): on macOS the
 // families the native build's persona keeps (measured: it hides others this Mac has, Menlo and
-// Avenir among them), on Linux the families the engine's font set and the server image carry. The
+// Avenir among them), on Linux the families the engine's font set and the server image carry;
+// under the Windows identity a Linux host without a GPU shows (its persona platform "windows"),
+// the families the engine's Windows font set resolves through the build's metric-compatible
+// clones (the basic families every platform has, and the two the clones stand in for). The
 // control list names fonts no computer has: one found means the page's font answers can't be
 // trusted.
 export const PROBE_FONTS = Object.freeze({
   macos: Object.freeze(["Helvetica", "Helvetica Neue", "Arial", "Times New Roman", "Courier New", "Georgia", "Verdana"]),
   linux: Object.freeze(["DejaVu Sans", "DejaVu Serif", "DejaVu Sans Mono", "Liberation Sans", "Liberation Serif", "Liberation Mono", "Noto Sans", "Noto Serif"]),
+  windows: Object.freeze(["Arial", "Times New Roman", "Courier New", "Segoe UI", "Verdana"]),
 });
 export const CONTROL_FONTS = Object.freeze(["PairBrowse Control Sans 7f3a", "Probe Missing Serif 19c2", "Zq Control Mono 4be1"]);
 const FONT_NAME = /^[A-Za-z0-9][A-Za-z0-9 -]{0,47}$/;
@@ -208,7 +212,23 @@ async function probePart([part, awaitMs, extra]) {
     const width = (family) => { x.font = `72px ${family}`; return x.measureText(sample).width; };
     const base = bases.map(width);
     const has = (name) => bases.some((b, i) => width(`"${name}", ${b}`) !== base[i]);
-    return { checked: list.length, missing: list.filter((n) => !has(n)), controlFound: control.filter(has) };
+    // Colour emoji (emoji: true): a face drawn on a canvas has pixels whose channels differ (a
+    // monochrome glyph or a box has none): the font fallback reached a colour emoji font.
+    const colorEmoji = (() => {
+      try {
+        const c = document.createElement("canvas");
+        c.width = 48; c.height = 48;
+        const g = c.getContext("2d");
+        g.font = "32px sans-serif";
+        g.textBaseline = "top";
+        g.fillStyle = "#000";
+        g.fillText("\u{1F600}", 4, 4);
+        const d = g.getImageData(0, 0, 48, 48).data;
+        for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 0 && (d[i] !== d[i + 1] || d[i + 1] !== d[i + 2])) return true;
+        return false;
+      } catch { return null; }
+    })();
+    return { checked: list.length, missing: list.filter((n) => !has(n)), controlFound: control.filter(has), emoji: colorEmoji };
   }
   async function media() {
     const out = {};
@@ -349,8 +369,11 @@ export async function probeLaunch({ launch, directory, build, pack = null, platf
     }
     const switches = [...GRAPHICS.switches];
     const shown = shownIdentity(GRAPHICS);
+    // Under an identity of another platform (the Windows one) the fonts checked are that
+    // platform's, unless the caller named a list.
+    const fontList = Array.isArray(fonts) ? list : PROBE_FONTS[identityNamed(shown)?.platform] ?? list;
     await step("the probe page", page.goto(site.origin, { waitUntil: "domcontentloaded" }));
-    const first = await runProbe(page, { stepMs, fonts: list });
+    const first = await runProbe(page, { stepMs, fonts: fontList });
     if (first.hung) log("graphics probe: the page stopped answering; the parts after it are unmeasured");
     let other = null, sandboxPage = where === "macos" ? "not on macOS" : "not shown";
     if (!first.hung) {

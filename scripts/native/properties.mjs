@@ -73,7 +73,7 @@ const ROWS = [
     mechanism: { other: "the engine's persona override" }, classes: { macos: "M", "linux-software": "D", "linux-gpu": "D" }, later: "M",
     rules: ["webgpu.device"], note: "macOS reports the captured limits", verifiedBy: ["native-validate"], patch: "961" },
   { field: "fonts", property: "Fonts exposed and resolved", source: "the engine's per-platform list; host fonts or bundled clones",
-    mechanism: { other: "040-fonts, fontLaunchEnv" }, classes: all("M"), rules: ["fonts.available"], verifiedBy: ["native-validate"] },
+    mechanism: { other: "040-fonts, fontLaunchEnv" }, classes: all("M"), rules: ["fonts.available", "fonts.emoji"], verifiedBy: ["native-validate"] },
   { field: "media.codecs", property: "Codec support", source: "the build", mechanism: {}, classes: all("M"), rules: [], verifiedBy: ["probe media"] },
   { field: "media.capabilities", property: "Media capabilities", source: "the persona",
     mechanism: { other: "patch 147" }, classes: all("D"), rules: ["media.capabilities"], verifiedBy: ["native-validate"] },

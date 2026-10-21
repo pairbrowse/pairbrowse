@@ -23,16 +23,21 @@ you when the time zone or languages don't fit the exit's country.
 
 **The fallback: a computer without a graphics card.** PairBrowse runs there too, with these limits
 stated plainly. The browser renders in software, which a page can see in how fast it draws and in
-the exact pixels, even though what pages read is one ordinary desktop graphics identity the
-browser carries (an Intel UHD Graphics 770 in WebGL, and the same identity in WebGPU wherever an
-adapter is available; on a server without a graphics card there is usually none, which pages can
-see too; no canvas noise unless `pairbrowse.graphicsNoise` is `true`, so sessions on one such
-computer share its canvas reading). PairBrowse never pretends otherwise to you: the
-helper log, `pairbrowse_status`, the install check and a diagnostics report say "software
-rendering, shown as Intel UHD Graphics 770", and a browser profile checked there reads
+the exact pixels, even though what pages read is one ordinary desktop the browser carries: a
+Windows 11 desktop with an NVIDIA GeForce RTX 3060 (the engine's own Windows persona, so pages
+read Windows in the user agent and client hints, that card in WebGL on Direct3D 11, the same card
+in WebGPU on a software adapter the browser offers there, Windows speech voices and keyboard
+layout, and the virtual screen less a Windows taskbar), the same choice the best published
+browser of this kind makes on a Linux server; no canvas noise unless `pairbrowse.graphicsNoise`
+is `true`, so sessions on one such computer share its canvas reading. What it still lacks is
+Windows' own fonts (below). PairBrowse never pretends otherwise to you: the helper log,
+`pairbrowse_status`, the install check and a diagnostics report say "software rendering, shown
+as Windows 11 with NVIDIA GeForce RTX 3060", and a browser profile checked there reads
 "consistent" rather than "validated". Expect more verification steps handed to you than on a
 computer with a graphics card. Asking for a GPU (`pairbrowse.graphics` `"gpu"`) on such a computer
-refuses the start by name rather than pretending.
+refuses the start by name rather than pretending. (An older PairBrowse browser build, before the
+one that carries the Windows persona's GPU choice, shows the engine's Linux persona with an Intel
+UHD Graphics 770 instead; the status names whichever it is.)
 
 ## What to install
 
@@ -42,7 +47,24 @@ refuses the start by name rather than pretending.
 - A normal desktop font set, so pages render as they do on a desktop and font checks resolve:
   on Debian and Ubuntu `fonts-liberation fonts-dejavu-core fonts-noto-core fonts-noto-cjk
   fonts-noto-color-emoji` (the Linux build also brings its own metric-compatible clones of the
-  common desktop fonts).
+  common desktop fonts). The CJK and colour emoji packages are not optional on a computer without
+  a graphics card: sites draw an emoji and CJK text on a hidden canvas and compare the picture
+  with real desktops', and the install check (`fonts.emoji` in a profile's checks) warns when
+  emoji draw in black and white. Microsoft's freely distributable core fonts for the web (Arial,
+  Times New Roman, Courier New, Verdana, Georgia, Trebuchet MS and the rest) come through the
+  distribution's own package, `ttf-mscorefonts-installer` on Debian and Ubuntu, which shows
+  Microsoft's licence for you to accept once.
+- **Windows fonts** (a computer without a graphics card, which presents as Windows 11): a Windows
+  desktop also carries Segoe UI, Segoe UI Light, Calibri, Marlett, MS UI Gothic, Franklin Gothic
+  and Consolas (with Courier New, the eight families font checks on a Windows browser look for
+  first). PairBrowse does not provide them, never downloads them from a third-party site and
+  never ships them: they are Microsoft's, licensed with Windows. The install check lists which
+  of the eight are missing ("Windows fonts missing: ..."), so you know what a strict font check
+  will see. If you own a licensed Windows, its fonts are yours to use under its terms: copy the
+  files from its `C:\Windows\Fonts` into `~/.local/share/fonts/` on the server and run
+  `fc-cache -f`; the browser reads them through fontconfig at its next start, and the install
+  check then finds them. Without them the browser's metric-compatible clones stand in for the
+  Windows names, which keeps text the right size but not the same glyphs.
 - The time zone of the place your traffic leaves from. A server's clock is usually UTC, which few
   everyday computers use, and pages compare the browser's time zone with the region of the address
   they see. Set it for each profile (`locale.timezone`, see [Browser profiles](profiles.md)) or for
@@ -143,5 +165,6 @@ computer passed every check (`validated`, or `consistent` on a computer without 
 `pairbrowse_status` on a server names the virtual screen, keep-alive, the session's profile and
 its status on this build, its network and the exit's last check, and its graphics: `Graphics:
 hardware (<renderer>), requested auto, validated on <build>` on a computer with a graphics card;
-`Graphics: software (<renderer>), shown as Intel UHD Graphics 770, requested auto, consistent on
-<build>` on one without. The helper log (`~/.pairbrowse/daemon.log`) says the same at each start.
+`Graphics: software (<renderer>), shown as Windows 11 with NVIDIA GeForce RTX 3060, requested
+auto, consistent on <build>` on one without. The helper log (`~/.pairbrowse/daemon.log`) says the
+same at each start, and the install check's lines include which Windows fonts are missing.

@@ -1333,6 +1333,35 @@ test("the graphics plan reaches the engine and never the persona", async () => {
   }
   const shownStored = JSON.parse(readFileSync(join(shownDir, "pairbrowse-persona.json"), "utf8")).options;
   for (const k of ["disableGpuFingerprint", "fingerprintNoise", "canvasNoise", "screenWidth"]) assert.equal(shownStored[k], undefined, `${k} is never kept`);
+  // A build whose engine takes the pool switch (patch 967; the pack reads the build's switches):
+  // the Windows identity (decision 11): platform windows among the engine's options, the screen
+  // less a taskbar, the identity's own switches on the launch's command line (the pool entry,
+  // WebGPU's software adapter by name with the service on; never the unsafe switch), nothing
+  // of it kept in the persona, and the wheel's notch the Windows one for the pack.
+  const winDir = mkdtempSync(join(tmpdir(), "pairbrowse-graphics-windows-"));
+  const winPack = recordingPack();
+  winPack.engineSupportsSwitch = (exe, name) => name === "fingerprint-gpu-pool";
+  winPack.humanize = [];
+  winPack.installHumanizeOnContext = (scope, opts) => { winPack.humanize.push(opts); };
+  const winChromium = fakeBrowserType();
+  await launchNative(winChromium, { pairbrowse: { fingerprint: "seed", fingerprintProfile: PINNED_PROFILE() }, virtualDisplay: { width: 1366, height: 900, depth: 24 }, measuredBackend: { kind: "software", renderer: "llvmpipe" } }, winDir,
+    { executablePath: app.executablePath, headless: false, args: [] }, winPack, (l) => lines.push(l));
+  const winArgs = winChromium.calls.at(-1).options.args;
+  if (linux) {
+    assert.equal(GRAPHICS.shown, "Windows 11 with NVIDIA GeForce RTX 3060");
+    assert.deepEqual([winPack.given[0].platform, winPack.given[0].availHeight, winPack.given[0].screenHeight], ["windows", 852, 900]);
+    for (const s of ["--fingerprint-gpu-pool=nvidia", "--use-webgpu-adapter=swiftshader"]) assert.ok(winArgs.includes(s), `${s} in ${winArgs.join(" ")}`);
+    assert.ok(winArgs.some((a) => /^--enable-features=.*\bWebGPUService\b/.test(a)), "the WebGPU service feature on");
+    assert.ok(!winArgs.some((a) => /unsafe-webgpu/.test(a)), "never the unsafe switch");
+    assert.ok(lines.some((l) => /graphics: software rendering, shown as Windows 11 with NVIDIA GeForce RTX 3060/.test(l)));
+    assert.equal(winPack.humanize.at(-1)?.wheelNotch, 100, "the wheel's notch is Windows'");
+  } else {
+    assert.equal(GRAPHICS.shown, null, "never off Linux");
+    assert.ok(!winArgs.some((a) => /fingerprint-gpu-pool|use-webgpu-adapter|WebGPUService/.test(a)), "no identity switch off Linux");
+    assert.equal(winPack.humanize.at(-1)?.wheelNotch, process.platform === "darwin" ? 40 : 120, "the wheel's notch is this computer's");
+  }
+  const winStored = JSON.parse(readFileSync(join(winDir, "pairbrowse-persona.json"), "utf8")).options;
+  for (const k of ["platform", "availHeight", "screenWidth", "canvasNoise"]) assert.equal(winStored[k], undefined, `${k} is never kept`);
   assert.ok(!lines.some((l) => /pairbrowse\.graphicsNoise in config\.json not used/.test(l)), "pairbrowse.graphicsNoise is PairBrowse's own setting");
 });
 

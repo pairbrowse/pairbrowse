@@ -3042,6 +3042,26 @@ binding for implementation; where a phase section above says otherwise, this sec
     through the distribution's own package, with Microsoft's EULA shown and accepted by the person once,
     plus colour emoji and CJK fonts. Segoe UI, Calibri, Consolas and the other Windows-only fonts are
     not provided; diagnostics name them as absent and the measurement records what that costs.
+    Implemented (2026-10-22, "Ordinary browser" commits in this repo; engine 967 and 968 in the native
+    repo): `native/graphics.mjs` `WINDOWS_IDENTITY` ("Windows 11 with NVIDIA GeForce RTX 3060":
+    platform windows, taskbar 48, WebGPU nvidia/ampere, the engine switches
+    `--fingerprint-gpu-pool=nvidia`, `--use-webgpu-adapter=swiftshader` and
+    `--enable-features=WebGPUService`), `GPU_LESS_IDENTITY` now that one, `LINUX_IDENTITY` (the
+    Intel UHD 770 under the Linux persona) kept for a build whose engine lacks the pool switch
+    (`identityFor`, `native-engine.mjs` `engineHasGpuPool` asks the engine pack); `graphicsPlan`
+    answers `identitySwitches` and `platform: "windows"` among the engine keys, the virtual
+    screen's availHeight less the taskbar; `launchNative` adds the switches (never from
+    `browserArgs`); `validate.mjs` resolves a record's `shown` through `identityNamed`; the probe
+    checks the Windows font list under the identity and whether emoji draw in colour
+    (`fonts.emoji`, a warning); the install self-check on Linux lists the Windows fonts missing
+    (`native/winfonts.mjs`, fontconfig's list); `wheel.mjs` plans every scroll as whole notches of
+    the platform pages are told about (40, 100, 120 px) in flicks, `pairbrowse_scroll` and fast
+    mode's scroll step use it and the engine pack gets the same notch (`wheelNotch`). Engine 967
+    picks the pool entry by vendor and drops the four WebGPU feature names a D3D12 adapter never
+    exposes from the NVIDIA entry's list; engine 968 lets the software adapter asked for by name
+    through the one blocklist reason that refused it (a CPU adapter), the safety level and every
+    other reason untouched. The free-fonts route below is documented in docs/server.md (the core
+    fonts package, emoji and CJK); the alias route is still to measure.
     Font checks, a second legal route (to measure): open, metric-compatible fonts installed under
     fontconfig aliases for the Windows-only names, so width-based font detection finds a font of the
     right size where the Windows font would be: Selawik (Microsoft's own OFL 1.1 stand-in for Segoe UI,

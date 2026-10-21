@@ -12,7 +12,8 @@ import { inputPaceOf } from "./native/pace.mjs";
 import { installPacedHumanize } from "./native/paced-motion.mjs";
 import { switchName, withoutNoSandbox } from "./browser-args.mjs";
 import { PAIRBROWSE_ENGINE_KEYS } from "./config-schema.mjs";
-import { normalizeWebgpu, graphicsPlan, backendSwitches, GRAPHICS, SCREEN_KEYS, LEGACY_GPU_KEYS } from "./native/graphics.mjs";
+import { normalizeWebgpu, graphicsPlan, backendSwitches, GRAPHICS, SCREEN_KEYS, IDENTITY_KEYS, LEGACY_GPU_KEYS, GPU_POOL_SWITCH, identityNamed } from "./native/graphics.mjs";
+import { wheelNotch } from "./wheel.mjs";
 import { boundedStep, launchWithin, localSite } from "./native/probe.mjs";
 import { STRICT_WEBRTC } from "./net/config.mjs";
 import { ENGINE_KEYS as PROFILE_ENGINE_KEYS, PICKS_THIS_COMPUTER, THIS_COMPUTER_NOTE } from "./profiles/map.mjs";
@@ -474,22 +475,29 @@ export const DRIVER_BACKGROUND_SWITCH = "--disable-background-networking";
 // renderer } or null before any): the real backend's WebGL strings, limits and extensions and
 // WebGPU vendor and architecture (disableGpuFingerprint), no noise over real pixels
 // (fingerprintNoise: false); on a host without one (a software read: decision 10) the engine's
-// one graphics identity (GPU_LESS_IDENTITY) with noise as settings.graphicsNoise says; either
-// way on the helper's virtual screen (config.virtualDisplay: { width, height, depth }) that
-// screen, unless config.json or the profile sets one. A layer's other value for these keys, and the
-// legacy GPU identity (decision U6), aren't applied there, and the log says so. The legacy keys are
-// named deprecated on every platform. Returns the plan (its identity: what pages are shown, or null).
-export function applyGraphicsPlan(fingerprint, settings, { platform = process.platform, display = null, measured = null, userArgs = [], log = () => {} } = {}) {
+// one graphics identity (GPU_LESS_IDENTITY on a build whose engine takes the pool switch, gpuPool;
+// LINUX_IDENTITY on an older one) with noise as settings.graphicsNoise says, and the identity's
+// own platform (the Windows persona) over the build's; either way on the helper's virtual screen
+// (config.virtualDisplay: { width, height, depth }) that screen, unless config.json or the
+// profile sets one. A layer's other value for these keys, and the legacy GPU identity (decision
+// U6), aren't applied there, and the log says so. The legacy keys are named deprecated on every
+// platform. Returns the plan (its identity: what pages are shown, or null; its identitySwitches:
+// the engine switches the launch adds for it).
+export function applyGraphicsPlan(fingerprint, settings, { platform = process.platform, display = null, measured = null, userArgs = [], gpuPool = false, log = () => {} } = {}) {
   const set = (k) => settings.overrides[k] !== undefined || settings.saved[k] !== undefined;
-  const plan = graphicsPlan({ requested: "auto", platform, browserKind: "pairbrowse", measured, userArgs, display, screenSet: SCREEN_KEYS.slice(0, 2).some(set), graphicsNoise: settings.graphicsNoise === true });
+  const plan = graphicsPlan({ requested: "auto", platform, browserKind: "pairbrowse", measured, userArgs, display, screenSet: SCREEN_KEYS.slice(0, 2).some(set), graphicsNoise: settings.graphicsNoise === true, gpuPool });
   const legacy = LEGACY_GPU_KEYS.filter((k) => fingerprint[k] !== undefined);
   if (legacy.length) log(`launch: ${legacy.join(", ")} (another device's GPU) ${legacy.length > 1 ? "are" : "is"} deprecated and go${legacy.length > 1 ? "" : "es"} in the next release (decision U6): graphics come from this computer; remove ${legacy.length > 1 ? "them" : "it"} from config.json's pairbrowse block or the saved persona`);
   if (platform === "linux") {
     for (const k of legacy) delete fingerprint[k];
     if (legacy.length) log(`launch: ${legacy.join(", ")} not applied on Linux: pages see ${plan.identity ? "the engine's one identity over software rendering" : "this computer's real renderer"}`);
     const differs = (k) => fingerprint[k] !== undefined && fingerprint[k] !== plan.engineKeys[k];
-    const other = Object.keys(plan.engineKeys).filter((k) => !SCREEN_KEYS.includes(k) && differs(k));
+    const other = Object.keys(plan.engineKeys).filter((k) => !SCREEN_KEYS.includes(k) && !IDENTITY_KEYS.includes(k) && differs(k));
     if (other.length) log(`launch: ${other.join(", ")} not applied on Linux: graphics there follow the measured backend (${plan.identity ? "the engine's identity over software rendering" : "the real backend's strings"})`);
+    // The identity's platform over one a layer set (the build's own, derived each launch, is
+    // replaced without a word: it is nobody's setting).
+    const identityOther = IDENTITY_KEYS.filter((k) => plan.engineKeys[k] !== undefined && set(k) && differs(k));
+    if (identityOther.length) log(`launch: ${identityOther.join(", ")} not applied on Linux: the identity shown over software rendering brings its own (${plan.identity})`);
     // A screen key set without screenWidth and screenHeight (a pixel ratio, a depth) gives way to the
     // virtual screen's, never silently.
     const screenOther = SCREEN_KEYS.filter((k) => plan.engineKeys[k] !== undefined && differs(k));
@@ -507,6 +515,12 @@ export function applyGraphicsPlan(fingerprint, settings, { platform = process.pl
       : `launch: graphics: this computer's own renderer (real WebGL and WebGPU strings, no fingerprint noise)${screen}`);
   }
   return plan;
+}
+
+// Whether this build's engine takes the GPU pool switch (patch 967: the Windows identity's GPU),
+// as the engine pack reads the build's switches; false for a pack or build that can't say.
+export function engineHasGpuPool(pack, executablePath) {
+  try { return pack?.engineSupportsSwitch?.(executablePath, GPU_POOL_SWITCH.slice(2).split("=")[0]) === true; } catch { return false; }
 }
 
 export async function launchNative(chromium, config, directory, options, pack, log = () => {}) {
@@ -531,7 +545,7 @@ export async function launchNative(chromium, config, directory, options, pack, l
   if (zoneNote) log(zoneNote);
   // config.measuredBackend: the backend the launch measured or kept (daemon/browser/launch.mjs,
   // native/check.mjs probeLauncher), null before any measurement.
-  const plan = applyGraphicsPlan(fingerprint, settings, { display: config.virtualDisplay ?? null, measured: config.measuredBackend ?? null, userArgs: options.args ?? [], log });
+  const plan = applyGraphicsPlan(fingerprint, settings, { display: config.virtualDisplay ?? null, measured: config.measuredBackend ?? null, userArgs: options.args ?? [], gpuPool: engineHasGpuPool(pack, options.executablePath), log });
 
   const { portableProfile, encryptionKey, extensions, disablePrivacySandbox = true, ...personaRest } = rest;
   const { agent, rest: launchOptions } = pack.splitAgentOptions(personaRest);
@@ -565,6 +579,9 @@ export async function launchNative(chromium, config, directory, options, pack, l
     ...pack.extensionArgs(extensionPaths), ...proxyArgs,
     ...pack.webrtcDefaultDenyArgs(givenArgs, fingerprint.webrtcIp),
     ...pack.gpuBlocklistArgs(merged.headless === false, process.platform, givenArgs),
+    // The identity's own engine switches (native/graphics.mjs: the GPU pool entry, WebGPU's
+    // software adapter by name with the service on), the helper's, never from browserArgs.
+    ...plan.identitySwitches,
     ...userArgs,
   ]);
   const gated = pack.gateEngineSwitches(options.executablePath, args, false);
@@ -593,7 +610,9 @@ export async function launchNative(chromium, config, directory, options, pack, l
   log(`launch: launchPersistentContext ${Date.now() - contextAt} ms`);
   try {
     // The pack's humanized input, once for one pace or twice for the adaptive one (paced-motion.mjs).
-    installPacedHumanize(context, (scope, given) => pack.installHumanizeOnContext(scope, given), { humanize: settings.humanize, showCursor: settings.showCursor, seed: fingerprint.fingerprint }, paceSets(settings), log);
+    // The wheel's notch follows the platform pages are told about (the identity's Windows, else
+    // the build's), so a scroll is whole notches of that size (wheel.mjs; the pack's own wheel).
+    installPacedHumanize(context, (scope, given) => pack.installHumanizeOnContext(scope, given), { humanize: settings.humanize, showCursor: settings.showCursor, seed: fingerprint.fingerprint, wheelNotch: wheelNotch(plan.identity ? identityNamed(plan.identity)?.platform ?? PLATFORM : PLATFORM) }, paceSets(settings), log);
     return context;
   } catch (error) {
     try { await context.close?.(); } catch {}

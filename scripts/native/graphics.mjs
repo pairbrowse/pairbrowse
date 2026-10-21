@@ -9,10 +9,12 @@
 // pixels (fingerprintNoise: false), and on the helper's virtual screen the real screen. On a host
 // without one (decision 10: software rendering measured, which gets a session blocked before a
 // CAPTCHA is ever shown) the launch shows the engine's one graphics identity instead
-// (GPU_LESS_IDENTITY), consistent everywhere, with canvas noise only when set, and the screen still the
-// real virtual screen; validation then checks that identity for consistency, never for equality
-// with the host, and PairBrowse's own diagnostics say "software rendering, shown as <identity>". A
-// request that can't be met is an error naming it, never a partial apply. Node's standard library only.
+// (GPU_LESS_IDENTITY: a Windows 11 desktop with the engine's NVIDIA GeForce RTX 3060, as the
+// reference presents there; decision 11, "go same as the reference"), consistent everywhere, with
+// canvas noise only when set, and the screen still the real virtual screen (less a Windows
+// taskbar); validation then checks that identity for consistency, never for equality with the
+// host, and PairBrowse's own diagnostics say "software rendering, shown as <identity>". A request
+// that can't be met is an error naming it, never a partial apply. Node's standard library only.
 import { createHash } from "node:crypto";
 import { switchName } from "../browser-args.mjs";
 
@@ -29,14 +31,39 @@ export const LINUX_REAL = Object.freeze({ disableGpuFingerprint: true, fingerpri
 // pixels made its canvas differ from an everyday browser's on the same Mac, which fingerprint
 // checks read as tampering.
 export const MAC_REAL = Object.freeze({ fingerprintNoise: false });
-// The engine's one graphics identity for a host without a GPU (decision 10): the seed persona's
-// Intel UHD 770 on a current Linux Mesa driver, whose WebGL strings, extensions and limits the
-// engine carries and whose WebGPU vendor, architecture, features and limits follow it (engine
-// patch 961). Pages read it over software rendering; native/validate.mjs checks a measurement
-// made under it for consistency with it (the WebGL renderer's family and name, the WebGPU
-// adapter's vendor and architecture), never for equality with the host. One identity, no pool.
-export const GPU_LESS_IDENTITY = Object.freeze({ name: "Intel UHD Graphics 770", family: "intel", renderer: /\bUHD Graphics 770\b/,
-  webgpu: Object.freeze({ vendor: "intel", architecture: "gen-12-lp" }) });
+// The engine's switches an identity launch adds (never from browserArgs: the helper's own, as
+// its live view switches are): the engine's GPU pool entry (patch 967: the NVIDIA GeForce RTX
+// 3060), and WebGPU's software adapter asked for by name with the WebGPU service on (patch 968:
+// that adapter is then not refused for being a CPU adapter; the unsafe switch, which lifts the
+// whole blocklist, is never used). On a build without 967 or 968 these do nothing.
+export const GPU_POOL_SWITCH = "--fingerprint-gpu-pool=nvidia";
+export const WEBGPU_SOFTWARE_SWITCHES = Object.freeze(["--use-webgpu-adapter=swiftshader", "--enable-features=WebGPUService"]);
+// The engine's graphics identity for a host without a GPU (decision 10, as decision 11 changed
+// it, 2026-10-22: "go same as the reference"): a Windows 11 desktop with the engine's NVIDIA
+// GeForce RTX 3060, the second entry of its Windows GPU pool (patch 967 picks it), whose WebGL
+// strings (ANGLE on Direct3D 11), extensions and limits the engine carries and whose WebGPU
+// vendor, architecture, features and limits follow it (patches 961 and 967), with the engine's
+// Windows persona around it (platform, user agent and client hints, speech voices, keyboard map,
+// media devices) and the virtual screen less a Windows 11 taskbar (48 px). Pages read it over
+// software rendering; native/validate.mjs checks a measurement made under it for consistency
+// with it (the WebGL renderer's family and name, the WebGPU adapter's vendor and architecture,
+// never a fallback adapter), never for equality with the host. One identity, no pool.
+export const WINDOWS_IDENTITY = Object.freeze({ name: "Windows 11 with NVIDIA GeForce RTX 3060", gpu: "NVIDIA GeForce RTX 3060", family: "nvidia",
+  renderer: /\bGeForce RTX 3060\b(?! Ti\b)/, platform: "windows", taskbar: 48, webgpu: Object.freeze({ vendor: "nvidia", architecture: "ampere" }),
+  switches: Object.freeze([GPU_POOL_SWITCH, ...WEBGPU_SOFTWARE_SWITCHES]) });
+// The identity a build without the pool switch (patch 967) shows: the seed persona's first pool
+// entry, the Intel UHD 770 on a current Linux Mesa driver, under the engine's Linux persona (the
+// first measurement of decision 11 ran on it; the Intel choice stays as a measured comparison).
+export const LINUX_IDENTITY = Object.freeze({ name: "Intel UHD Graphics 770", gpu: "Intel UHD Graphics 770", family: "intel",
+  renderer: /\bUHD Graphics 770\b/, platform: "linux", taskbar: 0, webgpu: Object.freeze({ vendor: "intel", architecture: "gen-12-lp" }), switches: Object.freeze([]) });
+export const GPU_LESS_IDENTITY = WINDOWS_IDENTITY;
+export const IDENTITIES = Object.freeze([WINDOWS_IDENTITY, LINUX_IDENTITY]);
+// The identity a name stands for (a measurement's shown, GRAPHICS.shown), or null for a name
+// PairBrowse doesn't know (never checked as consistent, never repeated in a report).
+export const identityNamed = (name) => IDENTITIES.find((i) => i.name === name) ?? null;
+// The identity a launch shows on this build: the Windows one on a build whose engine takes the
+// pool switch (gpuPool: native-engine.mjs asks the engine pack), the Linux one on an older build.
+export const identityFor = ({ gpuPool = false } = {}) => (gpuPool ? WINDOWS_IDENTITY : LINUX_IDENTITY);
 // The engine keys of the identity plan: the persona's own GPU identity (the real backend's strings
 // off) and noise as set (the engine's canvas noise and its canvas and WebGL readback noise;
 // config.json pairbrowse.graphicsNoise). Off by default since the measurement of decision 11: noise
@@ -44,8 +71,12 @@ export const GPU_LESS_IDENTITY = Object.freeze({ name: "Intel UHD Graphics 770",
 // software renderer's canvas reading, as sessions on one GPU host share theirs (D-AP2), and
 // graphicsNoise: true gives each persona its own again.
 export const identityKeys = (graphicsNoise = false) => ({ disableGpuFingerprint: false, fingerprintNoise: graphicsNoise === true, canvasNoise: graphicsNoise === true });
-// What the plan sets on Xvfb: the virtual screen as the screen pages read (E7).
+// What the plan sets on Xvfb: the virtual screen as the screen pages read (E7); under the Windows
+// identity the available height is the screen's less its taskbar, as a Windows desktop reports it.
 export const SCREEN_KEYS = Object.freeze(["screenWidth", "screenHeight", "availWidth", "availHeight", "colorDepth", "devicePixelRatio"]);
+// What the identity sets besides graphics: the engine's persona platform (the Windows identity's
+// "windows": the user agent, client hints, voices, keyboard map and font set follow it).
+export const IDENTITY_KEYS = Object.freeze(["platform"]);
 // The legacy GPU keys in config.json (decision U6): another device's GPU, deprecated for one
 // release. On Linux the plan reports the real renderer, so none of them is applied there; the
 // identity (vendor, renderer) is checked against the measured backend elsewhere.
@@ -56,6 +87,7 @@ const BACKEND_SWITCH = /^(?:disable-gpu|disable-gpu-compositing|use-gl|use-angle
 const SOFTWARE_ONLY = /^(?:disable-gpu|use-angle=swiftshader|use-gl=swiftshader|use-angle=swiftshader-webgl|use-gl=angle-swiftshader)$/;
 const PLATFORM_NAMES = { darwin: "macOS", linux: "Linux", win32: "Windows" };
 const RUNTIME_PLATFORMS = { darwin: "macos", linux: "linux" };
+const PERSONA_PLATFORMS = { darwin: "macos", linux: "linux", win32: "windows" };
 
 const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const finite = (v) => typeof v === "number" && Number.isFinite(v);
@@ -73,8 +105,8 @@ export function normalizeWebgpu(profile) {
 
 // This helper's browser's graphics as last launched: requested (the backend asked for), plan (the
 // switches and engine keys the plan added, by name), shown (the identity pages read over software
-// rendering, GPU_LESS_IDENTITY's name, or null: the runtime's own), and kind, renderer and status
-// once the browser process's read (native/backend.mjs readBackend) is filed by the launch.
+// rendering, an identity's name (identityNamed), or null: the runtime's own), and kind, renderer
+// and status once the browser process's read (native/backend.mjs readBackend) is filed by the launch.
 export const GRAPHICS = { requested: "auto", switches: [], engineKeys: [], shown: null, kind: "unverified", renderer: null, status: "unverified" };
 // A profile's status on a build for graphics (profiles/schema.mjs VALIDATION_STATUSES):
 // "validated" (measured, every check matched), "consistent" (the same under the identity shown on
@@ -95,23 +127,25 @@ function forcedRatio(args) {
   return finite(last) && last > 0 && last <= 5 ? last : 1;
 }
 
-// One launch's graphics: { switches, engineKeys, refusals, identity }.
+// One launch's graphics: { switches, identitySwitches, engineKeys, refusals, identity }.
 // requested: the backend asked for (a profile's graphics.backend, or config.json's
 // pairbrowse.graphics for the default profile). platform: process.platform's name. browserKind:
 // "pairbrowse" (the native build) or "pairbrowse-open". measured: the backend read, when one is in
 // hand ({ kind, renderer }, native/backend.mjs; null before the launch): on Linux a software one
-// makes the plan the identity's (decision 10; identity: GPU_LESS_IDENTITY's name, else null), with
-// graphicsNoise (config.json pairbrowse.graphicsNoise) as its noise keys. userArgs: the launch's
-// other switches (browserArgs, screened). display: the helper's virtual screen ({ width, height,
-// depth }, display.mjs screenGeometry) or null; screenSet: a profile or config.json sets the screen
-// (then E7 checks it against the display, compatErrors, and the plan sets none). name: the
-// profile's, for the sentences. A refusal is { field, message }, one sentence each; with any,
-// switches and engine keys are empty: the launch stops, nothing applies partly.
-export function graphicsPlan({ requested = "auto", platform = process.platform, browserKind = "pairbrowse", measured = null, userArgs = [], display = null, screenSet = false, name = "default", graphicsNoise = false } = {}) {
+// makes the plan the identity's (decision 10; identity: its name, else null; identitySwitches:
+// the engine switches it adds; its platform among the engine keys), with graphicsNoise
+// (config.json pairbrowse.graphicsNoise) as its noise keys; gpuPool: the build's engine takes the
+// pool switch (identityFor). userArgs: the launch's other switches (browserArgs, screened).
+// display: the helper's virtual screen ({ width, height, depth }, display.mjs screenGeometry) or
+// null; screenSet: a profile or config.json sets the screen (then E7 checks it against the
+// display, compatErrors, and the plan sets none). name: the profile's, for the sentences. A
+// refusal is { field, message }, one sentence each; with any, switches and engine keys are empty:
+// the launch stops, nothing applies partly.
+export function graphicsPlan({ requested = "auto", platform = process.platform, browserKind = "pairbrowse", measured = null, userArgs = [], display = null, screenSet = false, name = "default", graphicsNoise = false, gpuPool = false } = {}) {
   const refusals = [];
   const refuse = (field, message) => refusals.push({ field, message });
   const args = Array.isArray(userArgs) ? userArgs.filter((a) => typeof a === "string") : [];
-  const none = () => ({ switches: [], engineKeys: {}, refusals, identity: null });
+  const none = () => ({ switches: [], identitySwitches: [], engineKeys: {}, refusals, identity: null });
   if (!GRAPHICS_BACKENDS.includes(requested)) {
     refuse("graphics.backend", `graphics.backend takes "auto", "software" or "gpu".`);
     return none();
@@ -123,12 +157,17 @@ export function graphicsPlan({ requested = "auto", platform = process.platform, 
   const switches = [], engineKeys = {};
   const where = PLATFORM_NAMES[platform] ?? platform;
   // The identity is shown over software rendering only (a GPU asked for over it is refused below).
-  const identity = platform === "linux" && measured?.kind === "software" && requested !== "gpu" ? GPU_LESS_IDENTITY.name : null;
+  const shown = platform === "linux" && measured?.kind === "software" && requested !== "gpu" ? identityFor({ gpuPool }) : null;
+  const identity = shown?.name ?? null;
   if (platform === "darwin") Object.assign(engineKeys, MAC_REAL);
   if (platform === "linux") {
-    Object.assign(engineKeys, identity ? identityKeys(graphicsNoise) : LINUX_REAL);
+    Object.assign(engineKeys, shown ? identityKeys(graphicsNoise) : LINUX_REAL);
+    // The identity's own platform (the Windows persona), never the host's; the Linux identity
+    // keeps the engine's own (the build's platform).
+    if (shown && shown.platform !== "linux") engineKeys.platform = shown.platform;
     if (display && !screenSet && finite(display.width) && finite(display.height)) {
-      Object.assign(engineKeys, { screenWidth: display.width, screenHeight: display.height, availWidth: display.width, availHeight: display.height,
+      const taskbar = shown && finite(shown.taskbar) && display.height > 2 * shown.taskbar ? shown.taskbar : 0;
+      Object.assign(engineKeys, { screenWidth: display.width, screenHeight: display.height, availWidth: display.width, availHeight: display.height - taskbar,
         colorDepth: finite(display.depth) ? display.depth : 24, devicePixelRatio: forcedRatio(args) });
     }
   }
@@ -144,7 +183,7 @@ export function graphicsPlan({ requested = "auto", platform = process.platform, 
     if (measured?.kind === "software") refuse("graphics.backend", `Profile ${name} asks for a GPU (graphics.backend: gpu) but this computer renders in software (${measured.renderer || "a software renderer"}).`);
     else if (measured && measured.kind !== "hardware") refuse("graphics.backend", `Profile ${name} asks for a GPU (graphics.backend: gpu), and PairBrowse could not confirm which renderer this browser uses.`);
   }
-  return refusals.length ? none() : { switches, engineKeys, refusals, identity };
+  return refusals.length ? none() : { switches, identitySwitches: shown ? [...shown.switches] : [], engineKeys, refusals, identity };
 }
 
 // Every graphics request that can't be met (E9), as { field, message }, one sentence each: the
@@ -213,9 +252,13 @@ export function runtimeKey({ build, pack = null, platform, arch, display, backen
   return createHash("sha256").update(JSON.stringify(key)).digest("hex");
 }
 
-// The identity a launch shows, as GRAPHICS or a measurement names it: GPU_LESS_IDENTITY's name, or
-// null (the runtime's own graphics, or no identity PairBrowse knows).
-export const shownIdentity = (g) => (typeof g?.shown === "string" && g.shown === GPU_LESS_IDENTITY.name ? g.shown : null);
+// The identity a launch shows, as GRAPHICS or a measurement names it: an identity's name
+// (IDENTITIES), or null (the runtime's own graphics, or no identity PairBrowse knows).
+export const shownIdentity = (g) => (typeof g?.shown === "string" && identityNamed(g.shown) ? g.shown : null);
+// The platform pages are told about by this helper's browser: the identity's under one
+// (GRAPHICS.shown), else this computer's ("macos", "linux" or "windows"). Input that follows the
+// platform (a wheel's notch, wheel.mjs) reads it.
+export const personaPlatform = (g = GRAPHICS, platform = process.platform) => identityNamed(shownIdentity(g))?.platform ?? PERSONA_PLATFORMS[platform] ?? "linux";
 
 // pairbrowse_status's part for the running browser (spec Phase E design): "Graphics: <kind>
 // (<renderer>)[, shown as <identity>], requested <backend>, <status> on <build>". g: GRAPHICS as

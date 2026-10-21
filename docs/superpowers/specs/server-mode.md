@@ -2885,6 +2885,12 @@ binding for implementation; where a phase section above says otherwise, this sec
     pages, cannot be). In server mode (display.mjs serverMode) the launch refuses any engine other than
     the native build, with one sentence naming the fix (install the native build; `docs/server.md`).
     The test harness keeps running the open build where a test does not depend on server mode.
+    Positioning (user, 2026-10-21): the native PairBrowse browser is the browser; the open build with the
+    extension is only for people who truly do not want to use it (and, until a native build exists,
+    Windows). README, `docs/install.md`, `docs/browser.md`, the one-time browser question and the
+    Settings choice say so plainly, lead with the native build, list what the open build lacks (server
+    mode, the engine's identity work, humanized input, the WebGPU and proxy patches, so more blocks),
+    and drop "everything else works the same in both".
 
 Implementation conditions (from the user):
 - Keep the five phases and every agreed requirement: profile import and export, per-profile isolation,

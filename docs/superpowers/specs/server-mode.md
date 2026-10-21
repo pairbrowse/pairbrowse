@@ -2963,6 +2963,10 @@ binding for implementation; where a phase section above says otherwise, this sec
     such, and the date, versions, network and method linked underneath. Wording: "scores as an everyday
     browser on these checks", never "undetectable" or "passes every test". Not published from
     preliminary numbers.
+    Their signed-in build could not be obtained (2026-10-22: the sign-in gave no key), so the README
+    compares their newest build that downloads without one (named with its version, 145 on macOS and
+    146 on Linux at the first measurement), says so plainly, and is updated if a newer public build
+    appears.
     Decided by the first measurement (2026-10-22, baseline in the native repo's plans): canvas
     noise on a host without a GPU, measured on and off on the same Linux host, changed one verdict
     (BrowserScan's canvas check, lost with noise on) and gained nothing measured, so

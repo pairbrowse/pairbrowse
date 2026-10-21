@@ -469,7 +469,8 @@ user's file, readable by others), the section says why and refuses a username or
   browser reports the real backend's WebGL and WebGPU strings and limits and adds no fingerprint
   noise over its real pixels; on a Linux computer without one (software rendering measured, which
   sites block before any CAPTCHA) the browser shows pages one ordinary desktop identity it carries,
-  an Intel UHD Graphics 770, the same in WebGL and WebGPU, with the engine's canvas and readback
+  an Intel UHD Graphics 770 in WebGL (and in WebGPU wherever an adapter is available; without a
+  graphics card there is usually none), with the engine's canvas and readback
   noise on unless `graphicsNoise` is `false` (a boolean in the `pairbrowse` block; it changes
   nothing on a computer with a graphics card), while the helper log, `pairbrowse_status` and
   reports say "software rendering, shown as Intel UHD Graphics 770" and a profile checked there is

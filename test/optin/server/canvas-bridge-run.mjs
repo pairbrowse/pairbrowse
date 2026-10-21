@@ -50,7 +50,10 @@ try {
   ctx = await chromium.launchPersistentContext(join(home, "profile"), {
     executablePath: native.exe, headless: false, chromiumSandbox: true,
     env: { ...process.env, ...(screen.env || {}) },
-    args: [...bridge, "--password-store=basic", "--no-first-run", "--window-size=1280,800"],
+    // --ignore-gpu-blocklist as the helper's launch passes it on Linux (the engine pack's
+    // gpuBlocklistArgs): without it the engine's blocklist refuses Mesa's llvmpipe and pages get no
+    // WebGL to draw with, and WebGL is one of the bridge's inputs.
+    args: [...bridge, "--ignore-gpu-blocklist", "--password-store=basic", "--no-first-run", "--window-size=1280,800"],
     ignoreDefaultArgs: ["--enable-automation"],
   });
   const page = ctx.pages()[0] || await ctx.newPage();
@@ -64,9 +67,12 @@ try {
   const all = processes();
   const browser = all.filter((p) => p.cmd.startsWith(native.exe) && !/--type=/.test(p.cmd));
   result.browserHasSwitch = browser.some((p) => /--canvas-bridge-url=/.test(p.cmd));
-  const renderers = all.filter((p) => p.cmd.startsWith(native.exe) && /--type=(renderer|gpu-process|utility)/.test(p.cmd));
-  result.children = renderers.length;
-  result.childrenWithSwitch = renderers.filter((p) => /canvas-bridge/.test(p.cmd)).length;
+  // The browser's own processes (--type=: the zygotes, whose forked renderers keep their command
+  // line, the GPU process, utility processes, any renderer started apart).
+  const children = all.filter((p) => p.cmd.startsWith(native.exe) && /--type=/.test(p.cmd));
+  result.children = children.length;
+  result.childrenWithSwitch = children.filter((p) => /canvas-bridge/.test(p.cmd)).length;
+  result.childTypes = [...new Set(children.map((p) => /--type=([a-z-]+)/.exec(p.cmd)?.[1] || "?"))];
   result.noSandboxSwitch = browser.some((p) => /--no-sandbox/.test(p.cmd));
   result.connections = connections.length;
   result.heads = connections.slice(0, 3).map((c) => c.head);

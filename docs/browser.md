@@ -156,7 +156,8 @@ profile (the capture from your own computer is macOS only), and its graphics fol
 with a graphics card, pages read the real renderer's WebGL and WebGPU strings and limits, with no
 fingerprint noise over its pixels; on a computer without one (a server's virtual screen renders in
 software, which sites block before any CAPTCHA), pages are shown one ordinary desktop identity the
-browser carries, an Intel UHD Graphics 770, the same in WebGL and WebGPU, with canvas noise on
+browser carries, an Intel UHD Graphics 770 in WebGL (and in WebGPU wherever an adapter is
+available; without a graphics card there is usually none), with canvas noise on
 unless you turn it off, while PairBrowse's own status and reports say "software rendering, shown
 as Intel UHD Graphics 770". On PairBrowse's virtual screen the screen pages read is that screen
 either way (`pairbrowse.graphics`, `pairbrowse.graphicsNoise` and `virtualScreen` in

@@ -17,7 +17,7 @@ import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { session } from "../helpers/live.mjs";
-import { sleep, text } from "../helpers/util.mjs";
+import { sleep, text, until } from "../helpers/util.mjs";
 import { helperHome, startHelper, nativeExe, nativeVersion, testBrowser } from "../helpers/daemon.mjs";
 import { GRAPHICS_PAGE, parseGraphics, servePage } from "./server/graphics-page.mjs";
 import { rendererFamily } from "../../scripts/rules/coherence.mjs";
@@ -55,8 +55,9 @@ test("GPU host: backend hardware, the renderer the measurement recorded, WebGPU 
     ? (() => { const h = helperHome(runtime); writeFileSync(join(h, "config.json"), JSON.stringify({ ...testBrowser(runtime), display: "none", sessionPicker: false, screenshots: false })); return h; })()
     : helperHome(runtime, { prefix: "pb-gpu-", config: { sessionPicker: false } });
   const h = await startHelper(home, { env: { PAIRBROWSE_TEST_RELAUNCH_MS: "1000" } });
+  let failed = false;
   try {
-    const a = await session(h.socketPath, "g");
+    let a = await session(h.socketPath, "g");
     try {
       const read = async () => {
         const nav = await a.tool("browser_navigate", { url: site.url }, 180_000);
@@ -84,24 +85,33 @@ test("GPU host: backend hardware, the renderer the measurement recorded, WebGPU 
       if (page.webgpu.available) assert.equal(rendererFamily(page.webgpu.vendor), family, "the WebGPU adapter is the backend's family");
       assert.match(status, /Graphics: hardware \(.+\), requested auto, validated on \d+\.\d+\.\d+\.\d+/, status);
       assert.doesNotMatch(status, /shown as|sandbox is off/i);
-      // A killed browser comes back on the next action, on the same measurement.
+      // A killed browser comes back on the next action, on the same measurement. After a crash
+      // the helper ends agents' connections (their bridges reconnect within 10 s and are back in
+      // their tabs): this agent connects again, as a bridge does.
       const pid = browserPid(h.daemon.pid);
       assert.ok(pid, "the browser runs");
       process.kill(pid, "SIGKILL");
       for (let i = 0; i < 100 && alive(pid); i++) await sleep(100);
+      await until("the helper saw the browser close", () => /browser closed/.test(log(home)), 30_000, 200);
+      a.sock.destroy();
+      a = await session(h.socketPath, "h");
       const again = await read();
       const statusAfter = text(await a.tool("pairbrowse_status", { kind: "claude", text: "Checking" }));
       const after = defaultValidation(home, nativeVersion);
       assert.ok(browserPid(h.daemon.pid) && browserPid(h.daemon.pid) !== pid, "a new browser");
       assert.equal(again.webgl.renderer, page.webgl.renderer);
       assert.equal(measured(home), 1, "no second measurement");
-      assert.deepEqual([after.runtimeKey, after.at, after.status], [entry.runtimeKey, entry.at, "validated"], "the same measurement and verdict");
+      assert.deepEqual([after.runtimeKey, after.graphics.at, after.status], [entry.runtimeKey, entry.graphics.at, "validated"], "the same measurement and verdict (the entry's own time is the second start's)");
+      assert.deepEqual(after.graphics, entry.graphics, "the measurement unchanged");
       assert.match(statusAfter, /Graphics: hardware \(.+\), requested auto, validated on/);
       assert.ok(log(home).split("\n").filter((l) => /launch: graphics: hardware, validated on/.test(l)).length >= 2, "both starts filed the verdict");
+    } catch (e) {
+      failed = true;
+      throw new Error(`${e.message}\n--- daemon.log (${home}) ---\n${log(home).slice(-5000)}`, { cause: e });
     } finally { a.sock.destroy(); }
   } finally {
     await h.stop();
     site.close();
-    rmSync(home, { recursive: true, force: true });
+    if (!failed) rmSync(home, { recursive: true, force: true }); // kept on a failure, for its log
   }
 });

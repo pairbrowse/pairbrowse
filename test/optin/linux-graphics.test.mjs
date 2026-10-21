@@ -15,34 +15,15 @@
 import "../helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { dockerReady, startContainer } from "./server/container.mjs";
-import { prepareNativeCache } from "./server/native-cache.mjs";
+import { runGraphicsCase } from "./server/graphics-case.mjs";
 import { SCREEN } from "../helpers/server.mjs";
 import { GPU_LESS_IDENTITY } from "../../scripts/native/graphics.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const SKIP = (!runtime || process.env.PAIRBROWSE_TEST_DOCKER !== "1") && "set PAIRBROWSE_TEST_DOCKER=1 and PAIRBROWSE_TEST_RUNTIME";
-const repo = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-
-// One case of graphics-run.mjs in a container of its own: its RESULT line, parsed.
-export async function runGraphicsCase(which) {
-  assert.ok(dockerReady(), "Docker answers");
-  const cache = await prepareNativeCache({ log: console.log });
-  const c = startContainer({ name: `pb-graphics-${which}`, repo, log: console.log, mounts: [{ from: runtime, to: "/runtime" }, { from: cache, to: "/cache" }] });
-  try {
-    const r = await c.node("/repo/test/optin/server/graphics-run.mjs", [which], { ms: 2_700_000 });
-    const line = r.out.split("\n").find((l) => l.startsWith("RESULT "));
-    assert.ok(line, `the case ran:\n${r.out.slice(-6000)}`);
-    const result = JSON.parse(line.slice("RESULT ".length));
-    assert.equal(result.error, undefined, `${result.error}\n--- daemon.log ---\n${result.log || ""}`);
-    return result;
-  } finally { c.stop(); }
-}
 
 test("Linux without a GPU: backend software, the engine's identity shown in WebGL and WebGPU, consistent; canvas stable, fonts resolve, gpu refused, sandbox on", { skip: SKIP, timeout: 3_000_000 }, async (t) => {
-  const r = await runGraphicsCase("graphics");
+  const r = await runGraphicsCase("graphics", runtime);
   t.diagnostic(JSON.stringify({ page: r.page, status: r.status, lines: r.launchLines, validation: r.validation && { status: r.validation.status, shown: r.validation.graphics?.shown, backend: r.validation.graphics?.backend?.renderer, mismatches: r.validation.items.filter((i) => i.status === "mismatch") }, gpu: r.gpu }, null, 1).slice(0, 12000));
   assert.notEqual(r.uid, 0, "a normal user");
   // Measured once, and the launch said what it shows.

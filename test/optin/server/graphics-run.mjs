@@ -16,7 +16,7 @@ import { cpSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { userInfo } from "node:os";
 import { session } from "../../helpers/live.mjs";
-import { sleep, text } from "../../helpers/util.mjs";
+import { sleep, text, until } from "../../helpers/util.mjs";
 import { browserPid, logCount, logText, pidAlive, processes, sandboxOf, serverHome, signalHelper, startServerHelper } from "../../helpers/server.mjs";
 import { installNativeLinux } from "./native-linux.mjs";
 import { GRAPHICS_PAGE, parseGraphics, servePage } from "./graphics-page.mjs";
@@ -44,22 +44,27 @@ function defaultValidation(h, build) {
 // The native browsers running now (the build's own processes, not its helpers).
 const browsers = (exe) => processes().filter((p) => p.cmd.startsWith(exe) && !/--type=/.test(p.cmd)).length;
 
-async function start(h, env = {}) {
-  const started = await startServerHelper(h, { env, ms: 180_000 });
-  helpers.push(started.daemon);
-  const s = await session(started.socketPath, "a");
+// An agent's connection to the helper: its tool calls go through the one graphics measurement
+// (a minute or two under emulation; refused at once while it runs, the agent retries, as the
+// refusal tells it to).
+async function connect(socketPath, name) {
+  const s = await session(socketPath, name);
   sockets.push(s);
-  // The first start per runtime measures graphics first (a minute or two under emulation),
-  // refusing calls at once while it runs; the agent retries, as the refusal tells it to.
-  const tool = async (name, args = {}, ms = 180_000) => {
+  const tool = async (tool, args = {}, ms = 180_000) => {
     const deadline = Date.now() + GRAPHICS_TIMEOUT_MS + GRAPHICS_STOP_MS + 120_000;
     for (;;) {
-      const r = await s.tool(name, args, ms);
+      const r = await s.tool(tool, args, ms);
       if (!text(r).includes(MEASURING_BUSY) || Date.now() > deadline) return r;
       await sleep(3000);
     }
   };
-  return { ...started, tool };
+  return { sock: s.sock, tool };
+}
+async function start(h, env = {}) {
+  const started = await startServerHelper(h, { env, ms: 180_000 });
+  helpers.push(started.daemon);
+  const a = await connect(started.socketPath, "a");
+  return { ...started, ...a, connect: (name) => connect(started.socketPath, name) };
 }
 async function readPage(h, url) {
   const nav = await h.tool("browser_navigate", { url });
@@ -87,11 +92,16 @@ try {
   result.launchLines = logText(home).split("\n").filter((l) => /launch: graphics|graphics probe|graphics not measured/.test(l)).slice(-12);
 
   if (which === "recovery") {
+    // After a crash the helper ends agents' connections (their bridges reconnect within 10 s and
+    // are back in their tabs); this agent connects again, as a bridge does.
     process.kill(pid, "SIGKILL");
     for (let i = 0; i < 100 && pidAlive(pid); i++) await sleep(100);
     result.killed = !pidAlive(pid);
-    result.pageAfter = await readPage(h, site.url);
-    result.statusAfter = text(await h.tool("pairbrowse_status", { kind: "claude", text: "Checking" }));
+    await until("the helper saw the browser close", () => /browser closed/.test(logText(home)), 30_000, 200);
+    h.sock.destroy();
+    const b = await h.connect("b");
+    result.pageAfter = await readPage(b, site.url);
+    result.statusAfter = text(await b.tool("pairbrowse_status", { kind: "claude", text: "Checking" }));
     const again = browserPid(h.daemon.pid);
     result.newBrowser = again && again !== pid;
     result.sandboxAfter = again ? sandboxOf(again) : null;

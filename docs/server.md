@@ -24,8 +24,9 @@ you when the time zone or languages don't fit the exit's country.
 **The fallback: a computer without a graphics card.** PairBrowse runs there too, with these limits
 stated plainly. The browser renders in software, which a page can see in how fast it draws and in
 the exact pixels, even though what pages read is one ordinary desktop graphics identity the
-browser carries (an Intel UHD Graphics 770, the same in WebGL and WebGPU, with canvas noise on
-unless `pairbrowse.graphicsNoise` is `false`). PairBrowse never pretends otherwise to you: the
+browser carries (an Intel UHD Graphics 770 in WebGL, and the same identity in WebGPU wherever an
+adapter is available; on a server without a graphics card there is usually none, which pages can
+see too; canvas noise on unless `pairbrowse.graphicsNoise` is `false`). PairBrowse never pretends otherwise to you: the
 helper log, `pairbrowse_status`, the install check and a diagnostics report say "software
 rendering, shown as Intel UHD Graphics 770", and a browser profile checked there reads
 "consistent" rather than "validated". Expect more verification steps handed to you than on a

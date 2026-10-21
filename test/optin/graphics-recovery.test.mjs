@@ -10,13 +10,13 @@
 import "../helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { runGraphicsCase } from "./linux-graphics.test.mjs";
+import { runGraphicsCase } from "./server/graphics-case.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const SKIP = (!runtime || process.env.PAIRBROWSE_TEST_DOCKER !== "1") && "set PAIRBROWSE_TEST_DOCKER=1 and PAIRBROWSE_TEST_RUNTIME";
 
 test("a killed browser relaunches with the same graphics request and measurement", { skip: SKIP, timeout: 3_000_000 }, async (t) => {
-  const r = await runGraphicsCase("recovery");
+  const r = await runGraphicsCase("recovery", runtime);
   t.diagnostic(JSON.stringify({ lines: r.launchLinesAfter, status: r.statusAfter, before: r.validation && { status: r.validation.status, key: r.validation.runtimeKey, at: r.validation.at }, after: r.validationAfter && { status: r.validationAfter.status, key: r.validationAfter.runtimeKey, at: r.validationAfter.at } }, null, 1));
   assert.equal(r.measured, 1, "measured once at the first start");
   assert.equal(r.validation?.status, "consistent", JSON.stringify(r.validation?.items?.filter((i) => i.status === "mismatch")));
@@ -27,7 +27,7 @@ test("a killed browser relaunches with the same graphics request and measurement
   assert.equal(r.measuredAfter, 1, `no second measurement: ${r.launchLinesAfter.join("\n")}`);
   assert.ok(!r.launchLinesAfter.some((l) => /measured again/.test(l)), "the measurement was kept, not dropped");
   assert.equal(r.validationAfter.runtimeKey, r.validation.runtimeKey, "the same runtime key");
-  assert.equal(r.validationAfter.at, r.validation.at, "the same measurement");
+  assert.equal(r.validationAfter.graphics.at, r.validation.graphics.at, "the same measurement (the entry's own time is the second start's)");
   assert.equal(r.validationAfter.status, "consistent");
   assert.deepEqual(r.validationAfter.graphics, r.validation.graphics, "the measurement unchanged");
   assert.match(r.statusAfter, /Graphics: software \(.+\), shown as Intel UHD Graphics 770, requested auto, consistent on/);

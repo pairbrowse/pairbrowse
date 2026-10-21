@@ -265,3 +265,45 @@ freshness), `test/bench.mjs` (new), `test/screenshot.test.mjs` (new), `test/hud.
   with the tag on 2026-10-11 at the user's word. Scratchpad scripts used for the one-off measurements (`realsites.mjs`,
   `scroll-exp.mjs`, `heavy-popups.mjs`, `joiner-soak.mjs`, `idle-exp.mjs`) are described
   above; `test/bench.mjs` holds the repeatable ones.
+
+## Helper memory and idle CPU with the phishing list (2026-10-21, server mode step 46d)
+
+After the phishing list (`daemon/phishing.mjs`) the bench's gate missed two budgets: helper RSS at
+the end 261 to 287 MB (budget 260) and helper idle CPU after work 1.4 to 2.3% (budget 1%). One
+`npm run bench:check` before this change: 272 MB, 1.9%. The bench's helper has no list on its
+temporary home, so every run downloads the full list (about 11 MB, 391,549 names) at start.
+Measured alone (a plain Node process): the download through `fetch` added about 44 MB of RSS that
+stayed, reading the 11 MB file into memory and indexing it about 26 MB more (265 ms of CPU).
+
+What changed:
+- The download runs in a short-lived process of its own (`downloadList`: the module run with
+  `--download`), with Node's own http(s) client instead of `fetch`, written to the file a piece at
+  a time; its connection's buffers go when that process ends. A redirect is followed three times at
+  most, never from https to http. The download file is named per helper (`.<pid>.download`), so two
+  helpers sharing the list's folder never write one file, and it is renamed into place (no second
+  copy written).
+- The list is no longer held in memory: only a table of where each name starts in its file
+  (`Uint32Array`, 27 bits of offset and 5 bits of hash, at most three quarters full: 2 MB for
+  today's list), sized from one pass counting the file's lines, built from 64 KB reads with 30-bit
+  hashes (small integers: no garbage while reading), searched by reading a name's few bytes from
+  the file (open for the list's life, so a newer list renamed over it changes nothing for it).
+  Building it: about 85 ms of CPU, +10 MB RSS in a plain process (about 6 of that is the JIT's own,
+  absent with `--jitless`); 10,000 lookups of absent names take about 4 ms.
+- The list is read from its file on the first navigation checked, not at start, and read anew when
+  another helper on this computer replaced it.
+
+Measured alone: a full update now adds about 10 MB of RSS to the helper (61 MB before).
+
+`npm run bench:check`, three runs after the change (screenshots on, this Mac):
+
+| Run | Helper RSS end | Idle CPU after work (helper) | Startup | Click p50 |
+| --- | --- | --- | --- | --- |
+| 1 | 257.3 MB | 0.6% | 1199 ms | 318 ms |
+| 2 | 256.8 MB | 0.5% | 1184 ms | 320 ms |
+| 3 | 242.4 MB | 0.6% | 1180 ms | 325 ms |
+
+All budgets met in all three. For scale, one run with `phishingProtection: false` (a scratch copy of
+the bench, not kept): 253 MB, 0.6%: what the list costs is now inside the run-to-run noise
+(about 15 MB between runs). The idle CPU burst after work is gone with the large allocations.
+Tests: `test/phishing.test.mjs` (8, including the file-backed table's memory, names across
+pieces read, long lines skipped, the download process, redirects, and the lazy read).

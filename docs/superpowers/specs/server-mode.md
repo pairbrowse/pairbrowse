@@ -3038,6 +3038,14 @@ and for how long. When an install starts, it answers as before; a `new` that was
 `test/browser.test.mjs`, `test/session-profiles.test.mjs`, `test/context-switch.test.mjs`,
 `test/launch-graphics.test.mjs`.
 
+**Helper memory and idle CPU (step 46d).** The phishing list put the helper over the bench's budgets
+(`npm run bench:check`: RSS 261 to 287 MB against 260, idle CPU after work 1.4 to 2.3% against 1%).
+Budgets unchanged, protection unchanged: the list is downloaded by a short-lived process of its own
+(Node's http(s) client, a piece at a time into its file), and the helper keeps only a 2 MB table of
+where each name starts in that file, read on the first navigation checked; a lookup reads the
+name's bytes from the file. Three runs after: 257.3, 256.8 and 242.4 MB, 0.6, 0.5 and 0.6%
+(`docs/engineering-progress.md`). Tests: `test/phishing.test.mjs`.
+
 ## 14. Definition of done
 
 The work is done when every item below holds, each shown by the named tests passing in CI or, for

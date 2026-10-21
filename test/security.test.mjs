@@ -275,7 +275,8 @@ test("only known modules reach beyond this computer", async () => {
   const dir = new URL("../scripts/", import.meta.url).pathname;
   const found = readdirSync(dir, { recursive: true })
     .filter((f) => f.endsWith(".mjs") && !f.startsWith("dev/"))
-    .filter((f) => /\bfetch\(|from "node:(https|tls)"/.test(readFileSync(j(dir, f), "utf8").replace(/^\s*\/\/.*$/gm, "")))
+    // fetch, or Node's https or tls client, imported as a module or loaded on the way (import(...)).
+    .filter((f) => /\bfetch\(|from "node:(https|tls)"|\bimport\([^)]*["'`]node:(https|tls)["'`]/.test(readFileSync(j(dir, f), "utf8").replace(/^\s*\/\/.*$/gm, "")))
     .sort();
   assert.deepEqual(found, Object.keys(KNOWN).sort());
 });

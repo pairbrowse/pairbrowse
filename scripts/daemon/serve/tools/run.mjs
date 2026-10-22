@@ -10,7 +10,10 @@ import { wheelNotch } from "../../../wheel.mjs";
 const RUN_MAX_MS = 120_000; // a fast-mode run stops between steps past this
 
 export function createRunTool(conn, api) {
-  const { context, facts, host, hud, journal, log, myLabel, onRunStatus, pause, popups, presence, secrets, serverPage, sock } = api;
+  const { context, facts, host, hud, journal, log, myLabel, onRunStatus, onRunDone = () => {}, pause, popups, presence, secrets, serverPage, sock } = api;
+  // A finished run, for the Handoff page's "Finished runs" (phonelink.mjs runDone): the site's host,
+  // done, stopped (people, a pause, the agent gone, the time limit) or failed, and the steps done.
+  const finished = (url, outcome, steps) => { try { onRunDone({ url, outcome, steps }); } catch {} };
   const { disconnected, participant } = conn;
 
   async function runCommand(args) {
@@ -39,6 +42,7 @@ export function createRunTool(conn, api) {
     // browser's 10-minute reset for everyone waiting behind it).
     const stuck = Symbol("stuck");
     let lastTrace = "";
+    let halted = false; // stopped by people or a pause, not by a step that failed
     const result = await Promise.race([sleep(RUN_MAX_MS + 15_000).then(() => stuck), runSteps(page, resolved, {
       trace: (t) => { lastTrace = String(t); },
       uploadsDir: paths.uploads,
@@ -49,26 +53,28 @@ export function createRunTool(conn, api) {
         if (sock.destroyed) throw new Error("Participant disconnected. Refresh the browser before continuing.");
         // Paused by a person: stop here (never waiting inside the shared queue).
         const held = pause.heldFor(participant);
-        if (held.paused) throw new Error(`Paused by ${held.by}: nothing more was done. Run the remaining steps once someone resumes.`);
+        if (held.paused) { halted = true; throw new Error(`Paused by ${held.by}: nothing more was done. Run the remaining steps once someone resumes.`); }
         // A person clicking or typing in this tab: every step waits until they're idle, then
         // stops so Claude looks at the page again before the remaining steps.
         const who = presence.actingIn(page);
         if (!who) return;
         await presence.waitForUser(page);
+        halted = true;
         throw new Error(`${who === host ? "The user" : who} used this tab (${presence.didIn(page) || "clicked"}). Take a snapshot, then run the remaining steps.`);
       },
       owner: (el) => ownerOf(el, hud.key, { host, log, byAgent: presence.typedByAgent, byRemote: presence.byRemote }),
       // Between two fields: paused agents stop; a person using the tab is waited for.
       holdForPeople: async () => {
         const held = pause.heldFor(participant);
-        if (held.paused) throw new Error(`Paused by ${held.by}: nothing more was done. Run the remaining steps once someone resumes.`);
+        if (held.paused) { halted = true; throw new Error(`Paused by ${held.by}: nothing more was done. Run the remaining steps once someone resumes.`); }
         if (presence.actingIn(page)) await presence.waitForUser(page);
       },
       // Mid-step (a long stroke): a person acting in this tab or pausing agents stops it at once.
       interrupted: () => {
         const held = pause.heldFor(participant);
-        if (held.paused) return `Paused by ${held.by} mid-step: stopped there. Run the remaining steps once someone resumes.`;
+        if (held.paused) { halted = true; return `Paused by ${held.by} mid-step: stopped there. Run the remaining steps once someone resumes.`; }
         const who = presence.actingIn(page);
+        if (who) halted = true;
         return who ? `${who === host ? "The user" : who} took over this tab mid-step (${presence.didIn(page) || "clicked"}): stopped there. Take a snapshot, then go on.` : "";
       },
       status: (text, kind) => { hud.setBadge(text, kind).catch(() => {}); try { onRunStatus(participant, text, kind, page, myLabel()); } catch {} },
@@ -84,8 +90,10 @@ export function createRunTool(conn, api) {
     if (result === stuck) {
       log(`run given up on at: ${lastTrace || "?"} (${page.url()})`);
       hud.addActivity("That didn't work: the page stopped answering", myLabel(), page);
+      finished(page.url(), "failed", 0);
       return { text: `Stopped: the page stopped answering during this run (its scripts run without pause, or it froze), so the run was given up on after ${Math.round((RUN_MAX_MS + 15_000) / 60_000)} minutes${lastTrace ? `, at ${lastTrace}` : ""}. Take a browser_snapshot; if the page is still stuck, reload it with browser_navigate.`, error: true, url: page.url() };
     }
+    finished(page.url(), result.ok ? "done" : halted || disconnected.signal.aborted ? "stopped" : "failed", result.done?.length || 0);
     const saving = result.ok && args.saveAs && !args.playbook;
     if (saving) savePlaybook(args.saveAs, steps);
     const left = result.skipped?.length ? ` Left to the people filling them: ${result.skipped.map((x) => `${x.label} (${x.who})`).join(", ")}.` : "";

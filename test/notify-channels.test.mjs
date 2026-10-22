@@ -209,7 +209,7 @@ test("a message holds the step's sentence, the host, the expiry and the link, no
   // The audit's vocabulary agrees.
   assert.deepEqual(DETAILS.minted.filter((w) => w !== "replacement").sort(), [...ACTIONS].sort());
   assert.deepEqual(DETAILS.ended, END_REASONS);
-  assert.deepEqual(MESSAGE_KINDS, ["turn", "reminder", "ended", "network"]);
+  assert.deepEqual(MESSAGE_KINDS, ["turn", "reminder", "ended", "network", "approval", "approval-ended", "run", "test"]);
 
   // Any other field, or a value outside its rule, refuses the whole message and nothing is sent.
   const sent = [];
@@ -313,8 +313,8 @@ test("a channel that can't be used is skipped with a warning naming it, never a 
   const n = createNotifier({ channels, secret: (k) => values[k], post: async () => ({ ok: true, status: 200 }), log: (l) => lines.push(l) });
   const w = n.warnings();
   assert.deepEqual(w, [
-    'handoff.channels[0]: unknown type "pigeon" (webhook, ntfy, telegram, discord, slack); this channel is skipped',
-    "handoff.channels[1]: no type (webhook, ntfy, telegram, discord, slack); this channel is skipped",
+    'handoff.channels[0]: unknown type "pigeon" (webhook, ntfy, telegram, discord, slack, discord-dm); this channel is skipped',
+    "handoff.channels[1]: no type (webhook, ntfy, telegram, discord, slack, discord-dm); this channel is skipped",
     "handoff.channels[2] (webhook): urlSecret isn't a secret name starting with PAIRBROWSE_ (credentials live in secrets.env, never in config.json); this channel is skipped",
     'handoff.channels[3] (webhook): unknown field "url" (not used)',
     "handoff.channels[3] (webhook): urlSecret (a PAIRBROWSE_ secret's name) is missing; this channel is skipped",

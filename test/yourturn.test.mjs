@@ -98,6 +98,19 @@ test("a desktop without Away: the step stays in the window; no grant, no message
   assert.deepEqual(t.audit().map((l) => [l.kind, l.detail]), [["notify-failed", "no-channel"]]);
 });
 
+test("the Handoff page's boxes: a step whose group is off (checks: sign-in, CAPTCHA, 2FA; submits: payment, other) stays in the window", async () => {
+  const off = new Set(["login", "captcha", "2fa"]);
+  const s = setup({ extra: { wants: (action) => !off.has(action) } });
+  const page = pageAt("https://shop.example/login");
+  s.hud.page = page;
+  assert.equal(await s.yt.onStatus("p1", { kind: "you", text: "Please sign in", step: "login" }, page), "");
+  assert.equal(s.grants.open().length, 0, "checks off: no grant");
+  assert.equal(s.sent.length, 0);
+  const line = await s.yt.onStatus("p1", { kind: "you", text: "Approve the payment", step: "payment" }, page);
+  assert.equal(s.grants.open().length, 1, "submits on: a grant");
+  assert.ok(line);
+});
+
 test("Away (or a server): one grant per step, a message of the step's kind, host, expiry and link only; the result names where it went, never the link", async () => {
   for (const opts of [{ away: true }, { away: false, server: true }]) {
     const s = setup(opts);

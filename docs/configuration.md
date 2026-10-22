@@ -187,6 +187,35 @@
   (a bot's token and a chat id or `@channel`; optional `server` for a Bot API server of your own);
   `{ "type": "discord", "urlSecret": "PAIRBROWSE_DISCORD_WEBHOOK" }` and
   `{ "type": "slack", "urlSecret": "PAIRBROWSE_SLACK_WEBHOOK" }` (a channel webhook's address).
+  `{ "type": "discord-dm", "tokenSecret": "PAIRBROWSE_HANDOFF_DISCORD_TOKEN", "channelSecret": "PAIRBROWSE_HANDOFF_DISCORD_CHANNEL" }`
+  (a direct message from your own Discord bot; the Handoff page writes it).
+  The Handoff page (Settings, Handoff, and the browser's left rail) links Telegram or Discord for you,
+  so you don't edit any of this by hand. Telegram: make a bot with @BotFather, paste its token, and
+  send the code the page shows (PB- and 6 characters, good for 10 minutes) to the bot in a private
+  chat. Discord: make an application in the Developer Portal, copy the bot's token (Bot, Reset
+  Token), install the bot to a server you are in (Installation, Guild Install, scope `bot`), allow
+  direct messages from that server's members, paste the token, and send the code to the bot in a
+  direct message. The token is checked first (Telegram `getMe`, Discord `GET /users/@me`) and held
+  in memory until the code arrives; then that chat (and you as its sender) is pinned, the token and
+  ids are saved as `PAIRBROWSE_HANDOFF_TELEGRAM_TOKEN` and `_CHAT`, or
+  `PAIRBROWSE_HANDOFF_DISCORD_TOKEN`, `_CHANNEL` and `_USER`, in `secrets.env`, the channel entry
+  is added here with `enabled` `true`, and the bot replies "Linked to PairBrowse.". The token is
+  never shown again. Unlink removes that app's secrets and its entry (`enabled` goes `false` when no
+  channel is left). The page's top switch is the Away switch. If the Telegram bot has a webhook set
+  the page says so: PairBrowse never removes it. `send` (the page's "What goes to your phone"):
+  `{ "approvals": true, "checks": true, "submits": true, "runs": false }` (default; a box left
+  out keeps its default): `approvals` an approval card ("Approve a final click on example.com?
+  (pay) Code K7Q2": the site's host, the click's class, a 4-character code and the expiry, never the
+  button's words), `checks` the hand-off messages for a sign-in, a CAPTCHA or a 2FA code, `submits`
+  those for a payment or another final step left to you, `runs` a fast-mode run that finished (the
+  site's host, done, stopped or failed, and the steps done). A step whose box is off stays in the
+  window as with hand-offs off. All of it goes only under the gate above (`enabled`, and a server or
+  Away); "Send a test" always sends. `answer` (`false` by default, the page's "Answer approvals
+  from chat"): the linked chat answers approval cards (Telegram's Approve and Deny buttons, or a typed
+  `approve K7Q2` / `deny K7Q2`; on Discord typed only), only from you in that chat, only for a card
+  of your own agents on a tab it knows (held to that tab and site, as a joiner's answer is), each code
+  one card until it ends anywhere. While it is on, a card waits for the chat too. The helper reads
+  the bot's messages only while a link waits, or while answering is on and such a card waits.
   The same channels also hear when a running proxied session's exit changes or its recheck fails
   (`network`, below; the webhook gets `{ "event": "pairbrowse.network", "network", "change",
   "paused", "at" }`).

@@ -13,7 +13,27 @@
 // at }, when a running session's proxy exit changed or its recheck failed (daemon/network.mjs):
 // network the proxy's id, change "changed" or "failed", paused whether agents were paused for it,
 // at when (epoch ms). It names no session, address, country or reason: only that it happened.
-export const MESSAGE_KINDS = ["turn", "reminder", "ended", "network"];
+// The Handoff page's kinds (daemon/phonelink.mjs), each its own whitelist (handoffProblem):
+//   approval        { kind, code, host, action, expiresAt, answer? }: a final click waits for an OK;
+//                   code: the 4-character code an answer names; action: the click's class
+//                   (rules/clicks.mjs) or "click"; answer: true when the linked chat may answer it
+//                   (the senders of a linked app then say how; the others say to answer in PairBrowse).
+//   approval-ended  { kind, code, outcome }: allowed, denied or ended (answered nowhere, withdrawn, expired).
+//   run             { kind, host, outcome, steps }: a fast-mode run finished (done, stopped, failed).
+//   test            { kind }: Send a test.
+// None carries the element's words, the page's text, a value or the agent's words.
+export const HANDOFF_KINDS = ["approval", "approval-ended", "run", "test"];
+export const MESSAGE_KINDS = ["turn", "reminder", "ended", "network", ...HANDOFF_KINDS];
+export const APPROVAL_ACTIONS = ["pay", "delete", "publish", "send", "submit", "click"];
+export const APPROVAL_OUTCOMES = ["allowed", "denied", "ended"];
+export const RUN_OUTCOMES = ["done", "stopped", "failed"];
+const HANDOFF_FIELDS = {
+  approval: new Set(["kind", "code", "host", "action", "expiresAt", "answer"]),
+  "approval-ended": new Set(["kind", "code", "outcome"]),
+  run: new Set(["kind", "host", "outcome", "steps"]),
+  test: new Set(["kind"]),
+};
+const CODE = /^[A-HJ-NP-Z2-9]{4}$/;
 export const NETWORK_CHANGES = ["changed", "failed"];
 // The step kinds (pairbrowse_status step, and handoffKind for a detected challenge).
 export const ACTIONS = ["login", "captcha", "2fa", "payment", "other"];
@@ -63,10 +83,11 @@ export const actionSentence = (action, host) => (SENTENCES[action] || SENTENCES.
 export function messageProblem(message) {
   if (!message || typeof message !== "object" || Array.isArray(message)) return "a message is an object";
   if (message.kind === "network") return networkProblem(message);
+  if (HANDOFF_KINDS.includes(message.kind)) return handoffProblem(message);
   const unknown = Object.keys(message).filter((k) => !FIELDS.has(k));
   if (unknown.length) return `a message carries no other field (${unknown.map((k) => JSON.stringify(k.slice(0, 40))).join(", ")})`;
   const { kind, id, action, host, link, expiresAt, reason } = message;
-  if (!MESSAGE_KINDS.includes(kind)) return "kind is turn, reminder, ended or network";
+  if (!MESSAGE_KINDS.includes(kind)) return `kind is one of ${MESSAGE_KINDS.join(", ")}`;
   if (!(typeof id === "string" && ID.test(id))) return "id is a grant's 8-hex id";
   if (!ACTIONS.includes(action)) return `action is one of ${ACTIONS.join(", ")}`;
   if (!(typeof host === "string" && host.length <= 260 && HOST.test(host))) return "host is a site's host name";
@@ -95,6 +116,31 @@ function networkProblem(message) {
   return "";
 }
 
+// A Handoff page message's own rule: its kind's fields only, each in its rule.
+function handoffProblem(message) {
+  const fields = HANDOFF_FIELDS[message.kind];
+  const unknown = Object.keys(message).filter((k) => !fields.has(k));
+  if (unknown.length) return `a ${message.kind} message carries no other field (${unknown.map((k) => JSON.stringify(k.slice(0, 40))).join(", ")})`;
+  const { kind } = message;
+  if ((kind === "approval" || kind === "approval-ended") && !(typeof message.code === "string" && CODE.test(message.code))) return "code is an approval's 4-character code";
+  if ((kind === "approval" || kind === "run") && !(typeof message.host === "string" && message.host.length <= 260 && HOST.test(message.host))) return "host is a site's host name";
+  if (kind === "approval") {
+    if (!APPROVAL_ACTIONS.includes(message.action)) return `action is one of ${APPROVAL_ACTIONS.join(", ")}`;
+    if (!(Number.isInteger(message.expiresAt) && message.expiresAt > 0 && message.expiresAt <= TIME_MAX)) return "expiresAt is a time (epoch ms)";
+    if (message.answer !== undefined && typeof message.answer !== "boolean") return "answer is true or false";
+  }
+  if (kind === "approval-ended" && !APPROVAL_OUTCOMES.includes(message.outcome)) return "outcome is allowed, denied or ended";
+  if (kind === "run") {
+    if (!RUN_OUTCOMES.includes(message.outcome)) return "outcome is done, stopped or failed";
+    if (!(Number.isInteger(message.steps) && message.steps >= 0 && message.steps <= 100_000)) return "steps is a number of steps";
+  }
+  return "";
+}
+
+export const APPROVAL_TITLE = "PairBrowse: approve a final click?";
+const APPROVAL_ENDINGS = { allowed: "approved.", denied: "denied.", ended: "no longer waits (answered elsewhere, withdrawn or expired)." };
+const RUN_WORDS = { done: "finished", stopped: "stopped", failed: "failed" };
+
 // "14:35 UTC": the person may be anywhere, the server's own zone means nothing to them.
 export const clock = (ms) => `${new Date(ms).toISOString().slice(11, 16)} UTC`;
 
@@ -103,8 +149,22 @@ export const PRIVATE_ONLY = "The public link couldn't start, so this link works 
 
 // The message as a channel shows it: { title, text }. withheld: the channel leaves the link out
 // (a public ntfy topic, B7), so the text says where to take over instead.
-export function messageText(message, { withheld = false } = {}) {
+// reply: "buttons" (a linked Telegram chat: buttons and typed replies), "typed" (a linked Discord
+// DM: typed replies) or false (any other channel: answer in PairBrowse), for an approval the
+// linked chat may answer (message.answer).
+export function messageText(message, { withheld = false, reply = false } = {}) {
   const { kind, action, host, link, expiresAt, reason } = message;
+  if (kind === "approval") {
+    const lines = [`Approve a final click on ${host}? (${action}) Code ${message.code}`];
+    const until = clock(expiresAt);
+    if (message.answer === true && reply === "buttons") lines.push(`Tap Approve or Deny, or reply "approve ${message.code}" or "deny ${message.code}", before ${until}.`);
+    else if (message.answer === true && reply === "typed") lines.push(`Reply "approve ${message.code}" or "deny ${message.code}" before ${until}.`);
+    else lines.push(`Answer in PairBrowse before ${until}.`);
+    return { title: APPROVAL_TITLE, text: lines.join("\n") };
+  }
+  if (kind === "approval-ended") return { title: "PairBrowse: approval ended", text: `Approval ${message.code} ${APPROVAL_ENDINGS[message.outcome] || APPROVAL_ENDINGS.ended}` };
+  if (kind === "run") return { title: "PairBrowse: run finished", text: `A fast-mode run on ${host} ${RUN_WORDS[message.outcome] || "ended"} after ${message.steps} step${message.steps === 1 ? "" : "s"}.` };
+  if (kind === "test") return { title: "PairBrowse", text: "PairBrowse can reach you here." };
   if (kind === "network") {
     const what = message.change === "changed"
       ? `The exit address of proxy "${message.network}" changed at ${clock(message.at)}.`

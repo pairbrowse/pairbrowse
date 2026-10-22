@@ -60,6 +60,9 @@ const ALLOWED = new Set([
   "grants -> audit", "grants -> notify/message",
   // Hand-offs read their step kinds and sentences as the messages word them, and a step's kind from the agent's words as the Tools tab does.
   "yourturn -> notify/message", "yourturn -> toolstab",
+  // The Handoff page links an app by writing the channel config the senders read, and sends through them.
+  "phonelink -> notify/index", "phonelink -> notify/post", "phonelink -> notify/linked", "phonelink -> phonelink/telegram", "phonelink -> phonelink/discord",
+  "phonelink/telegram -> notify/post", "phonelink/discord -> notify/post", "phonelink/discord -> notify/discord-dm", "phonelink/discord -> notify/linked",
   // A part's own folder reaching back to a shared piece.
   "browser/downloads -> toolstab", "browser/launch -> exec-contexts", "browser/supervise -> where",
   "join/agents -> linkwait", "join/agents -> remote-agents", "join/mirror -> presence",

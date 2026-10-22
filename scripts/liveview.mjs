@@ -39,7 +39,7 @@ import { createPagesRoutes } from "./liveview/routes/pages.mjs";
 import { createOwnerRoutes, inviteItems } from "./liveview/routes/owner.mjs";
 import { createViewerRoutes } from "./liveview/routes/viewer.mjs";
 import { createTurnRoutes } from "./liveview/routes/turn.mjs";
-import { createNetworkRoutes } from "./liveview/routes/network.mjs";
+import { createNetworkRoutes } from "./liveview/routes/network.mjs"; import { createHandoffRoutes } from "./liveview/routes/handoff.mjs";
 import { createTurnGate, TURN_ROLES } from "./liveview/grants.mjs";
 import { createPublicTurn } from "./liveview/public-turn.mjs";
 import { NO_CAPTURE_SHARE, targetIdOf } from "./daemon/capture.mjs";
@@ -127,11 +127,11 @@ const sharedDefaults = { readForm: async () => null, applyForm: async () => {}, 
 // passed its checks, but the pages' own reports (OWN_REPORTS) and the live view's input (replayed
 // into a tab, heard there through onHumanInput).
 // covers: card fields covered in what guests see (liveview/guest-frames.mjs), or null.
-// grants: hand-off grants (daemon/grants.mjs; their keys, landing page and stream: liveview/grants.mjs), or null. publicHost(): the hand-off tunnel's public name, or null; publicShared(): join codes use that name too (liveview/public-turn.mjs).
+// handoff: the Handoff page's part (daemon/phonelink.mjs: read(), op(given), onChange(fn): routes/handoff.mjs and the handoff event), or null. grants: hand-off grants (daemon/grants.mjs; their keys, landing page and stream: liveview/grants.mjs), or null. publicHost(): the hand-off tunnel's public name, or null; publicShared(): join codes use that name too (liveview/public-turn.mjs).
 export async function startLiveView({ grants = null, publicHost = () => null, publicShared = () => false, covers = null, activityLog = null, reporter = null, tools = null, onPagesKey = () => {}, onPersonInput = () => {}, sessionOps = null, outlines = null, mask = (t) => t, timeline = null, layoutDefaults = null, settings = null, extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
   guestPort: wantGuestPort = 0, tunnelHost = () => null, approvals = createApprovals(), onJoinRequest = () => {}, tabMeta = () => ({}), secretDomains = () => [], onJoinerPerson = () => {}, onJoinerActivity = () => {}, shared: sharedGiven = {},
   onPause = () => ({}), pauseState = () => null, onRecord = async () => ({}), recordState = () => null, picker = null, devShare = null, devPanel = null, joinHost = null, relays = () => [], screens = null, remoteAgents = null, onReplay = () => () => {}, journal = null, makeInvite = null,
-  clickApprovals = null, capture = null }) {
+  clickApprovals = null, capture = null, handoff = null }) {
   const shared = { ...sharedDefaults, ...sharedGiven };
   const history = activityLog || createActivityLog({ mask });
   const key = randomBytes(32).toString("base64url");
@@ -572,7 +572,7 @@ export async function startLiveView({ grants = null, publicHost = () => null, pu
     ...createOwnerRoutes({ approvals, clickApprovals, joiners, push, stopJoinerKey, collaborationChanged, log, devPanel, joinHost, profile, journal, invites, makeInvite, broadcast, onRecord, tools, mask, recordState }),
     ...createSessionRoutes({ picker, sessionOps, broadcast, ownerSession, linkGuests, layouts, joinersNow, recordState, clickApprovals }),
     ...createProfileRoutes({ profiles: sessionOps?.profiles || null }), // browser profiles, the person's (sessions page)
-    ...createNetworkRoutes({ network: settings?.network || null, broadcast }),
+    ...createNetworkRoutes({ network: settings?.network || null, broadcast }), ...createHandoffRoutes({ handoff, broadcast }),
     ...createPagesRoutes({ history, layoutNow, layouts, sessionName: () => sessionInfo.name, broadcast, settings, reporter, outlines, webPages, getContext, idOf, mask, watchPages, tabsStrip, agentTabs, tabOrder, capture, captureOk }),
     ...timelineRoutes.routes,
     ...toolRoutes.routes,
@@ -658,6 +658,7 @@ export async function startLiveView({ grants = null, publicHost = () => null, pu
     approvalShare?.changed();
     if (change?.op === "add" && clickApprovals.pending().length === 1) broadcast("driving", { on: driving });
   }) : () => {};
+  const stopHandoff = handoff?.onChange ? handoff.onChange((summary) => broadcast("handoff", summary)) : () => {}; // the Handoff page changed (a link arrived, a code expired): the owner's streams
   // The timeline changed (a picture kept, a card removed or pinned, a note): the owner's pages.
   const stopTimeline = timeline?.onChange ? timeline.onChange((change) => broadcast("timeline", { op: change.op, card: timelineRoutes.maskedCard(change.card) })) : () => {};
   // An outline kept or dropped (daemon/outline.mjs): the owner's pages hear which tab, never the text.
@@ -787,7 +788,7 @@ export async function startLiveView({ grants = null, publicHost = () => null, pu
     close: () => {
       closed = true;
       clearInterval(timer);
-      stopEnded(); stopApprovals(); stopRoles(); stopTimeline(); stopOutlines(); stopClickApprovals(); turnGate.close();
+      stopEnded(); stopApprovals(); stopRoles(); stopTimeline(); stopOutlines(); stopClickApprovals(); stopHandoff(); turnGate.close();
       for (const stop of stopTools) stop();
       server.close();
       for (const r of clients) r.end();

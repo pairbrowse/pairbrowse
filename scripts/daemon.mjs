@@ -97,7 +97,7 @@ import { testOn, harnessStarted } from "./testenv.mjs";
 import { createAudit } from "./daemon/audit.mjs";
 import { createGrants } from "./daemon/grants.mjs";
 import { createNotifier, handoffSends, sendWhereHandoffsGo } from "./daemon/notify/index.mjs";
-import { createYourTurn } from "./daemon/yourturn.mjs";
+import { createYourTurn } from "./daemon/yourturn.mjs"; import { createPhoneLink } from "./daemon/phonelink.mjs";
 import { createNetwork } from "./daemon/network.mjs";
 
 const require = createRequire(join(paths.runtime, "package.json"));
@@ -479,7 +479,7 @@ const sharing = createSharing({
     // The browser's Settings page: which browser runs, the timeline, the docks' default layout
     // (liveview/settings.mjs; written into config.json and the running config).
     settings: createSettings({ config, choiceConfig: () => context.choiceConfig(), native: !!pinnedAsset(), settingsSection: () => !!context.nextShell().settingsSection, browserInUse: () => context.browserInUse(),
-      away: () => ({ server: context.isServer(), enabled: config.handoff?.enabled === true, channels: notifier.usable().length, privateRoute: sharing.privateRoute() }), secrets, log, onChange: () => sharing.publicLinkChanged() }), // the Away switch (decision 8) and its public link offer (step 21b; turned off, its tunnel stops at once); secrets: the Network section's (liveview/network.mjs)
+      away: () => ({ server: context.isServer(), enabled: config.handoff?.enabled === true, channels: notifier.usable().length, privateRoute: sharing.privateRoute() }), secrets, log, onChange: () => { sharing.publicLinkChanged(); phonelink.changed(); } }), // the Away switch (decision 8) and its public link offer (step 21b; turned off, its tunnel stops at once); secrets: the Network section's (liveview/network.mjs)
     // Report a problem: relayed to config.json's reportUrl on the person's click (liveview/report.mjs).
     reporter: createReporter({ url: () => config.reportUrl, mask: output.mask, log }),
     // Refs go stale when a person there did something (elsewhere() says so) or a tab changed there;
@@ -528,7 +528,7 @@ const sharing = createSharing({
     status: () => hud.badge(), session: () => context.sessionInfo(), collaboration: () => collaboration.state(),
     // Named final clicks asked in the browser (owner only). Declared further down: read when the
     // live view starts, after startup.
-    get clickApprovals() { return clickApprovals; },
+    get clickApprovals() { return clickApprovals; }, get handoff() { return phonelink; }, // the Handoff page's routes and event
     picker: { state: () => context.pickerState(), pick: (op) => picks.pick(op), open: () => context.reopenPicker() },
     // the first request a browser page makes with its key: the key file has done its job
     onPagesKey: () => context.dropHelperKey(),
@@ -580,7 +580,8 @@ const joinPrompt = createJoinPrompt({
 // target id says which window.
 const clickApprovals = createClickApprovals({ hud, presence, collaboration, liveView, frontPage, docked: () => !!context.browserPages?.(), targetOf: targetIdOf, mask: output.mask, log, hostName: () => HOST,
   // A session joined from here with the approve role: the host's asks on its picture pages, answers sent back on the channel.
-  screen: { pages: () => follow.screenPages(), call: screenCard }, sendAnswer: (id, answer) => follow.answerApproval(id, answer) });
+  screen: { pages: () => follow.screenPages(), call: screenCard }, sendAnswer: (id, answer) => follow.answerApproval(id, answer), chat: { canAnswer: () => phonelink.canAnswer() } });
+const phonelink = createPhoneLink({ config, secrets, notifier, approvals: () => clickApprovals, server: () => context.isServer(), log }); phonelink.attach(clickApprovals); // the Handoff page (daemon/phonelink.mjs): Telegram or Discord linked with a code, what goes there, approvals answered from that chat
 // Who used each session, for the session picker: joiners the host let in. A joiner let in also
 // takes any approval card in the page down at once (approvals.mjs cover).
 sharing.approvals.onChange(() => {
@@ -633,10 +634,10 @@ const outlines = createOutlines({ mask: output.mask });
 // Hand-offs to the person: the badge and the Tools tab as before, and their channels when hand-offs go there (daemon/yourturn.mjs).
 const yourTurn = createYourTurn({ config, grants, notifier, audit, handoffs, journal, hud, log, hostNote, agentBy, saveTabs: () => context.saveTabs(), sessionName: () => context.sessionName(),
   linkFor: (key) => sharing.handoffLink(key), sends: () => handoffSends(config, { server: context.isServer() }), actionsIn: (p) => presence.didIn(p), // what the person did there: names only (B15)
-  turnFile: (s) => sessionFile(s, "turn.json"), keptAlive: () => context.keepAlive(), successorOf: (p) => context.successorOf(p), pagesNow: () => context.openPages(), compatibility: () => context.compatibility(), savedCard: () => !!context.savedCard()?.on, personActedAt: (p) => presence.actedAt(p) }); // a restart's hand-offs come back (B16); setup problems reported apart (B14); a saved card masks every tab (B12); a step done in the window ends its hand-off (decision 8)
+  turnFile: (s) => sessionFile(s, "turn.json"), keptAlive: () => context.keepAlive(), successorOf: (p) => context.successorOf(p), pagesNow: () => context.openPages(), compatibility: () => context.compatibility(), savedCard: () => !!context.savedCard()?.on, personActedAt: (p) => presence.actedAt(p), wants: (a) => phonelink.wantsAction(a) }); // a restart's hand-offs come back (B16); setup problems reported apart (B14); a saved card masks every tab (B12); a step done in the window ends its hand-off (decision 8)
 const timeline = createTimeline({ dir: () => timelineDir(context.sessionName()), enabled: () => config.timeline !== false, cap: () => config.timelineCap, mask: output.mask, step: () => journal.step(), onNote: (text) => hud.addActivity(`Note: ${text}`, HOST, null), log });
 const serve = createServe({
-  onRunStatus: (...a) => yourTurn.onRunStatus(...a), yourTurn, // a fast-mode run's hand-off step; hand-offs (B10 masking)
+  onRunStatus: (...a) => yourTurn.onRunStatus(...a), yourTurn, onRunDone: (r) => phonelink.runDone(r), // a fast-mode run's hand-off step; hand-offs (B10 masking)
   config, log, host: HOST, createConnection, clients, collaboration, tabClaims, context, hud, presence, popups, output, screenshots,
   secrets, facts, sharing, follow, pause, remoteHolder, personTabs, reconnecting: (except) => liveView()?.reconnecting?.(except) || null, front: () => tabOrder.front(4000), drainHostNotes: () => hostNotes.splice(0), revision: () => revision, bumpRevision, session, shareMessage, recorder, tabNames: tabLabels, journal, timeline, clickApprovals, outlines, updateNote: () => handoff.note(),
   // Tests only (PAIRBROWSE_TEST_TAB_ORDER=1): read and move tabs in the strip, as a person would
@@ -795,11 +796,10 @@ async function shutdown(code) {
   activityLog.flush(); // the activity log's last lines
   // Join codes outlive a restart: their tunnels keep running for the next run (sharing.mjs); one kept idle for a next code ends with the helper.
   sharing.suspend();
-  // Joiners' channels end before the browser closes: its tabs closing isn't the host closing them,
-  // and joiners keep their copies.
+  // Joiners' channels end before the browser closes: its tabs closing isn't the host closing them, and joiners keep their copies.
   sharing.closeLiveView();
   follow.stop().catch(() => {});
-  cobrowse.stop();
+  cobrowse.stop(); phonelink.stop(); // the Handoff page's reading of Telegram and Discord
   screens.close().catch(() => {}); // joiners' direct connections and the tabs' debugger sessions
   // The browser gets a clean close (the engine writes its cookies and logins on the way out; it writes them only every ~30 s
   // otherwise), at most SHUTDOWN_GRACE_MS: then the helper exits and Playwright's exit handler kills what's left of it.

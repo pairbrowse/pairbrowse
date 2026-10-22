@@ -20,7 +20,7 @@ export const AUDIT_MAX_BYTES = 1024 * 1024;
 export const KINDS = ["minted", "notified", "notify-failed", "reminded", "redeemed", "reuse", "stream-refused", "input-refused", "request-refused", "ended"];
 // The hand-off channels (B6). A sender added to the notify table passes its type through
 // createAudit's `channels`, so the composition root hands the table's types over.
-export const CHANNEL_TYPES = ["webhook", "ntfy", "telegram", "discord", "slack"];
+export const CHANNEL_TYPES = ["webhook", "ntfy", "telegram", "discord", "slack", "discord-dm"];
 // Each kind's words. minted: the action kind (B7) and "replacement" for a link reissued after a
 // restart (B16); notified, notify-failed: the channels; reminded: the channels and whether the
 // redeem key was spent already; reuse: which key; stream-refused, input-refused, request-refused (any

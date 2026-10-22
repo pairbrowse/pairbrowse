@@ -84,3 +84,58 @@ export async function httpsPost(url, body, { headers = {}, timeoutMs = POST_TIME
     await wait(retryMs);
   }
 }
+
+// One request whose JSON answer the caller reads (a bot API's getMe, getUpdates, a Discord REST
+// call), with the same rules: https only (loopback http for tests), its own agents, no proxy, no
+// redirect followed, bounded by timeoutMs, the answer read to at most max bytes (past that: an
+// error, nothing parsed). No retry: the callers poll or answer a person's click, and say so.
+// -> { ok, status, json } (json: the parsed answer, or null when it isn't JSON) or { ok: false,
+// status?, error }. Never the address, a header or the answer's text in an error.
+export const JSON_ANSWER_MAX = 256 * 1024;
+export function httpsJson(url, { method = "GET", body = null, headers = {}, timeoutMs = POST_TIMEOUT_MS, max = JSON_ANSWER_MAX, request = defaultRequest } = {}) {
+  const problem = addressProblem(url);
+  if (problem) return Promise.resolve({ ok: false, error: `the address ${problem}` });
+  const u = new URL(url);
+  const text = body === null || body === undefined ? null : String(body);
+  return new Promise((resolve) => {
+    let req = null;
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+    const timer = setTimeout(() => {
+      finish({ ok: false, error: "timed out" });
+      try { req?.destroy(); } catch {}
+    }, timeoutMs);
+    timer.unref?.();
+    const head = { "user-agent": USER_AGENT, accept: "application/json", ...headers, ...(text !== null ? { "content-length": Buffer.byteLength(text) } : {}) };
+    try {
+      req = request(u, { method, agent: AGENTS[u.protocol], headers: head }, (res) => {
+        const chunks = [];
+        let size = 0;
+        res.on("data", (chunk) => {
+          size += chunk.length;
+          if (size > max) { res.destroy(); finish({ ok: false, status: res.statusCode, error: "the answer is too long" }); return; }
+          chunks.push(chunk);
+        });
+        res.on("end", () => {
+          let json = null;
+          try { json = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch {}
+          const status = res.statusCode;
+          if (status >= 300 && status < 400) return finish({ ok: false, status, error: `redirect refused (HTTP ${status})` });
+          finish(status >= 200 && status < 300 ? { ok: true, status, json } : { ok: false, status, json, error: `HTTP ${status}` });
+        });
+        res.on("error", () => finish({ ok: false, error: "network error" }));
+        res.on("close", () => finish({ ok: false, error: "closed" }));
+      });
+    } catch (e) {
+      finish({ ok: false, error: e?.code || "couldn't send" });
+      return;
+    }
+    req.on("error", (e) => finish({ ok: false, error: e?.code || "network error" }));
+    req.end(text ?? undefined);
+  });
+}

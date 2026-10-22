@@ -59,6 +59,9 @@ export const paths = {
   // The audit trail of hand-off events (daemon/audit.mjs): owner-only JSON lines, appended only,
   // moved to audit.jsonl.1 at 1 MB. Made on first use.
   audit: join(HOME, "audit.jsonl"),
+  // The Handoff page's linked apps' display names (the bot's and the chat's: daemon/phonelink.mjs),
+  // owner-only; their tokens and ids are in secrets.env only.
+  handoffLinks: join(HOME, "handoff-links.json"),
   // The PairBrowse browser's Safe Storage password (browser/safe-storage.mjs, native patch 594),
   // owner-only, made by the helper once.
   safeStorageKey: join(HOME, "safe-storage-key"),
@@ -193,7 +196,9 @@ export const DEFAULT_CONFIG = {
   // lets them go through the sharing tunnel (decision U2); grantMinutes (1 to 120) is a link's
   // life, remindMinutes the one reminder; channels where messages go (scripts/daemon/notify/), their
   // credentials only in secrets.env under PAIRBROWSE_ names.
-  handoff: { enabled: false, away: false, publicLink: false, grantMinutes: 15, remindMinutes: 10, channels: [] },
+  // send: what goes to the phone (the Handoff page: approval cards, sign-ins and checks, payments
+  // and final submits, finished runs); answer: approvals answered from a linked chat (off).
+  handoff: { enabled: false, away: false, publicLink: false, grantMinutes: 15, remindMinutes: 10, channels: [], send: { approvals: true, checks: true, submits: true, runs: false }, answer: false },
   // Per-session proxies (spec server-mode C4, net/config.mjs): { proxies: { <id>: { server, auth,
   // bypass, expectEgress, onEgressChange } }, default, sessions: { <session>: <id> | null }, strict,
   // checkUrl, recheckMinutes }, credentials only in secrets.env. null: every session direct.
@@ -282,6 +287,7 @@ export function loadConfig(file = paths.config, log = () => {}) {
   if (refused.length && asked !== `${key} has --no-sandbox`) CONFIG_WARNINGS.push(`config.json: ${sandboxRefusal(`${key} has --no-sandbox`, process.platform)}`);
   // The hand-off's fields each from the file or its default; a reminder past the link's life falls back.
   const handoff = { ...DEFAULT_CONFIG.handoff, ...(checked.config.handoff && typeof checked.config.handoff === "object" ? checked.config.handoff : {}) };
+  handoff.send = { ...DEFAULT_CONFIG.handoff.send, ...(handoff.send && typeof handoff.send === "object" ? handoff.send : {}) }; // each box from the file or its default
   const times = handoffTimes(handoff);
   config.handoff = { ...handoff, remindMinutes: times.remindMinutes };
   if (times.warning) CONFIG_WARNINGS.push(times.warning);

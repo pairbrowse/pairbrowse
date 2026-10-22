@@ -17,8 +17,9 @@ import ntfy from "./ntfy.mjs";
 import telegram from "./telegram.mjs";
 import discord from "./discord.mjs";
 import slack from "./slack.mjs";
+import discordDm from "./discord-dm.mjs";
 
-export const SENDERS = { webhook, ntfy, telegram, discord, slack };
+export const SENDERS = { webhook, ntfy, telegram, discord, slack, "discord-dm": discordDm };
 // A sender's whole send, its retry included (post.mjs: 2 tries of 10 s and the 5 s between).
 export const SEND_MAX_MS = 30_000;
 
@@ -28,6 +29,19 @@ export const SEND_MAX_MS = 30_000;
 export function handoffSends(config, { server = false } = {}) {
   const h = config?.handoff || {};
   return h.enabled === true && (server === true || h.away === true);
+}
+
+// What goes to the phone (handoff.send, the Handoff page's checkboxes): approvals (approval
+// cards), checks (a sign-in, a CAPTCHA, a 2FA code: turn, reminder and ended), submits (a payment
+// and any other final step left to you), runs (a fast-mode run finished). A field left out is on,
+// but runs (off by default). The gate above (handoffSends) still decides whether anything goes.
+export const SEND_GROUPS = ["approvals", "checks", "submits", "runs"];
+export const SEND_DEFAULTS = Object.freeze({ approvals: true, checks: true, submits: true, runs: false });
+export const actionGroup = (action) => (action === "login" || action === "captcha" || action === "2fa" ? "checks" : "submits");
+export function handoffWants(config, group) {
+  const send = config?.handoff?.send;
+  const v = send && typeof send === "object" && !Array.isArray(send) ? send[group] : undefined;
+  return typeof v === "boolean" ? v : SEND_DEFAULTS[group] === true;
 }
 
 // A message the helper sends of its own (a proxy's recheck: daemon/network.mjs C8) goes where

@@ -106,9 +106,11 @@ const entryOf = (e) => (e && typeof e === "object" && /^[0-9a-f]{8}$/.test(e.id)
 // savedCard(): whether the running browser has a saved card on (context.savedCard, B12).
 // personActedAt(page): when a person last clicked or typed in a tab by hand, no agent's or joiner's
 // input (presence actedAt), 0 for never: a step done in the window (watchWindow).
+// wants(action): whether this step's group goes to the phone (handoff.send checks or submits:
+// phonelink.mjs wantsAction); a step whose group is off stays in the window, as with hand-offs off.
 export function createYourTurn({ config, grants, notifier, sends, handoffs, journal, saveTabs = async () => ({}), hostNote = () => {}, audit = null, hud, sessionName, linkFor = async () => null,
   agentBy = (p, color = "") => ({ label: "Agent", color }), log = () => {}, turnMs = () => testMs("TURN_MS", 0), timers = { set: setTimeout, clear: clearTimeout }, now = Date.now,
-  turnFile = () => null, keptAlive = () => false, successorOf = () => null, pagesNow = async () => [], actionsIn = () => "", compatibility = () => [], savedCard = () => false, personActedAt = () => 0 }) {
+  turnFile = () => null, keptAlive = () => false, successorOf = () => null, pagesNow = async () => [], actionsIn = () => "", compatibility = () => [], savedCard = () => false, personActedAt = () => 0, wants = () => true }) {
   const turns = new Map(); // grant id -> { id, key, participant, page, action, host, session, expiresAt, sent, timer, reminded }
   // B16: grant id -> { entry (turn.json's), session, page, participant, waiting }: waiting, the
   // restart that ended it ("browser-restarted", "helper-stopped") while it may come back.
@@ -205,7 +207,7 @@ export function createYourTurn({ config, grants, notifier, sends, handoffs, jour
   // "check"). A replacement after a restart (B16): expiresAt, the lost link's deadline, and
   // reminded, whether its one reminder went already.
   async function start({ key, participant = null, page, action, expiresAt = null, reminded = false }) {
-    if (!sends()) return null;
+    if (!sends() || !wants(action)) return null;
     if (!page || page.isClosed?.()) return { line: "Your turn shows in the PairBrowse window; there is no tab of yours to hand over to the user's phone." };
     // A message names the site's host: a tab on no site (about:blank, a file) stays in the window.
     if (!hostOf(page)) return { line: "Your turn shows in the PairBrowse window; this tab is on no website, so nothing is handed over to the user's phone." };

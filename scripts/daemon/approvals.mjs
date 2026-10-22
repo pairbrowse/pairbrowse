@@ -27,6 +27,7 @@ import { APPROVAL_WAIT_MS } from "../guard.mjs";
 import { HOOK_MARK } from "../hookline.mjs";
 import { within, sha256 } from "../util.mjs";
 import { AGENT_COLOR } from "../../ui/vocab.js";
+import { clickClass } from "../rules/clicks.mjs";
 
 export const APPROVAL_ID = /^ap-[0-9a-f]{32}$/;
 export const ANSWERS = new Set(["allow", "deny", "terminal", "site"]);
@@ -107,8 +108,11 @@ export function routeConnection(sock, { onHook, onOther }) {
 // Activity log names who answered). A joiner's side: screen ({ pages(): the picture pages,
 // call(page, arg, kind): the card there, join/screens.mjs screenCard }) and sendAnswer(id, answer)
 // (follow.mjs answerApproval: resolves to the host's { code, body } or { error }).
+// chat: the Handoff page's linked chat (daemon/phonelink.mjs): { canAnswer() } says whether it is a
+// place to answer now (answering from chat on, approvals sent, an app linked); then an ask a joiner
+// could answer waits for it too, and its answer comes through answerFromChat on the same rules.
 export function createClickApprovals({ hud, presence, collaboration, liveView = () => null, frontPage = async () => null, docked = () => false, targetOf = async () => null, mask = (t) => t, log = () => {}, hostName = () => "The host",
-  screen = null, sendAnswer = null,
+  screen = null, sendAnswer = null, chat = null,
   now = Date.now, waitMs = APPROVAL_WAIT_MS, random = randomBytes, setInterval: every = setInterval, clearInterval: stopEvery = clearInterval }) {
   const items = new Map(); // id -> item
   const answered = new Map(); // key -> { answer, at }
@@ -348,6 +352,23 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
     return answer(it.id, a, `${by || "a joiner"} (joined, can approve)`, by);
   }
 
+  // The linked chat's answer (phonelink.mjs, the pinned chat and user, answering on): allow or deny,
+  // only for an ask a joiner with the approve role could answer (joinerCan), so the Allow is held
+  // to the ask's tab and origin (sameWhere) as theirs is. from: "Telegram" or "Discord".
+  function answerFromChat(id, a, from) {
+    const it = typeof id === "string" ? items.get(id) : null;
+    if (!joinerCan(it) || (a !== "allow" && a !== "deny") || chat?.canAnswer?.() !== true) return false;
+    return answer(it.id, a, `${String(from).slice(0, 20)} (a linked chat)`, hostName());
+  }
+  // What a message about an ask may say (phonelink.mjs): { action (the click's class from the
+  // element as the agent named it, or "click"), host, expiresAt, answerable }, or null for an ask
+  // that isn't a click of this helper's own agents on a site (another's, the host's own kind).
+  function chatInfo(id) {
+    const it = typeof id === "string" ? items.get(id) : null;
+    if (!it || it.remote || it.hostOnly || !it.tab.host) return null;
+    return { action: clickClass(it.what) || "click", host: it.tab.host, expiresAt: it.at + waitMs, answerable: joinerCan(it) };
+  }
+
   function withdraw(id, why) {
     const it = items.get(String(id));
     if (!it) return false;
@@ -361,7 +382,7 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
   function surface(joiners = true) {
     const lv = liveView();
     const counts = lv?.pageClients?.() || {};
-    return SURFACES.some((k) => Number(counts[k]) > 0) || (joiners && Number(lv?.approveJoiners?.()) > 0);
+    return SURFACES.some((k) => Number(counts[k]) > 0) || (joiners && Number(lv?.approveJoiners?.()) > 0) || (joiners && chat?.canAnswer?.() === true);
   }
 
   // The call itself arrived (Claude Code: the terminal's yes, or the browser's Allow passed on).
@@ -507,7 +528,7 @@ export function createClickApprovals({ hud, presence, collaboration, liveView = 
   }
 
   return {
-    participant, gone, only, whose, open, answer, withdraw, arrived, hook, cover, shareable, answerShared, fromHost,
+    participant, gone, only, whose, open, answer, withdraw, arrived, hook, cover, shareable, answerShared, fromHost, answerFromChat, chatInfo,
     lastWhere: () => (movedFrom ? { origin: movedFrom.origin } : null),
     pending: () => [...items.values()].map(publicItem),
     onChange: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },

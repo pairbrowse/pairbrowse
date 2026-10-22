@@ -45,7 +45,7 @@ const TURN_MAX = TURN_MAX_MS >= 60_000 ? `${Math.round(TURN_MAX_MS / 60_000)} mi
 // remembered details, sessions or invites, files only from its own folder (files), and it starts
 // on startPage (the tab its person looks at).
 export function createServe({ config, log, host, createConnection, clients, collaboration, tabClaims, context, hud, presence, popups, output,
-  screenshots, secrets, facts, sharing, follow, pause, drainHostNotes, remoteHolder = () => null, reconnecting = () => null, front = async () => null, revision, bumpRevision, session, shareMessage = () => {}, recorder = null, tabNames = { strip: (t) => t }, journal = { status() {}, ranLeft() {} }, timeline = null, testTools = {}, clickApprovals = null, outlines = null, onRunStatus = () => {}, personTabs = { has: () => false }, updateNote = () => "", yourTurn = null }) {
+  screenshots, secrets, facts, sharing, follow, pause, drainHostNotes, remoteHolder = () => null, reconnecting = () => null, front = async () => null, revision, bumpRevision, session, shareMessage = () => {}, recorder = null, tabNames = { strip: (t) => t }, journal = { status() {}, ranLeft() {} }, timeline = null, testTools = {}, clickApprovals = null, outlines = null, onRunStatus = () => {}, personTabs = { has: () => false }, updateNote = () => "", yourTurn = null, onRunDone = () => {} }) {
   const secretNames = () => Object.keys(secrets.get().values);
   // The person's own tabs (a file they opened from Downloads): no agent's tab, ever.
   const personTab = (p) => !!p && (!!personTabs.has(p) || isFileTab(p));
@@ -205,7 +205,7 @@ export function createServe({ config, log, host, createConnection, clients, coll
     });
     // The helper's parts and this connection's own helpers, for the tool server's parts (serve/):
     // each adds what it makes (createTurns, createResult, ...).
-    const api = { config, log, host, createConnection, clients, collaboration, tabClaims, context, hud, presence, popups, output, screenshots, secrets, facts, sharing, follow, pause, drainHostNotes, remoteHolder, reconnecting, front, revision, bumpRevision, session, shareMessage, recorder, tabNames, journal, timeline, testTools, clickApprovals, outlines, onRunStatus, personTabs, updateNote, yourTurn,
+    const api = { config, log, host, createConnection, clients, collaboration, tabClaims, context, hud, presence, popups, output, screenshots, secrets, facts, sharing, follow, pause, drainHostNotes, remoteHolder, reconnecting, front, revision, bumpRevision, session, shareMessage, recorder, tabNames, journal, timeline, testTools, clickApprovals, outlines, onRunStatus, personTabs, updateNote, yourTurn, onRunDone,
       sock, secretNames, personTab, closing, lastCall, ACTIVE_MS, inUse, cap, myLabel, handOff, rememberPicture, toClient, finish, reply, internal, forwardToHost };
 
     Object.assign(api, createTurns(conn, api));

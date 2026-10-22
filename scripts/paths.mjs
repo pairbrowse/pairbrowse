@@ -62,6 +62,9 @@ export const paths = {
   // The Handoff page's linked apps' display names (the bot's and the chat's: daemon/phonelink.mjs),
   // owner-only; their tokens and ids are in secrets.env only.
   handoffLinks: join(HOME, "handoff-links.json"),
+  // Proxies removed in Settings' Network section, to add again (liveview/network.mjs): their name,
+  // type, host, port and whether they need a username and password, never a credential; owner-only.
+  networkRecent: join(HOME, "network-recent.json"),
   // The PairBrowse browser's Safe Storage password (browser/safe-storage.mjs, native patch 594),
   // owner-only, made by the helper once.
   safeStorageKey: join(HOME, "safe-storage-key"),

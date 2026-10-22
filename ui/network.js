@@ -12,6 +12,9 @@ const TYPES = [["http", "HTTP"], ["https", "HTTPS"], ["socks5", "SOCKS5"]];
 const typeName = (t) => TYPES.find(([v]) => v === t)?.[1] || "?";
 const real = (fn) => (ev) => { if (ev.isTrusted) fn(ev); };
 const opt = (value, text, selected = false) => el("option", { value, textContent: text, selected });
+// A saved time as a short date and time in the person's own locale ("" when there is none).
+const when = (iso) => { const t = Date.parse(iso || ""); return Number.isNaN(t) ? "" : new Date(t).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }); };
+const where = (p) => (p.host ? `${typeName(p.type)} ${p.host}${p.port ? `:${p.port}` : ""}` : "Its address can't be read");
 
 // root: the section's container (emptied and filled here); base(): the live view address (null:
 // not connected yet); shown(on): told whether there is a section to show (the page hides its
@@ -32,6 +35,12 @@ export function networkPanel(root, base, { shown = () => {} } = {}) {
   list.setAttribute("aria-label", "Proxies");
   const empty = el("p", { className: "empty", id: "net-empty", textContent: "No proxies yet. Every session connects directly.", hidden: true });
   const addBtn = el("button", { className: "action", type: "button", id: "net-add", textContent: "Add a proxy" });
+  // Proxies removed here, to add again without retyping (never their username or password).
+  const recentList = el("ul", { className: "net-list net-recent-list", id: "net-recent-list" });
+  recentList.setAttribute("aria-label", "Recently removed proxies");
+  const recentClear = el("button", { className: "mini", type: "button", id: "net-recent-clear", textContent: "Clear" });
+  const recent = el("div", { className: "net-recent", id: "net-recent", hidden: true },
+    el("div", { className: "net-recent-h" }, el("h4", { className: "net-form-h", textContent: "Recently removed" }), recentClear), recentList);
   // The button or the open form, never both: the row holding the button goes while the form is open.
   const addRow = el("div", { className: "acts", id: "net-add-row" }, addBtn);
 
@@ -68,7 +77,7 @@ export function networkPanel(root, base, { shown = () => {} } = {}) {
   const choices = el("div", { className: "net-choices", id: "net-choices" },
     el("label", { className: "lab", htmlFor: "net-default" }, "Sessions without a choice of their own", defaultIn),
     sessions);
-  root.replaceChildren(problem, secretsProblem, list, empty, addRow, form, result, choices, msg);
+  root.replaceChildren(problem, secretsProblem, list, empty, addRow, form, result, recent, choices, msg);
 
   async function post(body) {
     if (!base()) return { error: "Not connected to PairBrowse." };
@@ -94,11 +103,20 @@ export function networkPanel(root, base, { shown = () => {} } = {}) {
     secretsProblem.hidden = !s.secretsProblem;
     secretsProblem.textContent = s.secretsProblem || "";
     list.replaceChildren(...s.proxies.map((p) => {
-      const where = p.host ? `${typeName(p.type)} ${p.host}${p.port ? `:${p.port}` : ""}` : "Its address can't be read";
+      const isDefault = s.default === p.id;
+      const use = el("button", { className: "mini", type: "button", textContent: "Use", ariaLabel: `Use ${p.id} for sessions without a choice of their own`, hidden: isDefault || !!s.problem });
+      use.addEventListener("click", real(async () => {
+        use.disabled = true;
+        const r = await post({ op: "default", id: p.id });
+        use.disabled = false;
+        if (r.error) return say(r.error, "error");
+        say(r.text, "ok");
+        draw(r.network);
+      }));
       const edit = el("button", { className: "mini", type: "button", textContent: "Edit", ariaLabel: `Edit ${p.id}` });
       const test = el("button", { className: "mini", type: "button", textContent: "Test", ariaLabel: `Test ${p.id}` });
       const del = el("button", { className: "mini", type: "button", textContent: "Remove", ariaLabel: `Remove ${p.id}` });
-      const tools = [edit, test, del];
+      const tools = [use, edit, test, del];
       const acts = el("span", { className: "net-acts" }, ...tools);
       edit.addEventListener("click", real(() => openForm(p)));
       test.addEventListener("click", real(() => runTest({ op: "test", id: p.id, type: p.type, host: p.host, port: p.port, auth: p.auth }, test)));
@@ -118,14 +136,38 @@ export function networkPanel(root, base, { shown = () => {} } = {}) {
         acts.replaceChildren(el("small", { className: "ask", textContent: "Remove it?" }), yes, keep);
         keep.focus();
       }));
-      const row = el("li", { className: "row net-proxy" },
-        el("div", { className: "label", title: p.id }, p.id, el("small", { textContent: where })),
-        el("div", { className: "sites", textContent: credLine(p) }), acts);
+      const users = Array.isArray(p.usedBy) ? p.usedBy : [];
+      const usage = `${users.length ? `Used by ${users.join(", ")}` : "No session uses it"}. ${p.lastUsed ? `Last used ${when(p.lastUsed)}.` : "Not used yet."}`;
+      const name = el("div", { className: "label", title: p.id }, p.id, ...(isDefault ? [el("span", { className: "net-tag", textContent: "Default" })] : []), el("small", { textContent: where(p) }));
+      const row = el("li", { className: "row net-proxy" }, name,
+        el("div", { className: "sites" }, el("span", { className: "net-cred-line", textContent: credLine(p) }), el("small", { className: "net-usage", textContent: usage })), acts);
       row.dataset.id = p.id;
       if (p.problem) row.append(el("small", { className: "fail", textContent: p.problem }));
       return row;
     }));
     empty.hidden = s.proxies.length > 0;
+    // The recently removed: add one again (the form filled in, its username and password to type
+    // again), forget one, or clear them all.
+    const gone = Array.isArray(s.recent) ? s.recent : [];
+    recent.hidden = !gone.length;
+    recentList.replaceChildren(...gone.map((r) => {
+      const again = el("button", { className: "mini", type: "button", textContent: "Add again", ariaLabel: `Add ${r.id} again` });
+      const forget = el("button", { className: "mini", type: "button", textContent: "Forget", ariaLabel: `Forget ${r.id}` });
+      again.addEventListener("click", real(() => openForm(r, true)));
+      forget.addEventListener("click", real(async () => {
+        forget.disabled = true;
+        const x = await post({ op: "forget", id: r.id });
+        if (x.error) { forget.disabled = false; return say(x.error, "error"); }
+        say(x.text, "ok");
+        draw(x.network);
+      }));
+      const row = el("li", { className: "row net-recent-row" },
+        el("div", { className: "label", title: r.id }, r.id, el("small", { textContent: where(r) })),
+        el("div", { className: "sites", textContent: `${r.auth ? "Needs a username and password. " : ""}${r.removedAt ? `Removed ${when(r.removedAt)}.` : ""}` }),
+        el("span", { className: "net-acts" }, again, forget));
+      row.dataset.id = r.id;
+      return row;
+    }));
     // The default and each session's choice.
     const ids = proxyIds();
     defaultIn.replaceChildren(opt("", "Connect directly", s.default === null), ...ids.map((id) => opt(id, id, s.default === id)));
@@ -150,6 +192,14 @@ export function networkPanel(root, base, { shown = () => {} } = {}) {
     for (const n of [addBtn, defaultIn, ...sessions.querySelectorAll("select")]) n.disabled = !!s.problem;
     if (editing && !ids.includes(editing)) closeForm();
   }
+  recentClear.addEventListener("click", real(async () => {
+    recentClear.disabled = true;
+    const r = await post({ op: "clear-recent" });
+    recentClear.disabled = false;
+    if (r.error) return say(r.error, "error");
+    say(r.text, "ok");
+    draw(r.network);
+  }));
   defaultIn.addEventListener("change", async () => {
     const r = await post({ op: "default", id: defaultIn.value || null });
     if (r.error) { say(r.error, "error"); draw(state); return; }
@@ -164,11 +214,13 @@ export function networkPanel(root, base, { shown = () => {} } = {}) {
     userIn.placeholder = p?.username ? "Saved: leave empty to keep" : "Username";
     credState.textContent = authIn.checked && p ? credLine(p) : "";
   }
-  function openForm(p = null) {
-    editing = p ? p.id : "";
-    formH.textContent = p ? `Edit proxy ${p.id}` : "Add a proxy";
+  // p: the proxy to edit, or (again: true) a removed one to add again with its fields filled in.
+  function openForm(p = null, again = false) {
+    const edit = !!p && !again;
+    editing = edit ? p.id : "";
+    formH.textContent = edit ? `Edit proxy ${p.id}` : again ? `Add proxy ${p.id} again` : "Add a proxy";
     idIn.value = p?.id || "";
-    idIn.readOnly = !!p;
+    idIn.readOnly = edit;
     typeIn.value = p?.type || "http";
     hostIn.value = p?.host ? p.host.replace(/^\[|\]$/g, "") : "";
     portIn.value = p?.port ? String(p.port) : "";
@@ -180,7 +232,7 @@ export function networkPanel(root, base, { shown = () => {} } = {}) {
     showCreds();
     // Focus goes to the first text field (never to the Type select: its picker must open only when
     // the person asks for it).
-    (p ? hostIn : idIn).focus();
+    (edit ? hostIn : again && p.auth ? userIn : idIn).focus();
   }
   function closeForm() {
     editing = null;

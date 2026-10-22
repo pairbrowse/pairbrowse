@@ -15,14 +15,14 @@
 // WebRTC, names) need a running browser on that proxy: they run when a session using it starts.
 // Nothing about a test is kept or logged but that one ran and its verdict.
 import { readFileSync } from "node:fs";
-import { paths } from "../paths.mjs";
-import { writeJsonAtomic, within } from "../util.mjs";
+import { paths, sessionFile } from "../paths.mjs";
+import { readJson, writeJsonAtomic, within } from "../util.mjs";
 import { listSessions } from "../sessions.mjs";
 import { setReservedSecret, deleteSecret } from "../rules/secrets.mjs";
 import { localeVsEgress } from "../rules/coherence.mjs";
 import { checkNetwork } from "../net/config.mjs";
 import { proxySecretNames } from "../net/credentials.mjs";
-import { networkSummary, networkChange, readNetworkOp, readProxyForm } from "../net/settings.mjs";
+import { networkSummary, networkChange, readNetworkOp, readProxyForm, recentList, RECENT_OPS, RECENT_MAX } from "../net/settings.mjs";
 import { probeEgress, checkTargets } from "../net/probe.mjs";
 import { egressVerdict } from "../net/verdict.mjs";
 
@@ -59,13 +59,29 @@ export function localeOf(config, { native = false } = {}) {
   return { timezone, languages: langs, geoip: { timezone: geo && !zoneSet, languages: geo && !langSet } };
 }
 
-// configFile: config.json (paths.mjs's). secrets: the helper's secret store (rules/secrets.mjs
+// When each proxy was last used: the newest launch or recheck naming it in any kept session's
+// network.json (daemon/network.mjs observe). names: the kept sessions. { id: ISO time }.
+export function proxyUsage(names, file = (n) => sessionFile(n, "network.json")) {
+  const out = {};
+  for (const name of names) {
+    let checks;
+    try { checks = readJson(file(name), null)?.checks; } catch { checks = null; }
+    for (const c of Array.isArray(checks) ? checks : []) {
+      if (typeof c?.proxy !== "string" || typeof c.at !== "string" || Number.isNaN(Date.parse(c.at))) continue;
+      if (!out[c.proxy] || Date.parse(out[c.proxy]) < Date.parse(c.at)) out[c.proxy] = c.at;
+    }
+  }
+  return out;
+}
+
+// configFile: config.json (paths.mjs's). recentFile: the recently removed list (owner-only, never
+// a credential). usage(names): proxyUsage. secrets: the helper's secret store (rules/secrets.mjs
 // secretStore: reload(), update(fn)). sessions(): the kept sessions' names. locale(): as localeOf.
 // probe: net/probe.mjs probeEgress (tests pass a stand-in). log(line).
 // -> { read(), write(op), test(op) }: read the summary (net/settings.mjs networkSummary); write
 // { text, network } or { error }; test { verdict, ... } or { error }.
 export function createNetworkSettings({ configFile = paths.config, secrets, sessions = () => listSessions().filter((s) => !s.temporary).map((s) => s.name),
-  locale = () => localeOf({}), probe = probeEgress, log = () => {} } = {}) {
+  locale = () => localeOf({}), probe = probeEgress, log = () => {}, recentFile = paths.networkRecent, usage = proxyUsage } = {}) {
   // secrets.env as it is on disk now (credentials are often added to it by hand), never the
   // store's copy from its last save: { values, problem }, the problem saying why the file is
   // unusable (else empty).
@@ -75,12 +91,28 @@ export function createNetworkSettings({ configFile = paths.config, secrets, sess
     return { values: now?.values || {}, problem: now?.problem || "" };
   };
   const sessionNames = () => { try { return sessions(); } catch { return []; } };
+  const recentNow = () => { try { return recentList(readJson(recentFile, null)?.removed); } catch { return []; } };
+  const keepRecent = (list) => writeJsonAtomic(recentFile, { version: 1, removed: recentList(list).slice(0, RECENT_MAX) }, { mode: 0o600 });
   function read() {
     const file = readConfigFile(configFile);
     const s = onDisk();
-    return networkSummary(file.config?.network, { sessions: sessionNames(), values: s.values, problem: file.problem || "", secretsProblem: s.problem });
+    const names = sessionNames();
+    let used;
+    try { used = usage(names); } catch { used = {}; }
+    return networkSummary(file.config?.network, { sessions: names, values: s.values, problem: file.problem || "", secretsProblem: s.problem, usage: used, recent: recentNow() });
+  }
+  // Forget one removed proxy, or all of them: the list only, config.json untouched.
+  function writeRecent(op) {
+    const now = recentNow();
+    if (op.op === "forget" && !now.some((r) => r.id === op.id)) return { error: "That proxy isn't in the recently removed list. Reload the list." };
+    const next = op.op === "forget" ? now.filter((r) => r.id !== op.id) : [];
+    try { keepRecent(next); } catch (e) { return { error: `Not changed: the list couldn't be written (${e?.code || "error"}). Check that PairBrowse's folder can be written, then try again.` }; }
+    return { text: op.op === "forget" ? `Forgot "${op.id}".` : "Cleared the recently removed proxies.", network: read() };
   }
   function write(op) {
+    const read0 = readNetworkOp(op);
+    if (read0.error) return read0;
+    if (RECENT_OPS.includes(op.op)) return writeRecent(op);
     const file = readConfigFile(configFile);
     if (file.problem) return { error: file.problem };
     const s = onDisk();
@@ -109,6 +141,14 @@ export function createNetworkSettings({ configFile = paths.config, secrets, sess
         log(`network: a removed proxy's username and password stayed in secrets.env (${e?.message || e})`);
       }
     }
+    // A removed proxy goes to the recently removed list (to add again, without its credentials);
+    // one added again leaves it. The list is a convenience: failing to keep it changes nothing else.
+    try {
+      if (op.op === "remove") {
+        const was = networkSummary(file.config.network).proxies.find((p) => p.id === op.id);
+        if (was?.type && was.host) keepRecent([{ id: was.id, type: was.type, host: was.host, port: was.port, auth: was.auth, removedAt: new Date().toISOString() }, ...recentNow()]);
+      } else if (op.op === "add" && recentNow().some((x) => x.id === op.id)) keepRecent(recentNow().filter((x) => x.id !== op.id));
+    } catch (e) { log(`network: the recently removed list couldn't be kept (${e?.code || "error"})`); }
     log(`network: ${r.text} (from Settings)`);
     return { text: r.text, network: read() };
   }

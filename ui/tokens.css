@@ -108,8 +108,8 @@
   [aria-busy="true"]::after { animation: none !important; opacity: 0.7; scale: 0.6 1; }
 }
 
-/* The live view and the settings page framed by the engine's settings follow the system's light
-   scheme (they set data-scheme); every other page stays dark. */
+/* The live view follows the system's light scheme (it sets data-scheme); every other page, the
+   settings page framed by the engine's settings included, stays dark as the browser's own pages do. */
 @media (prefers-color-scheme: light) {
   :root[data-scheme="system"] {
     --bg: #F4F7FB; --frame: #FFFFFF; --sidebar: #FFFFFF; --elevated: #E8EEF5; --hover: #DCE5EF;

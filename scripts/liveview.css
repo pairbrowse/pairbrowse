@@ -498,6 +498,11 @@ body[data-role="turn"] .frame { transform-origin: 0 0; }
 #network-panel .action:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 #network-panel .empty, #network-panel .help, #network-panel .net-cred { font-size: var(--fs-2); color: var(--muted); margin: 4px 0; }
 #network-panel .net-cred:empty { display: none; }
+#network-panel .net-list .row .sites { display: grid; gap: 2px; white-space: normal; }
+#network-panel .net-usage { font-size: var(--fs-1); color: var(--muted); }
+#network-panel .net-tag { margin-left: 8px; padding: 0 8px; border-radius: 6px; background: var(--accent-soft); color: var(--ink); font-size: var(--fs-1); }
+#network-panel .net-recent { margin-top: 16px; }
+#network-panel .net-recent-h { display: flex; align-items: center; justify-content: space-between; }
 #network-panel .net-form-h { margin: 4px 0 0; font-size: var(--fs-2); color: var(--ink); }
 #network-panel .net-problem { font-size: var(--fs-2); color: var(--bad); }
 #network-panel .net-result { margin-top: 8px; padding: 6px 8px; border: 1px solid var(--edge); border-radius: 8px; font-size: var(--fs-2); color: var(--ink-2); }

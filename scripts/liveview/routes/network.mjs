@@ -7,6 +7,9 @@
 //   POST network { op: "add" | "edit" | "remove" | "default" | "session", ... }: one change,
 //     written to config.json's network and secrets.env; 200 { text, network } and a network
 //     event with the summary to the owner's streams, or 409 { error }, nothing written.
+//   POST network { op: "forget", id } | { op: "clear-recent" }: the recently removed list only
+//     (a removed proxy's name, type, host, port and auth, kept to add again; never a credential),
+//     config.json untouched; answered and broadcast as a change.
 //   POST network { op: "test", ... }: the Test (liveview/network.mjs): 200 { verdict, reason,
 //     exit, sameAsDirect, coherence, locale, note } or 409 { error }; no event.
 // A credential is in no answer, event or log line.

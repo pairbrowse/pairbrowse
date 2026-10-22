@@ -29,7 +29,14 @@ const OPS = {
   default: ["op", "id"],
   session: ["op", "session", "choice", "id"],
   test: ["op", "id", "type", "host", "port", "auth", "username", "password"],
+  // The recently removed list (liveview/network.mjs keeps it, never config.json): forget one, or all.
+  forget: ["op", "id"],
+  "clear-recent": ["op"],
 };
+// The ops that change the recently removed list only, not config.json.
+export const RECENT_OPS = ["forget", "clear-recent"];
+// How many removed proxies are kept to add again.
+export const RECENT_MAX = 20;
 export const NETWORK_OPS = Object.keys(OPS);
 
 const plainObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
@@ -56,7 +63,11 @@ const sessionsOf = (block) => (plainObject(block?.sessions) ? block.sessions : {
 // the values; host as an address writes it (an IPv6 address in brackets); a proxy config.json
 // holds with a problem is listed with that sentence (type, host and port null when its server
 // can't be read). Never throws.
-export function networkSummary(raw, { sessions = [], values = {}, problem = "", secretsProblem = "" } = {}) {
+// usage: { id: ISO time } when a session last started or was rechecked on that proxy (its
+// network.json), so each proxy says when it was last used; recent: the recently removed list
+// (recentList), less any name now in config.json. Each proxy also lists usedBy: the sessions that
+// go through it (their own choice, or the default when it is the default).
+export function networkSummary(raw, { sessions = [], values = {}, problem = "", secretsProblem = "", usage = {}, recent = [] } = {}) {
   const checked = problem ? { problem, network: null, proxyProblems: {} } : checkNetwork(raw);
   const block = plainObject(raw) ? raw : {};
   const has = (name) => typeof values?.[name] === "string" && values[name].length > 0;
@@ -68,6 +79,11 @@ export function networkSummary(raw, { sessions = [], values = {}, problem = "", 
   }).sort((a, b) => a.id.localeCompare(b.id));
   const map = sessionsOf(block);
   const names = [...new Set([...sessions, ...Object.keys(map)])].filter((n) => SESSION_NAME.test(n) && !TEMPORARY.test(n)).sort((a, b) => (a === "default" ? -1 : b === "default" ? 1 : a.localeCompare(b)));
+  const def = typeof block.default === "string" && NETWORK_ID.test(block.default) ? block.default : null;
+  const usedBy = (id) => names.filter((n) => (Object.hasOwn(map, n) ? map[n] === id : def === id));
+  const last = (id) => (plainObject(usage) && typeof usage[id] === "string" && !Number.isNaN(Date.parse(usage[id])) ? new Date(usage[id]).toISOString() : null);
+  for (const p of proxies) { p.lastUsed = last(p.id); p.usedBy = usedBy(p.id); }
+  const listed = new Set(proxies.map((p) => p.id));
   return {
     problem: checked.problem ? (problem || `config.json's network can't be read (${checked.problem}). Fix it in config.json first.`) : "",
     // Credentials then read as "not saved" whatever the file holds: the page says why.
@@ -80,7 +96,25 @@ export function networkSummary(raw, { sessions = [], values = {}, problem = "", 
       return id === null ? { name, choice: "direct", id: null } : { name, choice: "proxy", id: typeof id === "string" && NETWORK_ID.test(id) ? id : null };
     }),
     strict: block.strict !== false,
+    recent: recentList(recent).filter((r) => !listed.has(r.id)),
   };
+}
+
+// The recently removed list as kept (network-recent.json's entries): each { id, type, host, port,
+// auth, removedAt } checked, newest first, at most RECENT_MAX, one per name. Never a credential.
+export function recentList(raw) {
+  const seen = new Set();
+  const out = [];
+  for (const r of Array.isArray(raw) ? raw : []) {
+    if (!plainObject(r) || typeof r.id !== "string" || !NETWORK_ID.test(r.id) || seen.has(r.id)) continue;
+    if (!PROXY_TYPES.includes(r.type) || typeof r.host !== "string" || !r.host || r.host.length > 255) continue;
+    const port = Number.isInteger(r.port) && r.port >= 1 && r.port <= 65535 ? r.port : null;
+    const at = typeof r.removedAt === "string" && !Number.isNaN(Date.parse(r.removedAt)) ? new Date(r.removedAt).toISOString() : null;
+    seen.add(r.id);
+    out.push({ id: r.id, type: r.type, host: r.host, port, auth: r.auth === true, removedAt: at });
+    if (out.length >= RECENT_MAX) break;
+  }
+  return out.sort((a, b) => String(b.removedAt || "").localeCompare(String(a.removedAt || "")));
 }
 
 // The proxy part of an add, edit or test, checked: { id, server, scheme, host, port, auth,
@@ -133,6 +167,7 @@ export function networkChange(raw, op, { values = {}, secretsProblem = "" } = {}
   const read = readNetworkOp(op);
   if (read.error) return read;
   if (op.op === "test") return { error: "A test isn't a change." };
+  if (RECENT_OPS.includes(op.op)) return { error: "That changes the recently removed list, not config.json." };
   const { block, problem } = blockOf(raw);
   if (problem) return { error: problem };
   const proxies = proxiesOf(block), map = sessionsOf(block);

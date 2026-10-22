@@ -626,8 +626,8 @@ pageTest("settings", { fixtures, viewport: VIEW, frame: true }, async ({ until, 
   assert.deepEqual(errors, []);
 });
 
-// The scheme: framed, light under a light system and dark under a dark one, on the card's color
-// (--frame); a whole tab of its own keeps its dark look whatever the system says.
+// The scheme: always dark, framed or not and whatever the system says, as the browser's own pages
+// are (the engine draws its WebUI dark); framed, on the card's color (--frame).
 for (const colorScheme of ["light", "dark"]) {
   for (const frame of [true, false]) {
     pageTest("settings", { fixtures, viewport: VIEW, frame, colorScheme }, async ({ until, inPage, errors }) => {
@@ -638,10 +638,9 @@ for (const colorScheme of ["light", "dark"]) {
         return { ink: s(document.body).color, bg: s(document.body).backgroundColor, scheme: s(document.documentElement).colorScheme,
           item: [s(item).backgroundColor, s(item).borderTopWidth, s(item).borderLeftWidth], header: document.querySelector("header.top").checkVisibility() };
       });
-      const light = frame && colorScheme === "light";
-      assert.equal(look.ink, light ? "rgb(15, 27, 42)" : "rgb(241, 245, 250)", "--ink");
-      assert.equal(look.bg, frame ? (light ? "rgb(255, 255, 255)" : "rgb(16, 29, 45)") : "rgb(11, 20, 33)", frame ? "the card's color (--frame)" : "--bg");
-      assert.equal(look.scheme, frame ? "light dark" : "normal");
+      assert.equal(look.ink, "rgb(241, 245, 250)", "--ink");
+      assert.equal(look.bg, frame ? "rgb(16, 29, 45)" : "rgb(11, 20, 33)", frame ? "the card's color (--frame)" : "--bg");
+      assert.equal(look.scheme, frame ? "dark" : "normal");
       // Framed, the settings are rows on that card (a hairline above each), not cards of their own.
       assert.deepEqual(look.item, frame ? ["rgba(0, 0, 0, 0)", "1px", "0px"] : ["rgb(16, 29, 45)", "1px", "1px"]);
       assert.equal(look.header, !frame);
@@ -947,5 +946,66 @@ pageTest("settings", { fixtures: { ...fixtures, handoff: HO }, viewport: VIEW, f
   for (let i = 0; i < 40 && !helper.gets.includes("handoff.json"); i++) await new Promise((r) => setTimeout(r, 50));
   await inPage(() => new Promise((r) => setTimeout(r, 150)));
   assert.deepEqual(await inPage(() => [document.getElementById("handoff").hidden, document.getElementById("nav-handoff").hidden]), [true, true]);
+  assert.deepEqual(errors, []);
+});
+
+// The saved proxies (the Proxies page): each row says who uses it and when it was last used, Use
+// makes it the default (shown as a tag, its Use gone), Remove sends it to "Recently removed", where
+// Add again opens the form filled in (name, type, host, port, the credentials to type again) and
+// Forget and Clear post their ops. The page's own headings go: the engine's section title is the
+// one heading.
+const SAVED = { ...NET, recent: [], proxies: [{ ...NET.proxies[0], lastUsed: "2026-10-22T09:30:00.000Z", usedBy: ["shop-a"] },
+  { id: "eu", type: "socks5", host: "198.51.100.4", port: 1080, auth: false, username: false, password: false, problem: "", lastUsed: null, usedBy: [] }] };
+pageTest("settings", { fixtures: { ...fixtures, network: SAVED, networkTest: TEST }, viewport: VIEW, frame: "view=proxies" }, async ({ page, frame, helper, until, inPage, errors }) => {
+  await until("the rows", () => document.querySelectorAll("#net-list li").length === 2);
+  assert.deepEqual(await inPage(() => ["network-h", "proxies"].map((id) => (id === "proxies" ? document.querySelector("#proxies > .item-h") : document.getElementById(id)).checkVisibility())), [false, false], "no Network or Proxies heading inside the Proxies page");
+  const rows = () => [...document.querySelectorAll("#net-list li")].map((li) => ({ id: li.dataset.id, usage: li.querySelector(".net-usage").textContent, tag: !!li.querySelector(".net-tag"), use: li.querySelector("button").checkVisibility() }));
+  const first = await inPage(rows);
+  assert.match(first.find((r) => r.id === "us-east").usage, /^Used by shop-a\. Last used .+\.$/);
+  assert.equal(first.find((r) => r.id === "eu").usage, "No session uses it. Not used yet.");
+  assert.deepEqual(first.map((r) => [r.id, r.tag, r.use]), [["us-east", false, true], ["eu", false, true]]);
+  await frame.click('#net-list li[data-id="eu"] button[aria-label^="Use eu"]');
+  await posted(helper, page, "use", "network", { op: "default", id: "eu" });
+  await until("the tag", () => !!document.querySelector('#net-list li[data-id="eu"] .net-tag'));
+  assert.equal(await inPage(() => document.querySelector('#net-list li[data-id="eu"] button').checkVisibility()), false, "no Use on the default");
+  // Remove us-east (asked in place): it goes to Recently removed.
+  await frame.click('#net-list li[data-id="us-east"] button[aria-label="Remove us-east"]');
+  await frame.click('#net-list li[data-id="us-east"] button[aria-label="Yes, remove us-east"]');
+  await until("recent", () => !document.getElementById("net-recent").hidden && document.querySelectorAll("#net-recent-list li").length === 1);
+  assert.match(await inPage(() => document.querySelector("#net-recent-list li").textContent), /us-east.*HTTP 203\.0\.113\.10:3128.*Needs a username and password\. Removed /);
+  // Add again: the form filled in, the credentials empty.
+  await frame.click('#net-recent-list button[aria-label="Add us-east again"]');
+  assert.deepEqual(await inPage(() => ({ h: document.getElementById("net-form-h").textContent, id: document.getElementById("net-id").value, ro: document.getElementById("net-id").readOnly, host: document.getElementById("net-host").value, port: document.getElementById("net-port").value, auth: document.getElementById("net-auth").checked, user: document.getElementById("net-user").value, pass: document.getElementById("net-pass").value })),
+    { h: "Add proxy us-east again", id: "us-east", ro: false, host: "203.0.113.10", port: "3128", auth: true, user: "", pass: "" });
+  await frame.click("#net-cancel");
+  await frame.click('#net-recent-list button[aria-label="Forget us-east"]');
+  await posted(helper, page, "forget", "network", { op: "forget", id: "us-east" });
+  await until("gone", () => document.getElementById("net-recent").hidden);
+  assert.deepEqual(errors, []);
+});
+pageTest("settings", { fixtures: { ...fixtures, network: { ...SAVED, recent: [{ id: "old", type: "http", host: "h.example", port: null, auth: false, removedAt: "2026-10-01T00:00:00.000Z" }] } }, viewport: VIEW, frame: "view=proxies" }, async ({ page, frame, helper, until, errors }) => {
+  await until("recent", () => document.querySelectorAll("#net-recent-list li").length === 1);
+  await frame.click("#net-recent-clear");
+  await posted(helper, page, "clear", "network", { op: "clear-recent" });
+  await until("cleared", () => document.getElementById("net-recent").hidden);
+  assert.deepEqual(errors, []);
+});
+
+// Handoff's two app cards, side by side, are one height, and their last rows (the token and Link,
+// the code's buttons, Send a test) line up on one line, in every pair of states; stacked when narrow.
+for (const [name, tg, dc] of [["both not linked", NONE, NONE], ["linked and not", TG_LINKED, NONE], ["waiting and error", { state: "pending", bot: "@pb_handoff_bot", chat: "", code: "PB-K7Q2XM", expiresAt: Date.now() + 600_000 }, { ...NONE, error: "This bot has a webhook set." }]]) {
+  pageTest("settings", { fixtures: { ...fixtures, handoff: { ...HO, on: true, ready: true, telegram: tg, discord: dc }, config: { ...fixtures.config, away: { on: true, server: false, ready: true } } }, viewport: VIEW, frame: "view=handoff" }, async ({ until, inPage, errors }) => {
+    await until("cards", () => document.querySelectorAll(".ho-card").length === 2);
+    const m = await inPage(() => [...document.querySelectorAll(".ho-card")].map((c) => { const r = c.getBoundingClientRect(); const last = c.querySelector(".ho-body").lastElementChild.getBoundingClientRect(); return { top: Math.round(r.top), h: Math.round(r.height), lastBottom: Math.round(last.bottom) }; }));
+    assert.equal(m[0].top, m[1].top, `${name}: side by side`);
+    assert.equal(m[0].h, m[1].h, `${name}: one height`);
+    assert.equal(m[0].lastBottom, m[1].lastBottom, `${name}: last rows on one line`);
+    assert.deepEqual(errors, []);
+  });
+}
+pageTest("settings", { fixtures: { ...fixtures, handoff: { ...HO, on: true, ready: true }, config: { ...fixtures.config, away: { on: true, server: false, ready: true } } }, viewport: { width: 420, height: 900 } }, async ({ until, inPage, errors }) => {
+  await until("cards", () => document.querySelectorAll(".ho-card").length === 2);
+  const tops = await inPage(() => [...document.querySelectorAll(".ho-card")].map((c) => Math.round(c.getBoundingClientRect().top)));
+  assert.ok(tops[1] > tops[0], "stacked when narrow");
   assert.deepEqual(errors, []);
 });

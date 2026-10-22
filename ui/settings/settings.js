@@ -26,8 +26,8 @@ const NATIVE = hostKind() === "native";
 // the helper's config.json passes on) this page lives there (chrome://settings/pairbrowse, which
 // frames it); opened as a whole tab of its own it goes there, at the same section, once the
 // helper says so (drawConfig). An older build has no section: the tab page stays. Framed (embedded), the page around it has the title, the search and
-// the menu, and is the browser's settings: this page shows none of its own, follows the system's
-// light or dark scheme as that page does, and posts its height to it (the only message it sends,
+// the menu, and is the browser's settings: this page shows none of its own, stays dark as that
+// page does (the browser's own pages are dark whatever the system's appearance), and posts its height to it (the only message it sends,
 // to that origin only) so the frame grows with it. The extension's options page never is either.
 const FRAMED = window.top !== window;
 const EMBEDDED = FRAMED && (NATIVE || servedByBrowser());
@@ -43,7 +43,6 @@ if (EMBEDDED) {
   document.documentElement.dataset.embedded = "";
   if (VIEW) document.documentElement.dataset.view = VIEW;
   for (const sec of document.querySelectorAll("main .sec")) if (outOfView(sec)) sec.hidden = true;
-  document.documentElement.dataset.scheme = "system";
   for (const n of document.querySelectorAll("header.top, .layout > .nav")) n.hidden = true;
   // The page around it is Browser settings: the link to it in Your data goes there, not here.
   for (const a of document.querySelectorAll("[data-browser-settings]")) a.target = "_top";

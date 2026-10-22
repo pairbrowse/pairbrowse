@@ -14,8 +14,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startLiveView, createInvites, roleMay } from "../scripts/liveview.mjs";
 import { secretStore, loadSecrets } from "../scripts/rules/secrets.mjs";
-import { createNetworkSettings, readConfigFile, localeOf, TEST_NOTE } from "../scripts/liveview/network.mjs";
-import { networkChange, networkSummary, readProxyForm } from "../scripts/net/settings.mjs";
+import { createNetworkSettings, readConfigFile, localeOf, proxyUsage, TEST_NOTE } from "../scripts/liveview/network.mjs";
+import { networkChange, networkSummary, readProxyForm, recentList } from "../scripts/net/settings.mjs";
 import { networkFor, launchPart } from "../scripts/net/config.mjs";
 import { CATALOG } from "../scripts/tools/catalog.mjs";
 import { navigationProblem } from "../scripts/rules/policy.mjs";
@@ -50,14 +50,15 @@ function stream(port, key) {
 const until = async (what, fn) => { for (let i = 0; i < 100; i++) { if (fn()) return; await new Promise((r) => setTimeout(r, 20)); } assert.fail(`timed out waiting for ${what}`); };
 
 // A home of the test's own: config.json, secrets.env and the helper's log lines.
-function setup({ config = {}, probe, locale, sessions = ["default", "shop-a"] } = {}) {
+function setup({ config = {}, probe, locale, sessions = ["default", "shop-a"], usage } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "pb-netroutes-"));
   const configFile = join(dir, "config.json"), secretsFile = join(dir, "secrets.env");
   writeFileSync(configFile, JSON.stringify(config));
   const lines = [];
   const log = (...a) => lines.push(a.join(" "));
   const secrets = secretStore(secretsFile, log);
-  const network = createNetworkSettings({ configFile, secrets, sessions: () => sessions, log, ...(probe ? { probe } : {}), ...(locale ? { locale } : {}) });
+  const recentFile = join(dir, "network-recent.json");
+  const network = createNetworkSettings({ configFile, secrets, sessions: () => sessions, log, recentFile, usage: usage || (() => ({})), ...(probe ? { probe } : {}), ...(locale ? { locale } : {}) });
   return { dir, configFile, secretsFile, secrets, network, lines, config: () => JSON.parse(readFileSync(configFile, "utf8")) };
 }
 async function view(network, invites = createInvites()) {
@@ -112,7 +113,7 @@ test("the password goes to secrets.env and never back out in an answer, event or
     assert.equal(r.status, 200, r.text);
     const body = JSON.parse(r.text);
     assert.equal(body.text, 'Added proxy "us-east", with its username and password in secrets.env.');
-    assert.deepEqual(body.network.proxies, [{ id: "us-east", type: "https", host: "proxy.example.com", port: 443, auth: true, username: true, password: true, problem: "" }]);
+    assert.deepEqual(body.network.proxies, [{ id: "us-east", type: "https", host: "proxy.example.com", port: 443, auth: true, username: true, password: true, problem: "", lastUsed: null, usedBy: [] }]);
     // In secrets.env under the reserved names, 0600; config.json names neither.
     const saved = loadSecrets(s.secretsFile);
     assert.equal(saved.values.PAIRBROWSE_PROXY_US_EAST_PASSWORD, PASSWORD);
@@ -286,7 +287,7 @@ test("net/settings: forms, summaries and changes are pure and never repeat a cre
   assert.doesNotMatch(add.text, new RegExp(PASSWORD));
   assert.equal(networkChange(undefined, { op: "add", id: "a", type: "http", host: "h.example", auth: true, username: USERNAME }).error, "Enter the proxy's password.");
   const sum = networkSummary({ proxies: { a: { server: "http://h.example:80", auth: true } }, sessions: { "clean-2": null } }, { sessions: ["default", "clean-1"], values: { PAIRBROWSE_PROXY_A_PASSWORD: PASSWORD } });
-  assert.deepEqual(sum.proxies[0], { id: "a", type: "http", host: "h.example", port: 80, auth: true, username: false, password: true, problem: "" });
+  assert.deepEqual(sum.proxies[0], { id: "a", type: "http", host: "h.example", port: 80, auth: true, username: false, password: true, problem: "", lastUsed: null, usedBy: [] });
   assert.deepEqual(sum.sessions, [{ name: "default", choice: "default", id: null }], "clean sessions are never listed");
   assert.doesNotMatch(JSON.stringify(sum), new RegExp(PASSWORD));
   // The browser's locale: the native build's own settings, else this computer's.
@@ -302,7 +303,7 @@ test("credentials added to secrets.env by hand are seen at once and kept by a la
   writeFileSync(s.secretsFile, `PAIRBROWSE_PROXY_US_EAST_USERNAME="${USERNAME}"\nPAIRBROWSE_PROXY_US_EAST_PASSWORD="${PASSWORD}"\nSHOP_PASSWORD="hand-added-1"\nSHOP_PASSWORD_DOMAINS=shop.example\n`, { mode: 0o600 });
   const sum = s.network.read();
   assert.equal(sum.secretsProblem, "");
-  assert.deepEqual(sum.proxies[0], { id: "us-east", type: "http", host: "203.0.113.10", port: 3128, auth: true, username: true, password: true, problem: "" });
+  assert.deepEqual(sum.proxies[0], { id: "us-east", type: "http", host: "203.0.113.10", port: 3128, auth: true, username: true, password: true, problem: "", lastUsed: null, usedBy: [] });
   // An edit with the fields left empty keeps them; a test uses them.
   const edit = s.network.write({ op: "edit", id: "us-east", type: "http", host: "203.0.113.11", port: 3128, auth: true });
   assert.equal(edit.error, undefined, edit.error);
@@ -419,4 +420,51 @@ test("on a phone: the owner adds, tests and assigns a proxy in the live view's P
     await browser.close();
     v.close();
   }
+});
+
+// The saved list says who uses each proxy and when it was last used; a removed proxy goes to the
+// recently removed list (no credential in it, its file owner-only), is added again from there (and
+// leaves it), or is forgotten, one or all. The list never touches config.json.
+test("saved proxies: who uses each, when last used, and the recently removed list", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pb-netusage-"));
+  for (const [name, checks] of [["shop-a", [{ at: "2026-10-20T08:00:00.000Z", kind: "launch", proxy: "us-east" }, { at: "2026-10-22T09:30:00.000Z", kind: "recheck", proxy: "us-east" }]], ["default", [{ at: "2026-10-21T00:00:00.000Z", kind: "launch", proxy: "eu" }]]]) {
+    writeFileSync(join(dir, `${name}.json`), JSON.stringify({ version: 1, checks }));
+  }
+  const usage = (names) => proxyUsage(names, (n) => join(dir, `${n}.json`));
+  assert.deepEqual(usage(["default", "shop-a", "none"]), { "us-east": "2026-10-22T09:30:00.000Z", eu: "2026-10-21T00:00:00.000Z" });
+  const s = setup({ usage, config: { network: { default: "eu", proxies: { "us-east": { server: "http://203.0.113.10:3128", auth: true }, eu: { server: "socks5://198.51.100.4:1080" } }, sessions: { "shop-a": "us-east" } } } });
+  writeFileSync(s.secretsFile, `PAIRBROWSE_PROXY_US_EAST_USERNAME=${USERNAME}\nPAIRBROWSE_PROXY_US_EAST_PASSWORD=${PASSWORD}\n`);
+  let sum = s.network.read();
+  assert.deepEqual(sum.proxies.map((p) => [p.id, p.usedBy, p.lastUsed]), [["eu", ["default"], "2026-10-21T00:00:00.000Z"], ["us-east", ["shop-a"], "2026-10-22T09:30:00.000Z"]]);
+  assert.deepEqual(sum.recent, []);
+  // Removing one in use is refused (as before); once free, it goes to the recent list.
+  assert.match(s.network.write({ op: "remove", id: "us-east" }).error, /session "shop-a"/);
+  assert.ok(!s.network.write({ op: "session", session: "shop-a", choice: "direct" }).error);
+  const r = s.network.write({ op: "remove", id: "us-east" });
+  assert.ok(!r.error, r.error);
+  assert.deepEqual(r.network.recent.map(({ removedAt, ...x }) => [x, typeof removedAt]), [[{ id: "us-east", type: "http", host: "203.0.113.10", port: 3128, auth: true }, "string"]]);
+  const kept = readFileSync(join(s.dir, "network-recent.json"), "utf8");
+  assert.ok(!kept.includes(PASSWORD) && !kept.includes(USERNAME), "no credential in the list");
+  if (process.platform !== "win32") assert.equal(statSync(join(s.dir, "network-recent.json")).mode & 0o777, 0o600);
+  assert.ok(!JSON.stringify(readConfigFile(s.configFile).config).includes("recent"), "config.json holds no list");
+  // Added again (its credentials typed again): it leaves the list.
+  const back = s.network.write({ op: "add", id: "us-east", type: "http", host: "203.0.113.10", port: 3128, auth: true, username: USERNAME, password: PASSWORD });
+  assert.ok(!back.error, back.error);
+  assert.deepEqual(back.network.recent, []);
+  // Forget one, clear all.
+  assert.ok(!s.network.write({ op: "remove", id: "us-east" }).error);
+  assert.ok(!s.network.write({ op: "session", session: "default", choice: "direct" }).error);
+  assert.ok(!s.network.write({ op: "default", id: null }).error);
+  assert.ok(!s.network.write({ op: "remove", id: "eu" }).error);
+  sum = s.network.read();
+  assert.deepEqual(sum.recent.map((x) => x.id).sort(), ["eu", "us-east"]);
+  const f = s.network.write({ op: "forget", id: "eu" });
+  assert.deepEqual(f.network.recent.map((x) => x.id), ["us-east"]);
+  assert.match(s.network.write({ op: "forget", id: "eu" }).error, /isn't in the recently removed list/);
+  assert.deepEqual(s.network.write({ op: "clear-recent" }).network.recent, []);
+  assert.match(s.network.write({ op: "clear-recent", id: "x" }).error, /takes/);
+  assert.match(networkChange({}, { op: "forget", id: "x" }).error, /not config\.json/);
+  // The kept list is checked on read: bad entries, duplicates and more than 20 are dropped.
+  const many = Array.from({ length: 25 }, (_, i) => ({ id: `p${i}`, type: "http", host: "h.example", port: 80, removedAt: new Date(Date.UTC(2026, 9, 1 + i)).toISOString() }));
+  assert.equal(recentList([...many, { id: "Bad id", type: "http", host: "h" }, { id: "p1", type: "ftp", host: "h" }]).length, 20);
 });

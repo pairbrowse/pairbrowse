@@ -247,10 +247,10 @@ button:disabled { opacity: 0.5; cursor: default; }
    The page around it has the title, the search and the menu, and draws the card this page sits
    in: no header or menu here, the page in that card's color (--frame: the engine's white card in
    the light scheme, the theme's navy in the dark), one column, the settings as rows divided by
-   hairlines as the engine's own sections are, in the system's light or dark scheme as that page
-   is (tokens.css's light values under data-scheme="system", and its data-embedded block for the
-   surfaces that one leaves dark). */
-:root[data-embedded] { color-scheme: light dark; scroll-padding-top: 0; }
+   hairlines as the engine's own sections are, always dark as the browser's own pages are (the
+   engine draws its WebUI dark whatever the system's appearance); the light values under
+   data-scheme="system" are the live view's, which follows the system, and never set here. */
+:root[data-embedded] { color-scheme: dark; scroll-padding-top: 0; }
 :root[data-embedded] body { background: var(--frame); }
 :root[data-embedded] .banner { margin: 0 var(--sp-5); border: 0; border-radius: var(--r-2); background: var(--elevated); }
 :root[data-embedded] .layout { display: block; max-width: none; margin: 0; padding: var(--sp-2) var(--sp-5) var(--sp-5); }
@@ -259,8 +259,8 @@ button:disabled { opacity: 0.5; cursor: default; }
 :root[data-embedded] .sec-h { margin: 0; padding: var(--sp-3) 0; }
 :root[data-embedded] .item { margin: 0; padding: var(--sp-4) 0; background: transparent; border: 0; border-top: 1px solid var(--edge); border-radius: 0; }
 @media (prefers-color-scheme: light) {
-  :root[data-embedded] .switch[aria-checked="true"] i { background: #FFFFFF; }
-  :root[data-embedded] .report::backdrop { background: rgb(15 27 42 / 0.32); }
+  :root[data-scheme="system"][data-embedded] .switch[aria-checked="true"] i { background: #FFFFFF; }
+  :root[data-scheme="system"][data-embedded] .report::backdrop { background: rgb(15 27 42 / 0.32); }
 }
 /* Framed, the review screen opens where it was asked for (settings.js openReport). */
 :root[data-embedded] .report { margin-top: var(--report-top, 16px); margin-bottom: auto; }
@@ -280,6 +280,11 @@ button:disabled { opacity: 0.5; cursor: default; }
 .net-result .net-verdict { color: var(--ok); font-weight: var(--fw-name); }
 .net-result[data-kind="error"] .net-verdict, .net-result .net-warn { color: var(--bad-ink); }
 .net-choices { margin-top: var(--sp-3); display: grid; gap: var(--sp-2); }
+.net-list .row .sites { display: grid; gap: 2px; white-space: normal; }
+.net-usage { font-size: var(--fs-1); color: var(--muted); }
+.net-tag { margin-left: var(--sp-2); padding: 0 var(--sp-2); border-radius: var(--r-1); background: var(--accent-soft); color: var(--accent-ink); font-size: var(--fs-1); font-weight: var(--fw-name); vertical-align: 1px; }
+.net-recent { margin-top: var(--sp-4); }
+.net-recent-h { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--sp-1); }
 @media (max-width: 559px) { .net-list .row { grid-template-columns: minmax(0, 1fr) auto; } .net-list .row .sites { grid-column: 1 / -1; grid-row: 2; } }
 
 /* Handoff (settings/handoff.js): the Away switch on top, one card per app (side by side once the
@@ -290,7 +295,10 @@ button:disabled { opacity: 0.5; cursor: default; }
 .ho-missing { margin: var(--sp-2) 0 0; font-size: var(--fs-2); color: var(--ink-2); }
 .ho-none { margin: var(--sp-3) 0 0; }
 .ho-apps-wrap { container-type: inline-size; }
-.ho-apps { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: var(--sp-3); margin-top: var(--sp-3); }
+/* Side by side, the cards are one height (the row's), and each card's last row (the token and Link,
+   the code's buttons, Send a test) sits at its foot (.ho-form, .ho-acts margin-top: auto), so both
+   cards' fields and buttons line up whatever their steps' length. */
+.ho-apps { display: grid; grid-template-columns: minmax(0, 1fr); align-items: stretch; gap: var(--sp-3); margin-top: var(--sp-3); }
 .ho-apps:empty { display: none; }
 @container (min-width: 560px) { .ho-apps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .ho-card { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; padding: var(--sp-4); border: 1px solid var(--edge); border-radius: var(--r-3); background: var(--panel); transition: border-color var(--t-hover); }
@@ -364,6 +372,12 @@ button:disabled { opacity: 0.5; cursor: default; }
 .ho-privacy p { margin: 0; font-size: var(--fs-2); color: var(--ink-2); }
 @media (prefers-reduced-motion: reduce) { .ho-dot::after { animation: none; opacity: 0; } }
 @media (prefers-color-scheme: light) {
-  :root[data-embedded] .ho-check:not(:checked) { background: #FFFFFF; }
-  :root[data-embedded] .ho-card { background: var(--bg); }
+  :root[data-scheme="system"][data-embedded] .ho-check:not(:checked) { background: #FFFFFF; }
+  :root[data-scheme="system"][data-embedded] .ho-card { background: var(--bg); }
 }
+
+/* The engine settings' Proxies and Handoff pages (?view=, 580) carry the page's title: the section's
+   own heading would repeat it (Proxies > Network > Proxies), so it goes, and with it the Network
+   section's one item heading. */
+:root[data-view="proxies"] #network > .sec-h, :root[data-view="proxies"] #proxies > .item-h,
+:root[data-view="handoff"] #handoff > .sec-h { display: none; }

@@ -134,7 +134,9 @@ export function handoffPanel({ $, base, live, shown = () => {}, missing = () => 
     const msg = el("p", { className: "msg ho-msg", id: `ho-${app}-msg` });
     msg.setAttribute("role", "status");
     msg.setAttribute("aria-live", "polite");
-    const root = el("section", { className: "ho-card", id: `ho-${app}` }, head, body, err, msg);
+    // The app's own error (a webhook set, a token refused) under its head, so the body's last row
+    // stays at the card's foot in line with the other card's.
+    const root = el("section", { className: "ho-card", id: `ho-${app}` }, head, err, body, msg);
     root.setAttribute("aria-labelledby", name.id);
     const c = { app, A, root, pill, sub, body, err, msg, sig: "", left: null, expired: false };
     cards[app] = c;

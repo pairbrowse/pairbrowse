@@ -338,7 +338,7 @@ function networkAnswer(body, fx, push) {
   if (fx.network === null) return { status: 404 };
   if (body?.op === "test") return { status: 200, body: fx.networkTest };
   const refuse = (error) => ({ status: 409, body: { error } });
-  const n = { ...fx.network, proxies: [...fx.network.proxies], sessions: [...fx.network.sessions] };
+  const n = { ...fx.network, proxies: [...fx.network.proxies], sessions: [...fx.network.sessions], recent: [...(fx.network.recent || [])] };
   const has = (id) => n.proxies.some((p) => p.id === id);
   let text;
   if (body?.op === "add" || body?.op === "edit") {
@@ -348,11 +348,20 @@ function networkAnswer(body, fx, push) {
       username: !!body.auth && (old.username || !!body.username), password: !!body.auth && (old.password || !!body.password), problem: "" };
     if (p.auth && !(p.username && p.password)) return refuse("Enter the proxy's username.");
     n.proxies = body.op === "add" ? [...n.proxies, p] : n.proxies.map((x) => (x.id === p.id ? p : x));
+    n.recent = n.recent.filter((r) => r.id !== p.id);
     text = `${body.op === "add" ? "Added" : "Saved"} proxy "${p.id}".`;
   } else if (body?.op === "remove") {
     if (n.default === body.id) return refuse(`"${body.id}" is the default: choose another for it first, then remove it.`);
+    const was = n.proxies.find((p) => p.id === body.id);
     n.proxies = n.proxies.filter((p) => p.id !== body.id);
+    if (was) n.recent = [{ id: was.id, type: was.type, host: was.host, port: was.port, auth: was.auth, removedAt: "2026-10-23T10:00:00.000Z" }, ...n.recent.filter((r) => r.id !== was.id)];
     text = `Removed proxy "${body.id}".`;
+  } else if (body?.op === "forget") {
+    n.recent = n.recent.filter((r) => r.id !== body.id);
+    text = `Forgot "${body.id}".`;
+  } else if (body?.op === "clear-recent") {
+    n.recent = [];
+    text = "Cleared the recently removed proxies.";
   } else if (body?.op === "default") {
     n.default = body.id;
     text = "Saved.";

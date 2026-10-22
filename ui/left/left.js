@@ -7,11 +7,11 @@
 // I). The Sessions row is the one door to sessions (2026-10-14): it names the open session (the
 // helper's session event); in the browser it opens the sessions page in the contents
 // (pairbrowse://sessions, a page rather than a popup, the user's choice), served without the
-// browser's API the framed switcher. History and Activity open their pages in the contents
-// (chrome://history, pairbrowse://activity). Nothing here is invented: every row is what the helper or the browser reported. Storage is PairBrowse Pro's (its cloud storage): a row only
+// browser's API the framed switcher. History, Activity and Proxies open their pages in the contents
+// (chrome://history, pairbrowse://activity, pairbrowse://settings/proxies). Nothing here is invented: every row is what the helper or the browser reported. Storage is PairBrowse Pro's (its cloud storage): a row only
 // when the session event carries session.storage (see the comment in index.html), never diskBytes.
 import { $, el, avatar, agentWords, ownAgentLine, isColor, splitLabel, pickerPopover, askDock, helperConnection, servedByBrowser, syncList, enter } from "../common.js";
-import { isOwnTabPage, isSettingsPage, ownPage, settingsPage } from "../urls.js";
+import { PROXIES_PAGE, isOwnTabPage, isProxiesPage, isSettingsPage, ownPage, settingsPage } from "../urls.js";
 import { DRIVING_MS } from "../limits.js";
 import { followHelper } from "../helper.js";
 
@@ -47,7 +47,7 @@ const isActivityPage = (url) => isOwnTabPage("activity", url);
 // The sessions page (ui/sessions) as the browser shows its address.
 const isSessionsPage = (url) => isOwnTabPage("sessions", url);
 // A tab that is not a web page the Browser row brings back.
-const isOwnPage = (url) => isHistory(url) || isActivityPage(url) || isSessionsPage(url);
+const isOwnPage = (url) => isHistory(url) || isActivityPage(url) || isSessionsPage(url) || isProxiesPage(url);
 const dock = () => document.body.dataset.dock;
 const icon = (id) => {
   const svg = document.createElementNS(SVG, "svg");
@@ -59,7 +59,7 @@ const icon = (id) => {
 };
 
 // ---- dock state ----
-const ROWS = ["nav-browser", "nav-sessions", "nav-history", "nav-activity"];
+const ROWS = ["nav-browser", "nav-sessions", "nav-history", "nav-activity", "nav-proxies"];
 function railTitles() {
   const rail = dock() === "rail";
   for (const id of ROWS) {
@@ -72,7 +72,7 @@ function railTitles() {
   const open = sessionShown();
   if (rail && open) $("nav-sessions").title = `Sessions · ${open.long}`;
   // A disabled row keeps saying why, in either state.
-  for (const id of ["nav-history"]) if ($(id).disabled) $(id).title = `${$(id).querySelector(".label").textContent} · opens in the PairBrowse browser`;
+  for (const id of ["nav-history", "nav-proxies"]) if ($(id).disabled) $(id).title = `${$(id).querySelector(".label").textContent} · opens in the PairBrowse browser`;
 }
 // The open session as the row shows it: a kept session by its name ("default" as "Default"), a
 // fresh one (the helper's temporary, deleted when the person switches away) marked as such; null
@@ -138,10 +138,12 @@ function drawNav() {
   const history = !!active && isHistory(active.url);
   const log = !!active && isActivityPage(active.url);
   const sessions = !!pb && !!active && isSessionsPage(active.url);
+  const proxies = !!active && isProxiesPage(active.url);
   setCurrent($("nav-history"), history);
   setCurrent($("nav-activity"), log);
   setCurrent($("nav-sessions"), sessions);
-  setCurrent($("nav-browser"), !history && !log && !sessions);
+  setCurrent($("nav-proxies"), proxies);
+  setCurrent($("nav-browser"), !history && !log && !sessions && !proxies);
 }
 
 // ---- agents: the board's agents, then every agent that owns a tab and is not on it, then you ----
@@ -304,6 +306,9 @@ function findOrOpen(match, url) {
 const openHistory = () => findOrOpen(isHistory, "chrome://history");
 // Settings: its tab page's address, which a build with the engine settings' section (580) sends there.
 const openSettings = () => { if (pb) findOrOpen(isSettingsPage, settingsPage()); };
+// Proxies: the engine settings' Proxies page (pairbrowse://settings/proxies), found or opened in
+// this window, from the open dock and the rail alike.
+const openProxies = () => findOrOpen(isProxiesPage, PROXIES_PAGE);
 function openBrowser() {
   if (pb && lastWebTab >= 0 && tabs.has(lastWebTab) && !tabs.get(lastWebTab).active) pb.tabs.activate(lastWebTab).catch(() => {});
 }
@@ -464,6 +469,7 @@ followHelper({ connect, none: noHelper, wait: true });
 $("nav-browser").addEventListener("click", openBrowser);
 $("nav-history").addEventListener("click", openHistory);
 $("nav-activity").addEventListener("click", openActivity);
+$("nav-proxies").addEventListener("click", openProxies);
 $("add-agent").addEventListener("click", toggleHint);
 // The strip's logo is a brand mark: the Sessions row above is the one door to the switcher.
 $("settings").addEventListener("click", openSettings);
@@ -473,6 +479,7 @@ $("dock-expand").addEventListener("click", () => askLeft("open"));
 if (!pb) {
   $("nav-browser").disabled = true; // it brings the last web tab forward: the browser's API only
   $("nav-history").disabled = true;
+  $("nav-proxies").disabled = true;
   $("settings").disabled = true;
   $("settings").title = "Settings · opens in the PairBrowse browser";
 }

@@ -65,16 +65,20 @@ export async function startUiServer({ helper, fixture = defaultFixture(), bridge
     if (path === "/__harness/pairbrowse-api.js") return js(res, shimScript({ ...current, helper: current.helper === null ? { origin: "", key: "" } : { origin: helper.origin, key: helper.key } }));
     if (path === "/__harness/chrome.js") return js(res, bridgeExtensionScript(helper.base));
     // A frameable page framed as the engine's settings page frames PairBrowse's (580):
-    // /__harness/frame/<page>[?<section>]. Its script keeps what the framed page posts to it
+    // /__harness/frame/<page>[?<section>][&view=<view>]. Its script keeps what the framed page posts to it
     // (window.__posted) and, as the engine's page does, sizes the frame to a posted height.
     if (path === "/__harness/frame.js") return js(res, FRAME_SCRIPT);
     if (path.startsWith("/__harness/frame/")) {
       const page = path.slice("/__harness/frame/".length);
       if (!FRAMEABLE.has(page)) return plain(res, 404);
-      const section = new URL(req.url, "http://x").search.slice(1).replace(/[^a-z0-9-]/gi, "");
+      // ?view=<view> goes to the framed page's query (the engine's ?view=, 580); any other key is
+      // the section after "#".
+      const params = new URL(req.url, "http://x").searchParams;
+      const view = (params.get("view") || "").replace(/[^a-z]/gi, "");
+      const section = ([...params.keys()].find((k) => k !== "view") || "").replace(/[^a-z0-9-]/gi, "");
       res.writeHead(200, { ...SECURITY_HEADERS, "content-type": TYPES.html, "content-security-policy": PAGE_CSP(helper.origin) });
       return res.end(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="color-scheme" content="light dark"><title>Framed ${page}</title><script src="/__harness/frame.js"></script></head>`
-        + `<body><iframe id="framed" title="PairBrowse ${page}" width="1000" height="600" src="/${page}/index.html${section ? `#${section}` : ""}"></iframe></body></html>`);
+        + `<body><iframe id="framed" title="PairBrowse ${page}" width="1000" height="600" src="/${page}/index.html${view ? `?view=${view}` : ""}${section ? `#${section}` : ""}"></iframe></body></html>`);
     }
     const clean = posix.normalize(path);
     const parts = clean.split("/").filter(Boolean);

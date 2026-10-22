@@ -15,7 +15,7 @@
 // ResizeObserver while it shows); one shared event stream.
 import { $, el, avatar, hostPanel, profilePanel, helperConnection, reportPayload, sendReport, NO_AGENT, noAgentLine, awaySwitch, networkPanel } from "../common.js";
 import { hostKind, followHelper, postReply, UNREACHABLE } from "../helper.js";
-import { servedByBrowser, settingsHomeFor, ENGINE_SETTINGS_ORIGIN } from "../urls.js";
+import { servedByBrowser, settingsHomeFor, viewOf, ENGINE_SETTINGS_ORIGIN } from "../urls.js";
 
 const NATIVE = hostKind() === "native";
 // ---- at home in the engine's settings (580) -----------------------------------------------------
@@ -28,8 +28,16 @@ const NATIVE = hostKind() === "native";
 // to that origin only) so the frame grows with it. The extension's options page never is either.
 const FRAMED = window.top !== window;
 const EMBEDDED = FRAMED && (NATIVE || servedByBrowser());
+// Which of the engine settings' pages frames it (?view=, 580): "proxies" (its Proxies page) shows
+// the Network section alone, "pairbrowse" (its PairBrowse section) everything else; none (an older
+// build, the extension's options page, a tab of its own) shows every section.
+const VIEW = EMBEDDED ? viewOf(location.search) : "";
+// A section this view leaves out: hidden for good, whatever the helper or the search says.
+const outOfView = (sec) => (VIEW === "proxies" ? sec.id !== "network" : VIEW === "pairbrowse" && sec.id === "network");
 if (EMBEDDED) {
   document.documentElement.dataset.embedded = "";
+  if (VIEW) document.documentElement.dataset.view = VIEW;
+  for (const sec of document.querySelectorAll("main .sec")) if (outOfView(sec)) sec.hidden = true;
   document.documentElement.dataset.scheme = "system";
   for (const n of document.querySelectorAll("header.top, .layout > .nav")) n.hidden = true;
   // The page around it is Browser settings: the link to it in Your data goes there, not here.
@@ -67,7 +75,8 @@ let diag = null; // GET diagnostics.json
 // Agents and approvals: Away (hand-offs to your phone; panels.js awaySwitch posts it, drawConfig draws it).
 const away = awaySwitch($("away-on"), $("away-state"), () => base);
 // Network (ui/network.js): its section and nav link show once the helper answers network.json.
-const network = networkPanel($("network-panel"), () => base, { shown: (on) => { $("network").hidden = !on; $("nav-network").hidden = !on; applySearch(); } });
+// Out of this view (the PairBrowse section, 580), both stay hidden.
+const network = networkPanel($("network-panel"), () => base, { shown: (on) => { const show = on && !outOfView($("network")); $("network").hidden = !show; $("nav-network").hidden = !show; applySearch(); } });
 
 const say = (node, text, kind = "") => { node.textContent = text; node.dataset.kind = kind; };
 const getJson = (path) => fetch(base + path).then(async (r) => ({ status: r.status, body: r.ok ? await r.json().catch(() => null) : await r.text().catch(() => "") })).catch(() => ({ status: 0, body: null }));
@@ -565,6 +574,7 @@ function applySearch() {
     if (hit && !it.hidden && !it.closest("[hidden]")) shown++;
   }
   for (const sec of document.querySelectorAll("main .sec")) {
+    if (outOfView(sec)) continue;
     const any = [...sec.querySelectorAll(".item")].some((it) => !it.classList.contains("miss") && !it.hidden);
     sec.classList.toggle("miss", !!q && !any);
     const link = document.querySelector(`.nav a[data-sec="${sec.id}"]`);

@@ -26,7 +26,8 @@ export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // must reach the ui server as its proxy: launch it with hostProxy(...).args, then pass the same
 // proxy as `proxy` here (the ui server answers a proxied request by its path).
 // frame: render the page framed by the ui server's frame page (/__harness/frame/<name>, standing
-// for the engine's settings page; a string is the section after "#"): inPage, until, the shim and
+// for the engine's settings page; a string is the section after "#", and "view=<view>" in it the
+// framed page's ?view=, joined with "&": inPage, until, the shim and
 // the harness then work in the framed page, top() in the frame page. colorScheme: the system's
 // scheme the page sees ("light" or "dark"; default: the browser's).
 export async function openPage(browser, name, { helper, fixture = defaultFixture(), bridge = true, native = true, viewport = { width: 360, height: 900 }, reducedMotion = "no-preference", host = "", proxy = null, frame = false, colorScheme } = {}) {

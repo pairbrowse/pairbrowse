@@ -148,13 +148,40 @@ textarea.field { height: auto; padding: var(--sp-2); resize: vertical; line-heig
  * is framed in the browser's settings (the engine kept the anchor within the wrong viewport),
  * and the page's own picker follows the theme on every platform. */
 select.field, select.field::picker(select) { appearance: base-select; }
-select.field { display: inline-flex; align-items: center; cursor: pointer; }
-select.field::picker-icon { color: var(--ink-2); }
-select.field::picker(select) { margin: 2px 0; padding: var(--sp-1); border: 1px solid var(--edge-input); border-radius: var(--r-2); background: var(--elevated); color: var(--ink); box-shadow: var(--shadow-raised); }
-select.field option { padding: var(--sp-1) var(--sp-2); border-radius: var(--r-1); font: var(--fs-2) var(--sans); cursor: pointer; }
-select.field option:hover, select.field option:focus-visible { background: var(--hover); outline: none; }
-select.field option:checked { color: var(--accent-ink); }
-select.field option::checkmark { color: var(--accent-ink); }
+/* The button: the field's box, its value left, a chevron right that turns as the menu opens. */
+select.field { display: inline-flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-3) 0 var(--sp-2); cursor: pointer; transition: border-color var(--t-hover), background-color var(--t-hover); }
+select.field:hover:not(:disabled) { border-color: var(--ink-2); }
+select.field:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+select.field:open { border-color: var(--accent); }
+select.field:disabled { cursor: default; opacity: 0.55; }
+select.field::picker-icon { content: ""; flex: none; width: 6px; height: 6px; margin: 0 0 3px auto; border: solid var(--ink-2); border-width: 0 1.5px 1.5px 0; rotate: 45deg; transition: rotate var(--dur-open) var(--ease-out), margin var(--dur-open) var(--ease-out); } /* native */
+select.field:open::picker-icon { rotate: 225deg; margin-bottom: -3px; } /* native */
+/* The menu: under the field (above it when there is no room), as wide as its options and at least
+ * as the field up to 16rem, on the raised surface, with a short fade and drop as it opens. */
+select.field::picker(select) {
+  position-area: block-end span-inline-end; position-try-fallbacks: flip-block;
+  inline-size: max-content; min-inline-size: min(anchor-size(self-inline), 16rem); max-inline-size: min(anchor-size(self-inline), 28rem);
+  max-block-size: 18rem; overflow-y: auto; margin: var(--sp-1) 0; padding: var(--sp-1);
+  border: 1px solid var(--edge); border-radius: var(--r-2); background: var(--elevated); color: var(--ink); box-shadow: var(--shadow-raised);
+  opacity: 1; translate: 0 0;
+  transition: opacity var(--dur-open) var(--ease-out), translate var(--dur-open) var(--ease-out), display var(--dur-open) allow-discrete, overlay var(--dur-open) allow-discrete;
+}
+select.field:not(:open)::picker(select) { opacity: 0; translate: 0 -4px; transition-duration: var(--dur-close); transition-timing-function: var(--ease-in); }
+@starting-style { select.field:open::picker(select) { opacity: 0; translate: 0 -4px; } }
+select.field option { display: flex; align-items: center; gap: var(--sp-2); min-block-size: 30px; padding: 0 var(--sp-3) 0 var(--sp-2); border-radius: var(--r-1); color: var(--ink); font: var(--fs-2) var(--sans); white-space: nowrap; cursor: pointer; transition: background-color var(--t-hover); }
+select.field option:hover, select.field option:focus-visible { background: var(--hover); outline: none; box-shadow: none; }
+select.field option:active { background: var(--accent-soft); }
+select.field option:checked { font-weight: var(--fw-name); }
+select.field option:disabled { color: var(--muted); cursor: default; background: none; }
+select.field option::checkmark { content: ""; flex: none; order: -1; width: 4px; height: 8px; margin: 0 4px 2px; border: solid var(--accent-ink); border-width: 0 1.5px 1.5px 0; rotate: 45deg; visibility: hidden; }
+select.field option:checked::checkmark { visibility: visible; }
+@media (prefers-reduced-motion: reduce) {
+  select.field::picker-icon, select.field::picker(select), select.field option { transition: none; }
+}
+/* In the light scheme the menu is white on the white card, set apart by its edge and shadow. */
+@media (prefers-color-scheme: light) {
+  :root[data-scheme="system"] select.field::picker(select) { background: var(--frame); box-shadow: 0 8px 24px rgb(15 27 42 / 0.16), 0 1px 3px rgb(15 27 42 / 0.12); }
+}
 .add { display: grid; gap: var(--sp-2); margin: var(--sp-3) 0 0; padding-top: var(--sp-3); border-top: 1px solid var(--edge); }
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); }
 .lab { display: grid; gap: var(--sp-1); font-size: var(--fs-2); color: var(--ink-2); }

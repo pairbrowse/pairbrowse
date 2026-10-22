@@ -804,3 +804,34 @@ both({ fixtures: { ...fixtures, network: { ...NET, secretsProblem: SECRETS_PROBL
   assert.equal(await inPage(() => document.getElementById("net-add").disabled), false, "changes without credentials still go through");
   assert.deepEqual(errors, []);
 });
+
+// The engine settings' two pages that frame this one (580): its Proxies page (?view=proxies) shows
+// the Network section alone, with the helper's proxies; its PairBrowse section (?view=pairbrowse)
+// shows everything else, never Network, even once the helper answers network.json.
+pageTest("settings", { fixtures: { ...fixtures, network: NET, networkTest: TEST }, viewport: VIEW, frame: "view=proxies" }, async ({ until, inPage, errors }) => {
+  await until("the proxy row", () => document.querySelectorAll("#net-list li").length === 1);
+  const c = await inPage(chromeOf);
+  assert.deepEqual([c.embedded, c.header, c.nav, c.sections], [true, false, false, ["network"]]);
+  assert.equal(await inPage(() => document.documentElement.dataset.view), "proxies");
+  assert.deepEqual(errors, []);
+});
+pageTest("settings", { fixtures: { ...fixtures, network: NET, networkTest: TEST }, viewport: VIEW, frame: "view=pairbrowse" }, async ({ until, inPage, helper, errors }) => {
+  await until("the stream", live);
+  await until("the config", () => document.querySelector("input[name=browser][value=pairbrowse]").checked);
+  await until("the proxies read", () => document.querySelectorAll("#net-list li").length === 1);
+  assert.deepEqual((await inPage(chromeOf)).sections, ["general", "agents", "sharing", "data", "about"]);
+  assert.deepEqual(await inPage(() => [document.getElementById("network").hidden, document.getElementById("nav-network").hidden]), [true, true]);
+  // A later network event keeps it out.
+  helper.push("network", NET);
+  await inPage(() => new Promise((r) => setTimeout(r, 150)));
+  assert.equal(await inPage(() => document.getElementById("network").hidden), true);
+  assert.deepEqual(errors, []);
+});
+// Not framed, ?view= changes nothing (a whole tab, the extension's options page): every section.
+pageTest("settings", { fixtures: { ...fixtures, network: NET, networkTest: TEST }, viewport: VIEW }, async ({ page, until, inPage, errors }) => {
+  await page.goto(page.url().replace(/(\/settings\/index\.html)/, "$1?view=proxies"), { waitUntil: "load" });
+  await until("the section", () => !document.getElementById("network").hidden);
+  assert.equal(await inPage(() => document.getElementById("general").hidden), false);
+  assert.equal(await inPage(() => document.documentElement.dataset.view), undefined);
+  assert.deepEqual(errors, []);
+});

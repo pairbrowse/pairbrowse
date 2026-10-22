@@ -128,7 +128,7 @@ scenario("left: open, rail, hidden", { viewport: OPEN }, async (ctx) => {
 
 scenario("left: nav rows, active state, History and Browser", { viewport: OPEN }, async (ctx) => {
   const { until, inPage } = ctx;
-  assert.deepEqual(await inPage(() => [...document.querySelectorAll(".nav .row")].map((b) => b.id)), ["nav-browser", "nav-sessions", "nav-history", "nav-activity"]);
+  assert.deepEqual(await inPage(() => [...document.querySelectorAll(".nav .row")].map((b) => b.id)), ["nav-browser", "nav-sessions", "nav-history", "nav-activity", "nav-proxies"]);
   // Tools is the agent panel's tab: no row here opens the other dock (DESIGN.md Part I).
   assert.equal(await inPage(() => document.getElementById("nav-tools")), null);
   assert.equal(await inPage(() => document.getElementById("nav-browser").getAttribute("aria-current")), "page");
@@ -294,6 +294,50 @@ scenario("left: Activity from the rail opens the page, the dock stays a rail", {
   await clean(ctx);
 });
 
+// Proxies opens the engine settings' Proxies page (pairbrowse://settings/proxies), found or opened in
+// this window like History, from the open dock and the rail alike; the row is current while that
+// page is the active tab, under either spelling its tab may report.
+scenario("left: Proxies opens the settings' Proxies page", { viewport: OPEN }, async (ctx) => {
+  const { until, inPage } = ctx;
+  assert.equal(await inPage(() => document.querySelector("#nav-proxies .ic use").getAttribute("href")), "#i-proxies");
+  assert.equal(await inPage(() => document.querySelector("#nav-proxies .label").textContent), "Proxies");
+  await ctx.page.click("#nav-proxies");
+  await until("a proxies tab", () => window.__pairbrowse.calls.some((c) => c.iface === "tabs" && c.method === "create"));
+  assert.deepEqual((await calls(ctx, "tabs", "create")).map((c) => c.args), [["pairbrowse://settings/proxies", true, 1]]);
+  await until("Proxies current", () => document.getElementById("nav-proxies").getAttribute("aria-current") === "page" && !document.getElementById("nav-browser").hasAttribute("aria-current"));
+  const id = await inPage(() => window.__pairbrowse.fixture.tabs.find((t) => t.url === "pairbrowse://settings/proxies").id);
+  // As the browser reports it once the engine's settings page has it.
+  await ctx.shim.change({ id, url: "chrome://settings/proxies" });
+  await ctx.page.waitForTimeout(150);
+  assert.equal(await inPage(() => document.getElementById("nav-proxies").getAttribute("aria-current")), "page");
+  await ctx.page.click("#nav-browser");
+  await until("Browser current", () => document.getElementById("nav-browser").getAttribute("aria-current") === "page" && !document.getElementById("nav-proxies").hasAttribute("aria-current"));
+  assert.deepEqual((await calls(ctx, "tabs", "activate")).at(-1).args, [11], "the last web tab, not the proxies page");
+  await ctx.page.click("#nav-proxies");
+  await until("Proxies again", () => document.getElementById("nav-proxies").getAttribute("aria-current") === "page");
+  assert.deepEqual((await calls(ctx, "tabs", "activate")).at(-1).args, [id]);
+  assert.equal((await calls(ctx, "tabs", "create")).length, 1, "no second proxies tab");
+  assert.equal((await calls(ctx, "layout", "set")).length, 0, "the dock's state stays");
+  await clean(ctx);
+});
+
+scenario("left: Proxies from the rail, and off without the browser's API", { viewport: { width: 44, height: 936 }, shim: { layout: { left: 1 } } }, async (ctx) => {
+  const { until, inPage } = ctx;
+  await until("the rail", () => document.body.dataset.dock === "rail");
+  assert.equal(await inPage(() => document.getElementById("nav-proxies").title), "Proxies");
+  assert.equal(await inPage(() => document.getElementById("nav-proxies").checkVisibility()), true);
+  await ctx.page.click("#nav-proxies");
+  await until("a proxies tab", () => window.__pairbrowse.calls.some((c) => c.iface === "tabs" && c.method === "create"));
+  assert.deepEqual((await calls(ctx, "tabs", "create")).map((c) => c.args), [["pairbrowse://settings/proxies", true, 1]]);
+  assert.equal(await inPage(() => document.body.dataset.dock), "rail");
+  await clean(ctx);
+});
+scenario("left: Proxies served without the browser's API", { viewport: OPEN, native: false }, async (ctx) => {
+  const { inPage } = ctx;
+  assert.deepEqual(await inPage(() => [document.getElementById("nav-proxies").disabled, document.getElementById("nav-proxies").title]), [true, "Proxies · opens in the PairBrowse browser"]);
+  await clean(ctx);
+});
+
 // Served without the browser's API: the activity page's file in a new tab.
 scenario("left: Activity served without the browser's API", { viewport: OPEN, native: false }, async (ctx) => {
   const { page, inPage } = ctx;
@@ -377,10 +421,10 @@ scenario("left: keyboard", { viewport: OPEN, shim: { layout: { right: 1 } } }, a
   await inPage(() => { document.activeElement?.blur?.(); document.body.tabIndex = -1; document.body.focus(); document.body.removeAttribute("tabindex"); });
   const order = [];
   await until("the collapse button", () => document.getElementById("dock-collapse").checkVisibility());
-  for (let i = 0; i < 7; i++) { await ctx.page.keyboard.press("Tab"); order.push(await inPage(() => document.activeElement.id)); }
+  for (let i = 0; i < 8; i++) { await ctx.page.keyboard.press("Tab"); order.push(await inPage(() => document.activeElement.id)); }
   // Share is the strip's (DESIGN.md Part G) and Tools the agent panel's tab (Part I): neither is a
   // stop; the collapse chevron sits at the foot after the gear (2026-10-14).
-  assert.deepEqual(order, ["nav-browser", "nav-sessions", "nav-history", "nav-activity", "add-agent", "settings", "dock-collapse"]);
+  assert.deepEqual(order, ["nav-browser", "nav-sessions", "nav-history", "nav-activity", "nav-proxies", "add-agent", "settings", "dock-collapse"]);
   await ctx.page.focus("#nav-sessions");
   await ctx.page.keyboard.press("Enter");
   // In the browser the Sessions row opens the sessions page as a tab (a page of its own reaches
@@ -537,7 +581,7 @@ scenario("left: rail at 44 px", { viewport: { width: 44, height: 936 }, shim: { 
   assert.equal(seen.gear, true);
   assert.deepEqual(seen.avatars, [[true, true, 28], [true, true, 28], [true, true, 28]]);
   assert.deepEqual(seen.titles, ["Claude · Working · 1 tab", "Alice · Codex · Waiting for you", "You · Online"]);
-  assert.deepEqual(seen.rows, ["Browser · 3 open tabs", "Sessions · work", "History", "Activity"]);
+  assert.deepEqual(seen.rows, ["Browser · 3 open tabs", "Sessions · work", "History", "Activity", "Proxies"]);
   await clean(ctx);
 });
 

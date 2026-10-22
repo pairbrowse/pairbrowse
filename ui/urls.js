@@ -58,6 +58,13 @@ export const isOwnTabPage = (name, url, ends = "\\/|#|\\?|$") => new RegExp(`^(p
 // forward. Its home is the engine settings' PairBrowse section, chrome://settings/pairbrowse (what
 // its tab reports), or pairbrowse://settings/pairbrowse; the older own addresses count too.
 export const isSettingsPage = (url) => isOwnTabPage("settings", url, "\\/|#|$") || /^(chrome|pairbrowse):\/\/settings\/pairbrowse([/#?]|$)/.test(url || "");
+// The browser's proxies: the engine settings' Proxies page (580), which frames PairBrowse's settings
+// page in its proxies view. Opened by its shown address; its tab reports chrome://settings/proxies.
+export const PROXIES_PAGE = "pairbrowse://settings/proxies";
+// The view the engine settings' page asks of PairBrowse's settings page it frames (?view=):
+// "proxies" or "pairbrowse", "" for anything else.
+export const viewOf = (search) => { const v = new URLSearchParams(String(search ?? "")).get("view"); return v === "proxies" || v === "pairbrowse" ? v : ""; };
+export const isProxiesPage = (url) => /^(chrome|pairbrowse):\/\/settings\/proxies([/#?]|$)/.test(url || "");
 // The picture page under the name the browser shows for it.
 export const isShownScreenPage = (url) => /^pairbrowse:\/\/screen(?:[/#?]|$)/.test(String(url || ""));
 

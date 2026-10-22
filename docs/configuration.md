@@ -316,8 +316,9 @@
   shared browser mode, a session in strict mode sends joiners pictures of its tabs through the
   join channel, never a direct connection (that would reach a STUN server and the joiner outside
   the proxy), and without sound; joining from a strict session asks for those pictures too.
-  Settings' Network section (the PairBrowse browser's Settings page, the extension's options page,
-  and the Profile drawer of your own live view link) adds, edits, tests and removes
+  Settings' Network section (the PairBrowse browser's Settings, on its own Proxies page,
+  pairbrowse://settings/proxies, also reached from the window's left dock; the extension's options
+  page; and the Profile drawer of your own live view link) adds, edits, tests and removes
   a proxy (its id as the name, HTTP, HTTPS or SOCKS5, host, port, and whether it needs a username
   and password), picks `default` and each kept session's entry in `sessions` (follow the default,
   direct, or a proxy). It writes this block in `config.json` (the rest of the file as you wrote it;

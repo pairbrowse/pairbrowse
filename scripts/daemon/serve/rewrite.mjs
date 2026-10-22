@@ -31,7 +31,7 @@ export function createHandle(conn, api) {
     const page = conn.actingIn || await serverPage();
     if (page?._pairbrowseHumanized !== true) return;
     const target = [args.target, args.startTarget, args.ref].find((t) => isRef(t));
-    const decision = await paceFor(page, target ? page.locator(`aria-ref=${target}`).first() : null, inputPaceOf(config));
+    const decision = await paceFor(page, target ? page.locator(`aria-ref=${target}`).first() : null, inputPaceOf(config), "page");
     const moves = await useMotion(page, decision.pace);
     if (moves && moves !== decision.pace) log(`input pace: ${name} moved at the ${moves} pace, not ${decision.pace} (the swap took too long)`);
     const line = paceLine([{ label: name, decision, moves }]);

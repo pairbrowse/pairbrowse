@@ -109,12 +109,20 @@ function scanForPace(el, { source, boxes }) {
     if (n.maxLength > 0 && n.maxLength <= 8) hints.push(`maxlength${n.maxLength}`);
     return hints.join(" ");
   };
-  return { widget, hints: fields.slice(0, 60).map(hintsOf) };
+  // The document's own fields too: a hover or a click away from the form (a heading, a link, the
+  // page's logo) is the same hand that fills the form on this page.
+  return { widget, hints: fields.slice(0, 60).map(hintsOf), pageHints: fieldsIn(doc).slice(0, 60).map(hintsOf) };
 }
 
 // A widget seen on a page stays seen until it goes to another address (the page's main frame
-// then holds another document): one solved or tucked away still scores what follows.
+// then holds another document): one solved or tucked away still scores what follows. A form
+// found on a page stays found the same way (forms: page -> { at, form }), so every move on a
+// sign-in page goes at the everyday pace, a scroll or a click at coordinates too, not only the
+// ones whose target sits in the form: the measurement read a sign-in page's strokes as a mix of
+// the two paces (the fast hops as short as 287 ms and nearly straight) where a hand on that page
+// is one hand.
 const seen = new WeakMap(); // page -> the address it was seen at
+const forms = new WeakMap(); // page -> { at, form }: the form kind found at that address
 const mainUrl = (page) => { try { return page.mainFrame?.().url?.() ?? page.url?.() ?? ""; } catch { return ""; } };
 // The page's frames, as the driver already knows them (no call into the page).
 const framesShow = (page) => {
@@ -123,18 +131,29 @@ const framesShow = (page) => {
 
 // The pace for an action on page (the field or element at loc, or none), as setting says. Each
 // read bounded; a read that doesn't answer counts as nothing found there.
-export async function paceFor(page, loc = null, setting = "adaptive") {
+// scope "field" (typing: the field's own form decides, so a name is typed quickly and the card
+// next to it as a hand does, spec step 51) or "page" (pointer tools: the page's strokes are one
+// hand's, so a form found anywhere on the page, now or before at this address, decides).
+export async function paceFor(page, loc = null, setting = "adaptive", scope = "field") {
   if (setting === "fast" || setting === "human") return decidePace(setting);
   const at = mainUrl(page);
   let widget = framesShow(page) || (!!at && seen.get(page) === at);
-  let hints = [];
-  if (loc) {
-    const got = await within(1500, Promise.resolve().then(() => loc.evaluate(scanForPace, { source: CHALLENGE.source, boxes: WIDGET_BOXES }, { timeout: 1200 })).catch(() => null));
+  const known = scope === "page" ? forms.get(page) : null;
+  const remembered = known && at && known.at === at ? known.form : "";
+  // The target's own form first (a sign-up form next to the sign-in one is its own kind), then
+  // the document's, then what was found on this page before. No target: the document itself is
+  // scanned (a scroll, a click at coordinates), when the page is one the driver can look into.
+  const scanned = loc ?? (scope !== "page" || remembered || typeof page?.locator !== "function" ? null : page.locator("body").first());
+  let form = "";
+  if (scanned) {
+    const got = await within(1500, Promise.resolve().then(() => scanned.evaluate(scanForPace, { source: CHALLENGE.source, boxes: WIDGET_BOXES }, { timeout: 1200 })).catch(() => null));
     if (got && typeof got === "object") {
       widget ||= got.widget === true;
-      hints = Array.isArray(got.hints) ? got.hints : [];
+      form = formKind(Array.isArray(got.hints) ? got.hints : []) || (scope === "page" ? formKind(Array.isArray(got.pageHints) ? got.pageHints : []) : "");
     }
   }
+  form ||= remembered;
   if (widget && page && at) seen.set(page, at);
-  return decidePace(setting, { widget, form: formKind(hints) });
+  if (form && page && at) forms.set(page, { at, form });
+  return decidePace(setting, { widget, form });
 }

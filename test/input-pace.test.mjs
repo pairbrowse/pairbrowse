@@ -236,3 +236,24 @@ test("a pack that takes no page hook keeps one pace, said once in the log", () =
   assert.equal(calls[2].options.motion, "fast");
   assert.match(lines.join("\n"), /one pace only/);
 });
+
+test("a form found anywhere on the page sets the pace for every move on it, a scroll or a click away from it too, until the page goes elsewhere", async () => {
+  const site = fakePage("https://shop.test/login");
+  // A hover on the page's heading: its own group holds no field, the document holds the sign-in form.
+  const heading = field({ widget: false, hints: [], pageHints: ["email  email username  Email  ", "password  current-password password  Password  "] });
+  assert.deepEqual(await paceFor(site.page, heading, "adaptive", "page"), { pace: "human", why: "sign-in" });
+  // Typing stays the field's own: a search box on the sign-in page is typed quickly (step 51).
+  assert.deepEqual(await paceFor(site.page, field({ widget: false, hints: ["search  search q  Search  "], pageHints: ["password  current-password  Password  "] })), { pace: "fast", why: "" }, "the field scope");
+  // From then on no target, and no scan, is needed on this page: the form was found there.
+  assert.deepEqual(await paceFor(site.page, null, "adaptive", "page"), { pace: "human", why: "sign-in" }, "a scroll on the sign-in page");
+  assert.deepEqual(await paceFor(site.page, field({ widget: false, hints: ["search  search q  Search  "], pageHints: [] }), "adaptive", "page"), { pace: "human", why: "sign-in" }, "a hover on a search box on the sign-in page");
+  // Another address: another document, scanned afresh.
+  site.go("https://shop.test/account");
+  assert.deepEqual(await paceFor(site.page, field({ widget: false, hints: [], pageHints: ["text  name  Name  "] }), "adaptive", "page"), { pace: "fast", why: "" });
+  // No target on a page the driver can look into: the document itself is scanned.
+  let scans = 0;
+  const scanned = { ...fakePage("https://bank.test/signin").page, locator: () => ({ first: () => ({ evaluate: async () => { scans++; return { widget: false, hints: [], pageHints: ["password  current-password  Password  "] }; } }) }) };
+  assert.deepEqual(await paceFor(scanned, null, "adaptive", "page"), { pace: "human", why: "sign-in" }, "pairbrowse_scroll on a sign-in page");
+  assert.deepEqual(await paceFor(scanned, null, "adaptive", "page"), { pace: "human", why: "sign-in" });
+  assert.equal(scans, 1, "found once, remembered at that address");
+});

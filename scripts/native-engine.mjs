@@ -4,6 +4,7 @@
 import { existsSync, readFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { execFile } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { NATIVE } from "./native-pack.mjs";
 import { paths } from "./paths.mjs";
 import { within, writeJsonAtomic, sha256, readJson } from "./util.mjs";
@@ -444,7 +445,11 @@ async function resolveFingerprint(chromium, options, pack, directory, settings, 
   const steps = [];
   let hostCapture = false;
   if (fingerprint.fingerprintProfile === undefined) {
-    fingerprint.fingerprint ??= sha256(directory);
+    // The profile's own seed, drawn once (then kept with the persona: savePersona, read back as
+    // the persisted layer), never worked out from the computer or the directory: two homes at one
+    // path (every server's /root, every container of one image) got one seed from
+    // sha256(directory), so FingerprintJS gave two fresh profiles on one host one visitor ID.
+    fingerprint.fingerprint ??= randomBytes(32).toString("hex");
     if (process.platform === "darwin") {
       const hostAt = Date.now();
       fingerprint.fingerprintProfile = await macHostProfile(chromium, options.executablePath, pack, directory, version, macHardware, () => log(MEASURING));

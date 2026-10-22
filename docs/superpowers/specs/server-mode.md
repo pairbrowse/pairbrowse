@@ -839,7 +839,9 @@ one.
 - **D3. Identity lock**: a profile that pins a seed (`persona.seed`) runs in one browser at a time across
   instances of one shared home: an owner-only lock in `paths.shared/identity-locks/` keyed by the seed's
   SHA-256, takeover rule as `scripts/install-lock.mjs`. Profiles without a pinned seed get a
-  per-session seed (today's `sha256(directory)`).
+  per-session seed, drawn once at the profile's first launch and kept with its persona (never worked out
+  from the directory: two homes at one path, every container of one image, got one `sha256(directory)`
+  seed, and FingerprintJS gave two fresh profiles on one host one visitor ID).
 - **D4. Storage per home, owner-only**: `~/.pairbrowse/browser-profiles/<id>.json` (0600, dir 0700),
   revisions in `<id>.history/<revision>.json`; `~/.pairbrowse/engine-profiles/` (0700) as the pack's
   persona and cache dir. The helper sets `PAIRBROWSE_ENGINE_PROFILE_DIR`, `PAIRBROWSE_ENGINE_PROFILE_SOURCE`
@@ -3275,8 +3277,8 @@ code:
 - The screen is not fixed at 1920x1080: the seed picks it from a weighted pool (`002:72-82,
   559-565`), and it wins over the real screen whenever `--fingerprint` is set (`140:221-290`). The
   real screen is the Xvfb size (`virtualScreen`, default 1366x900).
-- Helper path: `native-engine.mjs` `resolveFingerprint` keeps the bare `sha256(directory)` seed on
-  Linux; host capture is macOS only.
+- Helper path: `native-engine.mjs` `resolveFingerprint` kept the bare `sha256(directory)` seed on
+  Linux (since replaced by a seed drawn once and kept with the persona, D3); host capture is macOS only.
 - Fix (decision D-AP2, E2; spec steps 41 and 44, helper only; the launch part landed with step 41): on Linux launch with
   `disableGpuFingerprint: true` and `fingerprintNoise: false` so WebGL strings, limits, extensions
   and WebGPU vendor and architecture report the real backend (pn `002:740-748`, `955:155-165`), and

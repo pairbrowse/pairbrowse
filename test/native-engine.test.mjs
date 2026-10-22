@@ -1105,6 +1105,7 @@ const PINNED_PROFILE = () => ({ navigator: { languages: ["en-US"] } });
 // and the launch says so in one log line.
 test("auto never calls resolveAuto", async () => {
   const app = appFixture();
+  const seeds = [];
   for (const selection of ["auto", "local"]) {
     const pack = Object.assign(recordingPack(), { collector: "" });
     const calls = [];
@@ -1123,11 +1124,17 @@ test("auto never calls resolveAuto", async () => {
     assert.ok(!lines.some((l) => /persona selected from/.test(l)), `${selection}: no persona picked`);
     const given = pack.given[0];
     if (process.platform === "darwin") assert.ok(given.fingerprintProfile && typeof given.fingerprintProfile === "object", `${selection}: this Mac's own capture`);
-    else {
-      assert.equal(given.fingerprintProfile, undefined, `${selection}: the seed persona, no other device's profile`);
-      assert.equal(given.fingerprint, sha256(directory), `${selection}: the session's own seed`);
-    }
+    else assert.equal(given.fingerprintProfile, undefined, `${selection}: the seed persona, no other device's profile`);
+    // The profile's own seed, drawn once: never the directory's hash (two homes at one path, every
+    // container of one image, got one seed, and FingerprintJS gave two fresh profiles one visitor ID).
+    assert.match(given.fingerprint, /^[0-9a-f]{64}$/, `${selection}: the session's own seed, drawn once`);
+    assert.notEqual(given.fingerprint, sha256(directory), `${selection}: never the directory's hash`);
+    seeds.push(given.fingerprint);
+    // The same profile keeps its seed across restarts (the persona kept with it).
+    await launchNative(chromium, { pairbrowse: { profile: selection, profileSelect: { mode: "best" } } }, directory, { executablePath: app.executablePath, headless: false }, pack, () => {});
+    assert.equal(pack.given[1].fingerprint, given.fingerprint, `${selection}: the seed stays the profile's across launches`);
   }
+  assert.notEqual(seeds[0], seeds[1], "two profiles, two seeds");
   // A saved persona named in config.json is still read in place (it is offered for import).
   const named = recordingPack({ saved: { fingerprint: "seed", fingerprintProfile: PINNED_PROFILE() } });
   const lines = [];

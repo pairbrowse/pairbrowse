@@ -121,6 +121,9 @@ body[data-dock="rail"] .people strong, body[data-dock="rail"] .people small { po
 body[data-dock="rail"] .body { padding: var(--first-row) var(--sp-1) var(--sp-2); }
 body[data-dock="rail"] .row { justify-content: center; width: 36px; padding: 0; margin: 0 auto; }
 body[data-dock="rail"] .sec { margin-top: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--edge); }
+/* A group with nobody in it shows nothing in the rail, its line included: its words are hidden
+   above, and two lines stacked over an empty group drew a double divider. */
+body[data-dock="rail"] .sec:not(:has(.people li:not(.empty))) { display: none; }
 body[data-dock="rail"] .sec-head { display: none; }
 body[data-dock="rail"] .people li { grid-template-columns: 28px; justify-content: center; height: 40px; padding: 0; }
 body[data-dock="rail"] .people .avatar { width: 28px; height: 28px; font-size: var(--fs-2); }

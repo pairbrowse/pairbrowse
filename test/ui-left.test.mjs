@@ -95,6 +95,10 @@ scenario("left: open, rail, hidden", { viewport: OPEN }, async (ctx) => {
   assert.deepEqual(await inPage(shown), { collapse: false, expand: true });
   e = await inPage(innerEdge);
   assert.equal(e.shadow, `${e.edge} -1px 0px 0px 0px inset`, "rail: the same inner edge");
+  // Nobody in a group (no agent yet, not shared): the rail shows no group at all, so no line stacks
+  // on another over nothing (two lines a short way apart, 2026-10-23).
+  assert.deepEqual(await inPage(() => [...document.querySelectorAll(".sec")].map((s) => [s.querySelectorAll(".people li:not(.empty)").length > 0, s.checkVisibility()])).then((r) => r.map(([people, seen]) => people === seen)), [true, true], "rail: a group shows (with its line) only with someone in it");
+  assert.equal(await inPage(() => document.getElementById("shared").checkVisibility()), false, "rail: not shared, no Shared with line");
   // The dock's stream carries panel=1, so today's helper never counts it as a viewer (no screencast).
   assert.deepEqual([...ctx.helper.streams].map((st) => ({ kind: st.kind, panel: st.panel })), [{ kind: "left", panel: true }]);
   // A fresh activity line arms the one drive timer; hiding the dock stops it.

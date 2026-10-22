@@ -5,6 +5,13 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## Unreleased
+
+- The native browser moves to engine 155 (155.0.8059.84): the newest base, with PairBrowse's
+  fingerprint patch series carried over with the same behaviour and its tail patches, and a new
+  engine pack (`pairbrowse-engine-155.0.8059.84.tgz`). The builds' pins are filled in as each one
+  is packaged; a platform whose pin is still null has no 155 build yet.
+
 ## 0.17.0 (2026-10-22)
 
 PairBrowse is a plugin for Claude Code and Codex: the agent fills in forms, signs up for services

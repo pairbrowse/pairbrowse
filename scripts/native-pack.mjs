@@ -13,16 +13,19 @@
 // The -7 macOS and -5 Linux builds carry the engine tail 960 (the canvas bridge removed), 961
 // (WebGPU follows the identity in use) and 962 (proxy credentials from an owner-only file, SOCKS5
 // username/password); the -5 engine pack goes with them.
+// 155.0.8059.84: the engine on the newest base, its fingerprint series carried by PairBrowse with
+// the same behaviour; the engine pack restarts its revisions. Publication pending: the builds'
+// SHA-256s are filled in as each local build is packaged (null: no build yet).
 export const NATIVE = {
-  version: "150.0.7871.114",
-  arm64: { file: "pairbrowse-150.0.7871.114-7-macos-arm64.zip", sha256: "7600a49ac05dbcf920ce0184e73e02bf3f4f171236d80b4f9214e1f494e98436" },
-  x64: { file: "pairbrowse-150.0.7871.114-7-macos-x86_64.zip", sha256: "5c9f678ffc12756d68f703f83dd63e64a4990ff70d9c769c9057e70fad762b35" },
-  linux: { file: "pairbrowse-150.0.7871.114-5-linux-x64.tar.xz", sha256: "a2b9c226982e86731baf2cdf0290f7a04a87710cdbddc703cc77f91e45e7a88b" },
-  windows: { file: "pairbrowse-150.0.7871.114-windows-x64.zip", sha256: null },
+  version: "155.0.8059.84",
+  arm64: { file: "pairbrowse-155.0.8059.84-macos-arm64.zip", sha256: null },
+  x64: { file: "pairbrowse-155.0.8059.84-macos-x86_64.zip", sha256: null },
+  linux: { file: "pairbrowse-155.0.8059.84-linux-x64.tar.xz", sha256: null },
+  windows: { file: "pairbrowse-155.0.8059.84-windows-x64.zip", sha256: null },
   engine: {
-    file: "pairbrowse-engine-150.0.7871.114-6.tgz",
-    sha256: "4b845655abdbd4ced205535ecb3207a9141869af19fc1f87e0279609cc19c94b",
-    files: { "engine.mjs": "9ed2b8c8566d0ed0800d66464fd179e6e046dcbc5074e7ee1aa1ccd6ce8b6282", "collector.js": "38d4afc53caccc1b92d640354166f53c2108f489c6c054ad0f81ca9d7a02b151" },
+    file: "pairbrowse-engine-155.0.8059.84.tgz",
+    sha256: "62e114ab894d17e57e0bb0ffe90146fd5b3b83df026fa85615981a0a5d455107",
+    files: { "engine.mjs": "25b28028a123e124d20e84dcb71a6789586a8c4e231cda00e6b0cf10d2d13ece", "collector.js": "74119914770bc592c92f3b7b25da65a1cb464f78f381ab5b27c981756f11d4e6" },
   },
-  baseUrl: "https://github.com/pairbrowse/pairbrowse/releases/download/browser-150.0.7871.114",
+  baseUrl: "https://github.com/pairbrowse/pairbrowse/releases/download/browser-155.0.8059.84",
 };

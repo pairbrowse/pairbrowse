@@ -3168,7 +3168,8 @@ binding for implementation; where a phase section above says otherwise, this sec
     session without a proxy keeps the browser's everyday default (an mDNS name for the local
     address, the public address through STUN, which the site sees anyway; the earlier deny showed
     no candidate, a mark detectors read, and hid nothing a direct session's pages don't know), so
-    the helper passes no policy switch there and the pack's default deny applies to proxied
+    the helper passes `--webrtc-ip-handling-policy=default` there on the native build (whose
+    engine denies non-proxied UDP with no switch) and the pack's default deny applies to proxied
     sessions only; a proxied session shows the proxy's exit as its one candidate, as the reference
     does, through the engine's `--webrtc-ip` with the exit the helper's own probe read before the
     launch (`daemon/network.mjs` `forLaunch` `exit()`, `native-engine.mjs` `launchNative`), and only
@@ -3379,8 +3380,9 @@ extension shell:
   "failed" on `webgpu.device` until patch 961, as recorded above.
 - WebRTC: the native build denies non-proxied UDP with no switch at all, so the egress check's
   leak half needs the policy set back to the engine's default there (a switch the helper never
-  passes). Since the third measurement pass a direct session gets no deny from the helper (the
-  pack's default deny is added for proxied sessions only; decision 11).
+  passes). Since the third measurement pass a direct session gets the everyday policy by that
+  switch from the helper itself (the pack's default deny is added for proxied sessions only;
+  decision 11).
 - Co-browsing: a card field the person filled carries their name (`o`, never the value) when the
   form is read within a few seconds of the edit (`fields.mjs` `OWN_MS`); the test accepts it on
   either build.

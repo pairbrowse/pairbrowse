@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync, statSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { launchNative, launchEnv, applyGraphicsPlan, DRIVER_BLINK_SWITCH, DRIVER_BACKGROUND_SWITCH, nativeManifest, declaresOwnPages, macHostProfile, hostFonts, captureMacHost, MEASURING, hostCachePath, screenInfoArg, CANVAS_BRIDGE_DROPPED, isCanvasBridgeSwitch, personaProxyRefusal, PROXY_CREDENTIALS_REFUSAL, proxyCredentials, withoutAddresses, proxyAuthFile, webrtcExit, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE, paceSets, flatWebgpuProfile, personaBindingRefusal, droppedLine, clockZoneNote } from "../scripts/native-engine.mjs";
+import { launchNative, launchEnv, applyGraphicsPlan, DRIVER_BLINK_SWITCH, DRIVER_BACKGROUND_SWITCH, nativeManifest, declaresOwnPages, macHostProfile, hostFonts, captureMacHost, MEASURING, hostCachePath, screenInfoArg, CANVAS_BRIDGE_DROPPED, isCanvasBridgeSwitch, personaProxyRefusal, PROXY_CREDENTIALS_REFUSAL, proxyCredentials, withoutAddresses, proxyAuthFile, webrtcExit, WEBRTC_EVERYDAY, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE, paceSets, flatWebgpuProfile, personaBindingRefusal, droppedLine, clockZoneNote } from "../scripts/native-engine.mjs";
 import { PAIRBROWSE_ENGINE_KEYS } from "../scripts/config-schema.mjs";
 import { loadEngine } from "../scripts/native/pack.mjs";
 import { normalizeWebgpu, GRAPHICS } from "../scripts/native/graphics.mjs";
@@ -848,13 +848,15 @@ packTest("a WebRTC IP policy in browserArgs is never the launch's: a proxied ses
   assert.deepEqual(rtc, ["--webrtc-ip-handling-policy=disable_non_proxied_udp"], rtc.join(" "));
   assert.ok(args.includes("--lang=en"), "other switches pass");
   assert.ok(lines.some((l) => /WebRTC IP handling switch in browserArgs was dropped/.test(l)));
-  // Direct: no policy switch at all (local addresses stay behind mDNS names, the public address is
-  // the one the site sees anyway), and a policy from browserArgs is still dropped.
+  // Direct: the browser's everyday policy by the helper's own switch (the engine denies non-proxied
+  // UDP with none; local addresses stay behind mDNS names, the public address is the one the site
+  // sees anyway), and a policy from browserArgs is still dropped, even the same one.
   lines.length = 0;
   await launchNative(chromium, { pairbrowse: { fingerprint: "rtc-seed", humanize: false } }, mkdtempSync(join(tmpdir(), "pairbrowse-profile-")),
     { executablePath: app.executablePath, headless: false, args: [...policies, "--lang=en"] }, pack, (l) => lines.push(l));
   const direct = chromium.calls[1].options.args;
-  assert.deepEqual(direct.filter((a) => /webrtc/i.test(a)), [], direct.join(" "));
+  assert.deepEqual(direct.filter((a) => /webrtc/i.test(a)), [WEBRTC_EVERYDAY], direct.join(" "));
+  assert.equal(WEBRTC_EVERYDAY, "--webrtc-ip-handling-policy=default");
   assert.ok(lines.some((l) => /WebRTC IP handling switch in browserArgs was dropped/.test(l)));
 });
 

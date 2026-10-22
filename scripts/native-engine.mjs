@@ -145,6 +145,10 @@ export const proxyAuthFile = (manifest) => Number.isInteger(manifest?.proxyAuthF
 // candidate the engine fabricates at that address (without a STUN request, and no host candidate)
 // is the only address a page can learn, and nothing leaves outside the proxy. The helper passes
 // the proxy's exit as that address only on such a build; an older one keeps the deny policy alone.
+// The browser's everyday WebRTC policy, passed for a direct session on the native build (whose
+// engine denies non-proxied UDP when no switch says otherwise): every route, the local address
+// behind an mDNS name, the public address through STUN.
+export const WEBRTC_EVERYDAY = "--webrtc-ip-handling-policy=default";
 export const webrtcExit = (manifest) => Number.isInteger(manifest?.webrtcExit) && manifest.webrtcExit >= 1;
 export const adBlocker = (manifest) => Number.isInteger(manifest?.adBlocker) && manifest.adBlocker >= 1;
 // The build manifest's `adBlockerCrx` ({ path, version }): the ad blocker shipped with the build, a
@@ -599,9 +603,10 @@ export async function launchNative(chromium, config, directory, options, pack, l
   // non-proxied UDP (the engine's default deny below, and strict mode's own switch, net/config.mjs
   // STRICT_WEBRTC, the same policy, which the pack then doesn't double), so web pages never get
   // this computer's addresses outside the proxy; what they see is the exit, when the build shows
-  // one (webrtcIp above). A direct session gets no policy switch: the browser's everyday default,
-  // local addresses hidden behind mDNS names by the browser's own feature and the public address
-  // through STUN, the address the site sees anyway. A policy in the config's browserArgs is
+  // one (webrtcIp above). A direct session gets the browser's everyday policy by its own switch
+  // (WEBRTC_EVERYDAY: the engine denies non-proxied UDP with no switch at all): local addresses
+  // hidden behind mDNS names by the browser's own feature and the public address through STUN,
+  // the address the site sees anyway. A policy in the config's browserArgs is
   // dropped either way, whatever it says; the browser's own capture page keeps its direct
   // connections through the build's own exemption, not a switch. Every spelling the engine reads
   // ("-webrtc-ip-handling-policy=...", "/..." on Windows) counts.
@@ -625,7 +630,7 @@ export async function launchNative(chromium, config, directory, options, pack, l
     ...(disablePrivacySandbox ? pack.privacySandboxArgs() : []),
     ...pack.portableArgs(portableProfile, encryptionKey),
     ...pack.extensionArgs(extensionPaths), ...proxyArgs,
-    ...(merged.proxy ? pack.webrtcDefaultDenyArgs(givenArgs, fingerprint.webrtcIp) : []),
+    ...(merged.proxy ? pack.webrtcDefaultDenyArgs(givenArgs, fingerprint.webrtcIp) : [WEBRTC_EVERYDAY]),
     ...pack.gpuBlocklistArgs(merged.headless === false, process.platform, givenArgs),
     // The identity's own engine switches (native/graphics.mjs: the GPU pool entry, WebGPU's
     // software adapter by name with the service on), the helper's, never from browserArgs.

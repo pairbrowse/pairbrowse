@@ -156,16 +156,19 @@ select.field:open { border-color: var(--accent); }
 select.field:disabled { cursor: default; opacity: 0.55; }
 select.field::picker-icon { content: ""; flex: none; width: 6px; height: 6px; margin: 0 0 3px auto; border: solid var(--ink-2); border-width: 0 1.5px 1.5px 0; rotate: 45deg; transition: rotate var(--dur-open) var(--ease-out), margin var(--dur-open) var(--ease-out); } /* native */
 select.field:open::picker-icon { rotate: 225deg; margin-bottom: -3px; } /* native */
-/* The menu: under the field (above it when there is no room), as wide as its options and at least
- * as the field up to 16rem, on the raised surface, with a short fade and drop as it opens. */
+/* The menu: right under its field, left-aligned and exactly as wide, 4 px below it. Above it
+ * (select.up, settings.js placeSelectMenu) only when the page has no room below: the framed page
+ * grows with its content, so that is the last rows only. No position-try fallback: the engine's
+ * own flip took the place above at random although the menu fit below (measured 2026-10-23). */
 select.field::picker(select) {
-  position-area: block-end span-inline-end; position-try-fallbacks: flip-block;
-  inline-size: max-content; min-inline-size: min(anchor-size(self-inline), 16rem); max-inline-size: min(anchor-size(self-inline), 28rem);
-  max-block-size: 18rem; overflow-y: auto; margin: var(--sp-1) 0; padding: var(--sp-1);
+  position-area: bottom span-right; position-try-fallbacks: none;
+  inline-size: anchor-size(width); min-inline-size: 0; max-inline-size: none;
+  max-block-size: 18rem; overflow-y: auto; margin: var(--sp-1) 0; padding: var(--sp-1); box-sizing: border-box;
   border: 1px solid var(--edge); border-radius: var(--r-2); background: var(--elevated); color: var(--ink); box-shadow: var(--shadow-raised);
   opacity: 1; translate: 0 0;
   transition: opacity var(--dur-open) var(--ease-out), translate var(--dur-open) var(--ease-out), display var(--dur-open) allow-discrete, overlay var(--dur-open) allow-discrete;
 }
+select.field.up::picker(select) { position-area: top span-right; }
 select.field:not(:open)::picker(select) { opacity: 0; translate: 0 -4px; transition-duration: var(--dur-close); transition-timing-function: var(--ease-in); }
 @starting-style { select.field:open::picker(select) { opacity: 0; translate: 0 -4px; } }
 select.field option { display: flex; align-items: center; gap: var(--sp-2); min-block-size: 30px; padding: 0 var(--sp-3) 0 var(--sp-2); border-radius: var(--r-1); color: var(--ink); font: var(--fs-2) var(--sans); white-space: nowrap; cursor: pointer; transition: background-color var(--t-hover); }

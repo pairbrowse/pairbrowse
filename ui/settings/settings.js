@@ -78,6 +78,22 @@ const away = awaySwitch($("away-on"), $("away-state"), () => base);
 // Out of this view (the PairBrowse section, 580), both stay hidden.
 const network = networkPanel($("network-panel"), () => base, { shown: (on) => { const show = on && !outOfView($("network")); $("network").hidden = !show; $("nav-network").hidden = !show; applySearch(); } });
 
+// A select's menu (settings.css) opens under its field, or above it (select.up) when the page has
+// too little room below for it: a row per option (30 px) and MENU_EXTRA, up to its 18rem.
+// Decided as the menu is about to open (a press, or a key that opens it).
+const OPTION_ROW = 30, MENU_EXTRA = 14, MENU_MAX = 288; // 14: 2 x 4 px padding, 2 x 1 px border, the 4 px gap
+function placeSelectMenu(e) {
+  const sel = e.target;
+  if (!(sel instanceof HTMLSelectElement) || !sel.classList.contains("field")) return;
+  if (e.type === "keydown" && !["Enter", " ", "ArrowDown", "ArrowUp"].includes(e.key)) return;
+  const need = Math.min(MENU_MAX, sel.options.length * OPTION_ROW + MENU_EXTRA);
+  const below = document.documentElement.scrollHeight - (sel.getBoundingClientRect().bottom + window.scrollY);
+  const above = sel.getBoundingClientRect().top + window.scrollY;
+  sel.classList.toggle("up", below < need && above >= need);
+}
+document.addEventListener("pointerdown", placeSelectMenu, true);
+document.addEventListener("keydown", placeSelectMenu, true);
+
 const say = (node, text, kind = "") => { node.textContent = text; node.dataset.kind = kind; };
 const getJson = (path) => fetch(base + path).then(async (r) => ({ status: r.status, body: r.ok ? await r.json().catch(() => null) : await r.text().catch(() => "") })).catch(() => ({ status: 0, body: null }));
 const postJson = (path, body) => postReply(base + path, body);

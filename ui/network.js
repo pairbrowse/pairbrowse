@@ -32,6 +32,8 @@ export function networkPanel(root, base, { shown = () => {} } = {}) {
   list.setAttribute("aria-label", "Proxies");
   const empty = el("p", { className: "empty", id: "net-empty", textContent: "No proxies yet. Every session connects directly.", hidden: true });
   const addBtn = el("button", { className: "action", type: "button", id: "net-add", textContent: "Add a proxy" });
+  // The button or the open form, never both: the row holding the button goes while the form is open.
+  const addRow = el("div", { className: "acts", id: "net-add-row" }, addBtn);
 
   // The form, for adding or editing one proxy.
   const field = (id, label, input) => { input.id = id; return el("label", { className: "lab", htmlFor: id }, label, input); };
@@ -66,7 +68,7 @@ export function networkPanel(root, base, { shown = () => {} } = {}) {
   const choices = el("div", { className: "net-choices", id: "net-choices" },
     el("label", { className: "lab", htmlFor: "net-default" }, "Sessions without a choice of their own", defaultIn),
     sessions);
-  root.replaceChildren(problem, secretsProblem, list, empty, el("div", { className: "acts" }, addBtn), form, result, choices, msg);
+  root.replaceChildren(problem, secretsProblem, list, empty, addRow, form, result, choices, msg);
 
   async function post(body) {
     if (!base()) return { error: "Not connected to PairBrowse." };
@@ -173,13 +175,17 @@ export function networkPanel(root, base, { shown = () => {} } = {}) {
     authIn.checked = !!p?.auth;
     userIn.value = ""; passIn.value = "";
     form.hidden = false;
+    addRow.hidden = true;
     result.hidden = true;
     showCreds();
+    // Focus goes to the first text field (never to the Type select: its picker must open only when
+    // the person asks for it).
     (p ? hostIn : idIn).focus();
   }
   function closeForm() {
     editing = null;
     form.hidden = true;
+    addRow.hidden = false;
     userIn.value = ""; passIn.value = "";
   }
   // The form's fields as a body: the username and password only when typed.

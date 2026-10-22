@@ -772,12 +772,19 @@ both({ fixtures: { ...fixtures, network: NET, networkTest: TEST }, viewport: VIE
   // Add a SOCKS5 proxy without a username: added, and the list follows (one with a username is
   // taken like an HTTP proxy's: its credentials go to the native browser's auth file, RFC 1929).
   await page.click("#net-add");
+  await until("the add form", () => !document.getElementById("net-form").hidden);
+  // The button or the open form, never both; focus starts in the Name field, never on the Type
+  // select; and the select's picker is the page's own (base-select): the browser's never opened
+  // for a select further down the framed page than the window is tall.
+  assert.deepEqual(await inPage(() => ({ row: document.getElementById("net-add-row").hidden, focus: document.activeElement?.id,
+    picker: getComputedStyle(document.getElementById("net-type")).appearance })), { row: true, focus: "net-id", picker: "base-select" });
   await page.fill("#net-id", "socks-a");
   await page.selectOption("#net-type", "socks5");
   await page.fill("#net-host", "198.51.100.4");
   await page.click("#net-save");
   await posted(helper, page, "the add", "network", { op: "add", id: "socks-a", type: "socks5", host: "198.51.100.4", port: null, auth: false });
   await until("two rows", () => document.querySelectorAll("#net-list li").length === 2);
+  assert.equal(await inPage(() => document.getElementById("net-add-row").hidden), false, "the button is back once the form closes");
 
   // The default and a session's choice.
   await page.selectOption("#net-default", "us-east");

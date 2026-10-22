@@ -142,6 +142,19 @@ fieldset[disabled] .seg label, fieldset[disabled] .choice, form[disabled] { opac
 textarea.field { height: auto; padding: var(--sp-2); resize: vertical; line-height: 1.45; }
 .field:focus { border-color: var(--accent); }
 .field::placeholder { color: var(--muted); opacity: 1; }
+
+/* A select's picker is the page's own (appearance: base-select), not the browser's: the browser's
+ * picker never opened for a select further down this page than the window is tall when the page
+ * is framed in the browser's settings (the engine kept the anchor within the wrong viewport),
+ * and the page's own picker follows the theme on every platform. */
+select.field, select.field::picker(select) { appearance: base-select; }
+select.field { display: inline-flex; align-items: center; cursor: pointer; }
+select.field::picker-icon { color: var(--ink-2); }
+select.field::picker(select) { margin: 2px 0; padding: var(--sp-1); border: 1px solid var(--edge-input); border-radius: var(--r-2); background: var(--elevated); color: var(--ink); box-shadow: var(--shadow-raised); }
+select.field option { padding: var(--sp-1) var(--sp-2); border-radius: var(--r-1); font: var(--fs-2) var(--sans); cursor: pointer; }
+select.field option:hover, select.field option:focus-visible { background: var(--hover); outline: none; }
+select.field option:checked { color: var(--accent-ink); }
+select.field option::checkmark { color: var(--accent-ink); }
 .add { display: grid; gap: var(--sp-2); margin: var(--sp-3) 0 0; padding-top: var(--sp-3); border-top: 1px solid var(--edge); }
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); }
 .lab { display: grid; gap: var(--sp-1); font-size: var(--fs-2); color: var(--ink-2); }

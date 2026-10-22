@@ -3090,6 +3090,13 @@ binding for implementation; where a phase section above says otherwise, this sec
     such, and the date, versions, network and method linked underneath. Wording: "scores as an everyday
     browser on these checks", never "undetectable" or "passes every test". Not published from
     preliminary numbers.
+    Hard detectors (user, 2026-10-22): the measurement adds real public pages protected by DataDome,
+    Akamai Bot Manager, Kasada and HUMAN (PerimeterX), plus F5 Shape, a few of each, the vendor
+    confirmed from the page's own scripts and cookies in the test harness (never in the product).
+    Observe only: open a public page, wait, scroll, read whether it loads, shows a challenge or blocks;
+    nothing typed, no challenge solved, a handful of loads per site, spaced out. Every page is run with
+    PairBrowse (Mac, Linux), the reference and an everyday browser with no automation, through the same
+    exit, so a block caused by the exit address is told apart from one caused by the browser.
     Their signed-in build could not be obtained (2026-10-22: the sign-in gave no key), so the README
     compares their newest build that downloads without one (named with its version, 145 on macOS and
     146 on Linux at the first measurement), says so plainly, and is updated if a newer public build

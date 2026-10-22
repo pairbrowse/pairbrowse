@@ -75,7 +75,7 @@ test("a native launch on Linux after the font setup: PairBrowse's font file, and
     const env = launchEnv({}, { given: undefined, pack: stubPack, executablePath: "/b/PairBrowse/chrome", args: ["--lang=de-DE"], log: (l) => lines.push(l), fonts });
     assert.equal(env.FONTCONFIG_FILE, file, "PairBrowse's font configuration in the build's place");
     assert.equal(env.LANGUAGE, "de_DE", "the identity's language, not the helper's");
-    assert.match(lines[0], /stand-ins for the Windows names off/);
+    assert.match(lines[0], /stand-ins for the Windows names on/, "on by default");
     // A caller env of its own keeps its keys; no pack: this process's env with the font file.
     assert.equal(launchEnv({}, { given: { TZ: "UTC" }, pack: stubPack, executablePath: "/b/PairBrowse/chrome", args: [], fonts }).TZ, "UTC");
     const bare = launchEnv({}, { given: undefined, pack: {}, executablePath: "/b/PairBrowse/chrome", args: [], fonts });

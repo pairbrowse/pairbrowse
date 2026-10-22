@@ -64,16 +64,18 @@ test("the alias file: off keeps the switched stand-ins from the browser; on poin
 test("the browser's font configuration: only on Linux once the setup ran, written for the switch, atomic and owner-only", () => {
   const dir = scratch("fontconf");
   const record = join(dir, "fonts", "setup.json"), file = join(dir, "fonts.conf"), fontsDir = join(dir, "fonts");
-  assert.equal(fontStandInsOf({}), false, "off by default");
-  assert.equal(fontStandInsOf({ pairbrowse: { fontStandIns: "yes" } }), false);
-  assert.equal(fontStandInsOf({ pairbrowse: { fontStandIns: true } }), true);
+  assert.equal(fontStandInsOf({}), true, "on by default");
+  assert.equal(fontStandInsOf({ pairbrowse: { fontStandIns: "no" } }), true, "a value that isn't false keeps the default");
+  assert.equal(fontStandInsOf({ pairbrowse: { fontStandIns: false } }), false);
   assert.equal(browserFontEnv({}, { platform: "linux", record, file, fontsDir }), null, "before the setup: the build's own");
   mkdirSync(fontsDir, { recursive: true });
   writeFileSync(record, "{}");
   assert.equal(browserFontEnv({}, { platform: "darwin", record, file, fontsDir }), null, "never off Linux");
   assert.deepEqual(browserFontEnv({}, { platform: "linux", record, file, fontsDir }), { FONTCONFIG_FILE: file });
-  assert.match(readFileSync(file, "utf8"), /Stand-ins: off/);
+  assert.match(readFileSync(file, "utf8"), /Stand-ins: on/, "on by default");
   assert.equal(statSync(file).mode & 0o777, 0o600);
+  browserFontEnv({ pairbrowse: { fontStandIns: false } }, { platform: "linux", record, file, fontsDir });
+  assert.match(readFileSync(file, "utf8"), /Stand-ins: off/);
   browserFontEnv({ pairbrowse: { fontStandIns: true } }, { platform: "linux", record, file, fontsDir });
   const text = readFileSync(file, "utf8");
   assert.match(text, /Stand-ins: on/);
@@ -305,15 +307,15 @@ test("install on Debian: the free packages, then the core fonts only after the t
   assert.deepEqual(record.coreFonts.eula, { acceptedAt: "2026-10-22T10:00:00.000Z", how: "typed", sha256: sha(readFileSync(EULA_FILE, "utf8")), user: "pb" });
   assert.equal(record.distro, "debian");
   assert.equal(statSync(m.deps.record).mode & 0o777, 0o600);
-  assert.match(readFileSync(m.deps.conf, "utf8"), /Stand-ins: off/, "the alias file, off by default");
+  assert.match(readFileSync(m.deps.conf, "utf8"), /Stand-ins: on/, "the alias file, on by default");
   assert.ok(m.calls.some((c) => c[0] === "fc-cache"), "Selawik's folder cached");
   assert.ok(printed.some((l) => /^Windows fonts: present Arial/.test(l)), "the check after");
   // Run again: everything in place, the licence accepted once, nothing asked or installed.
   const again = { ...m.deps, ask: async () => assert.fail("asked again") };
   m.ran.length = 0;
-  assert.equal(await runFontSetup(["install"], { deps: again, config: { pairbrowse: { fontStandIns: true } }, print: () => {} }), 0);
+  assert.equal(await runFontSetup(["install"], { deps: again, config: { pairbrowse: { fontStandIns: false } }, print: () => {} }), 0);
   assert.deepEqual(m.ran, []);
-  assert.match(readFileSync(m.deps.conf, "utf8"), /Stand-ins: on/, "the switch followed");
+  assert.match(readFileSync(m.deps.conf, "utf8"), /Stand-ins: off/, "the switch followed");
 });
 
 test("install: no answer or no yes skips the core fonts and installs the rest; no contrib or multiverse says how; root refused", async () => {

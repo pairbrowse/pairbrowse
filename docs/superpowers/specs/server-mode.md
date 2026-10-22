@@ -3133,8 +3133,12 @@ binding for implementation; where a phase section above says otherwise, this sec
     through the one blocklist reason that refused it (a CPU adapter), the safety level and every
     other reason untouched. The free-fonts route and the alias route below are built by step 52
     (the server setup's font command and the browser's own font configuration, the alias switch
-    `pairbrowse.fontStandIns` off by default); which of the two the measurement keeps is still
-    to measure.
+    `pairbrowse.fontStandIns`). Decided by the fourth measurement (2026-10-22, the native repo's
+    plans): with the setup's free set on a GPU-less server under the Windows identity, the alias
+    route found 22 of the 70 probed fonts (Segoe UI, Calibri, Cambria among them) against 14 with
+    the free fonts alone, and every check's verdict read the same (BrowserScan 90, Pixelscan,
+    CreepJS 25% and its font load, FPJS, BotD, rebrowser, reCAPTCHA 0.9; the canvas hash
+    unchanged): no new contradiction measured, so `pairbrowse.fontStandIns` is on by default.
     Font checks, a second legal route (to measure): open, metric-compatible fonts installed under
     fontconfig aliases for the Windows-only names, so width-based font detection finds a font of the
     right size where the Windows font would be: Selawik (Microsoft's own OFL 1.1 stand-in for Segoe UI,

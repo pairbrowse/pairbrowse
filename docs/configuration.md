@@ -474,7 +474,7 @@ user's file, readable by others), the section says why and refuses a username or
   one everywhere. Each typing or pointer result says which pace it took ("Pace: fast.",
   "Pace: everyday (sign-in form).", with "moves stayed fast" when the moves couldn't change pace in
   time). A browser profile can't set it (a helper-wide setting). `fontStandIns` (true or false,
-  default `false` until the ordinary-browser measurement decides; Linux and the native build only
+  default `true`, as the ordinary-browser measurement settled; Linux and the native build only
 (the open build reads the computer's own font configuration), and only once the
   font setup of [Running PairBrowse on a server](server.md#fonts) has run, which gives the browser
   PairBrowse's own font configuration, `~/.pairbrowse/fonts.conf`, written again at each start):

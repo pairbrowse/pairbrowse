@@ -122,8 +122,8 @@ export const CONFIG_SCHEMA = {
       // pixels get no noise, whatever this says.
       graphicsNoise: { type: "boolean" },
       // The open stand-ins under the Windows font names in the browser's font configuration on
-      // Linux, once the server setup has run (native/fontconf.mjs, spec step 52): default false
-      // until the ordinary-browser measurement decides.
+      // Linux, once the server setup has run (native/fontconf.mjs, spec step 52): default true, as
+      // the ordinary-browser measurement settled.
       fontStandIns: { type: "boolean" },
       ...Object.fromEntries(PAIRBROWSE_ENGINE_KEYS.map((k) => [k, {}])),
     },

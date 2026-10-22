@@ -106,15 +106,15 @@ On Debian and Ubuntu it installs:
 4. **The browser's font configuration** (`~/.pairbrowse/fonts.conf`, written again at each browser
    start): the browser then reads this computer's fonts (everything above) rather than only the
    fonts the Linux build carries. Whether the Windows names point at the stand-ins is
-   `pairbrowse.fontStandIns` in `config.json` (see [Configuration](configuration.md)), `false` by
-   default until the measurement of the ordinary-browser work decides: off, the switched stand-ins
-   (Selawik, Carlito, Caladea) are kept from the browser altogether, so a width check finds no
+   `pairbrowse.fontStandIns` in `config.json` (see [Configuration](configuration.md)), `true` by
+   default (the ordinary-browser measurement found the Windows names with it and lost no check's
+   verdict): on, those names find their stand-in; off, the switched stand-ins (Selawik, Carlito,
+   Caladea) are kept from the browser altogether, so a width check finds no
    Segoe UI, Calibri or Cambria (Liberation stays: fontconfig's own aliases use it for Arial, Times
-   New Roman and Courier New, as on any Linux desktop); on, those names find their stand-in. Only
-   the browser's font matching changes, nothing else on the computer. Until the setup has run, the
-   browser keeps the Linux build's own font configuration, which reads only the fonts the build
-   carries (its own clones always stand in there, and none of the computer's fonts, its colour
-   emoji among them, reach it).
+   New Roman and Courier New, as on any Linux desktop). Only the browser's font matching changes,
+   nothing else on the computer. Until the setup has run, the browser keeps the Linux build's own
+   font configuration, which reads only the fonts the build carries (its own clones always stand
+   in there, and none of the computer's fonts, its colour emoji among them, reach it).
 
 On Fedora (`sudo dnf install fontconfig google-noto-color-emoji-fonts google-noto-sans-cjk-fonts
 google-carlito-fonts google-crosextra-caladea-fonts liberation-sans-fonts liberation-serif-fonts

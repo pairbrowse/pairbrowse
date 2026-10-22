@@ -6,11 +6,11 @@
 // bundled clones always stand in for the Windows names. Once the server setup has run
 // (native/fontsetup.mjs; its record is paths.fontsSetup), every Linux launch of the native build
 // gets this file instead (native-engine.mjs launchNative, the caller's env winning over the
-// pack's): the computer's own configuration and fonts, and, only while pairbrowse.fontStandIns is
-// on, the open stand-ins (winfonts.mjs STAND_INS) under the Windows names: Selawik from the
-// setup's own folder (Microsoft's release, pinned), Carlito and Caladea from the distribution's
-// packages. While it is off (the default until the measurement decides) the switched stand-ins
-// are kept from the browser altogether, so a width check finds no Windows name there: what is
+// pack's): the computer's own configuration and fonts, and, while pairbrowse.fontStandIns is on
+// (the default, as the fourth ordinary-browser measurement settled: the Windows names found, no
+// check's verdict lost), the open stand-ins (winfonts.mjs STAND_INS) under the Windows names:
+// Selawik from the setup's own folder (Microsoft's release, pinned), Carlito and Caladea from the
+// distribution's packages. Set off, the switched stand-ins are kept from the browser altogether, so a width check finds no Windows name there: what is
 // left is the free fonts alone. The fonts keep their own names and files; only fontconfig's
 // matching changes, and only for the browser. Before the setup has run, the build's own
 // configuration stays as it is. Node's standard library only.
@@ -25,8 +25,8 @@ export const SYSTEM_CONF = "/etc/fonts/fonts.conf";
 // The folder in the setup's font folder that holds Selawik (fontsetup.mjs SELAWIK).
 export const SELAWIK_DIR = "selawik";
 
-// config.json's pairbrowse.fontStandIns: true only when set to true (default false).
-export const fontStandInsOf = (config) => config?.pairbrowse?.fontStandIns === true;
+// config.json's pairbrowse.fontStandIns: false only when set to false (default true).
+export const fontStandInsOf = (config) => config?.pairbrowse?.fontStandIns !== false;
 
 const xml = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const family = (name) => `<family>${xml(name)}</family>`;

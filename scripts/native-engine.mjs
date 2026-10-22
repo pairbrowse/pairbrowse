@@ -149,6 +149,11 @@ export const proxyAuthFile = (manifest) => Number.isInteger(manifest?.proxyAuthF
 // engine denies non-proxied UDP when no switch says otherwise): every route, the local address
 // behind an mDNS name, the public address through STUN.
 export const WEBRTC_EVERYDAY = "--webrtc-ip-handling-policy=default";
+// Where a direct session may take that everyday policy: the builds measured to hide local addresses
+// behind mDNS names under it. The Linux build does; the macOS build showed the private address of a
+// VPN interface in plain text (ordinary-browser measurement, fourth pass), so it keeps the deny
+// policy until its engine is fixed.
+export const everydayWebrtc = (platform = process.platform) => platform === "linux";
 export const webrtcExit = (manifest) => Number.isInteger(manifest?.webrtcExit) && manifest.webrtcExit >= 1;
 export const adBlocker = (manifest) => Number.isInteger(manifest?.adBlocker) && manifest.adBlocker >= 1;
 // The build manifest's `adBlockerCrx` ({ path, version }): the ad blocker shipped with the build, a
@@ -630,7 +635,7 @@ export async function launchNative(chromium, config, directory, options, pack, l
     ...(disablePrivacySandbox ? pack.privacySandboxArgs() : []),
     ...pack.portableArgs(portableProfile, encryptionKey),
     ...pack.extensionArgs(extensionPaths), ...proxyArgs,
-    ...(merged.proxy ? pack.webrtcDefaultDenyArgs(givenArgs, fingerprint.webrtcIp) : [WEBRTC_EVERYDAY]),
+    ...(merged.proxy || !everydayWebrtc() ? pack.webrtcDefaultDenyArgs(givenArgs, fingerprint.webrtcIp) : [WEBRTC_EVERYDAY]),
     ...pack.gpuBlocklistArgs(merged.headless === false, process.platform, givenArgs),
     // The identity's own engine switches (native/graphics.mjs: the GPU pool entry, WebGPU's
     // software adapter by name with the service on), the helper's, never from browserArgs.

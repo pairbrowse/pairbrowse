@@ -281,3 +281,89 @@ button:disabled { opacity: 0.5; cursor: default; }
 .net-result[data-kind="error"] .net-verdict, .net-result .net-warn { color: var(--bad-ink); }
 .net-choices { margin-top: var(--sp-3); display: grid; gap: var(--sp-2); }
 @media (max-width: 559px) { .net-list .row { grid-template-columns: minmax(0, 1fr) auto; } .net-list .row .sites { grid-column: 1 / -1; grid-row: 2; } }
+
+/* Handoff (settings/handoff.js): the Away switch on top, one card per app (side by side once the
+   item is wide enough, stacked below that), what goes to your phone, answering from chat, and the
+   privacy line. Every color is a token; the cards sit on --panel in both schemes. */
+.ho-top { margin-top: 0; }
+.ho-away-label { font-weight: var(--fw-name); }
+.ho-missing { margin: var(--sp-2) 0 0; font-size: var(--fs-2); color: var(--ink-2); }
+.ho-none { margin: var(--sp-3) 0 0; }
+.ho-apps-wrap { container-type: inline-size; }
+.ho-apps { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: var(--sp-3); margin-top: var(--sp-3); }
+.ho-apps:empty { display: none; }
+@container (min-width: 560px) { .ho-apps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.ho-card { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; padding: var(--sp-4); border: 1px solid var(--edge); border-radius: var(--r-3); background: var(--panel); transition: border-color var(--t-hover); }
+.ho-card[data-state="pending"] { border-color: color-mix(in srgb, var(--accent) 55%, var(--edge)); }
+.ho-head { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: var(--sp-3); }
+.ho-mark { display: grid; place-items: center; width: 36px; height: 36px; border-radius: var(--r-2); background: var(--elevated); color: var(--ink); }
+.ho-mark svg { width: 20px; height: 20px; }
+.ho-title { display: grid; gap: 2px; min-width: 0; }
+.ho-name { margin: 0; font-size: var(--fs-4); font-weight: var(--fw-name); color: var(--ink); }
+.ho-sub { overflow: hidden; font-size: var(--fs-2); color: var(--ink-2); text-overflow: ellipsis; white-space: nowrap; }
+/* The state pill: resting (Not linked) quiet, waiting in the accent, linked in the ok color. */
+.ho-pill { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 var(--sp-2); border: 1px solid var(--edge); border-radius: 999px; color: var(--ink-2); font-size: var(--fs-1); font-weight: var(--fw-name); white-space: nowrap; } /* native: 6 px between dot and word */
+.ho-pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: 0.7; } /* native: a 6 px dot */
+.ho-pill[data-state="pending"] { border-color: transparent; background: var(--accent-soft); color: var(--accent-ink); }
+.ho-pill[data-state="linked"] { border-color: transparent; background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+.ho-pill[data-state="linked"]::before, .ho-pill[data-state="pending"]::before { opacity: 1; }
+.ho-body { display: flex; flex: 1; flex-direction: column; gap: var(--sp-3); min-width: 0; }
+/* Not linked: three numbered steps, then the token and Link. */
+.ho-steps { display: grid; gap: var(--sp-2); margin: 0; padding: 0; list-style: none; counter-reset: ho-step; }
+.ho-steps li { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: var(--sp-2); align-items: start; font-size: var(--fs-2); line-height: 1.45; color: var(--ink-2); counter-increment: ho-step; }
+.ho-steps li::before { content: counter(ho-step); display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--elevated); color: var(--ink); font-size: var(--fs-1); font-weight: var(--fw-name); font-variant-numeric: tabular-nums; }
+.ho-form { display: grid; gap: var(--sp-1); margin-top: auto; }
+.ho-field { display: flex; gap: var(--sp-2); }
+.ho-field .field { flex: 1; }
+.ho-field .primary { flex: none; min-width: 72px; }
+/* Waiting: the code, large, in its chip with Copy; where it goes; the live line and its countdown. */
+.ho-code { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-4); border: 1px dashed color-mix(in srgb, var(--accent) 60%, var(--edge)); border-radius: var(--r-2); background: var(--accent-soft); }
+.ho-code-text { overflow: hidden; color: var(--ink); font: 600 var(--fs-6)/1.2 var(--mono); letter-spacing: 0.12em; text-overflow: ellipsis; white-space: nowrap; user-select: all; }
+.ho-copy { flex: none; border: 1px solid var(--edge-btn); background: var(--btn); color: var(--ink); }
+.ho-line { margin: 0; font-size: var(--fs-2); color: var(--ink); }
+.ho-wait { display: flex; align-items: center; gap: var(--sp-2); margin: 0; font-size: var(--fs-2); color: var(--ink-2); }
+.ho-left { margin-left: auto; color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ho-wait-text { min-width: 0; }
+.ho-dot { position: relative; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.ho-dot::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--accent); animation: ho-pulse 1800ms var(--ease-out) 3; } /* a few pulses as the code shows, then still: no endless loop but the Live dot; the countdown keeps time */
+@keyframes ho-pulse { from { opacity: 0.6; scale: 1; } to { opacity: 0; scale: 2.6; } }
+.ho-card[data-expired] .ho-dot { background: var(--muted); }
+.ho-card[data-expired] .ho-dot::after { animation: none; opacity: 0; }
+.ho-card[data-expired] .ho-code { opacity: 0.55; }
+.ho-card[data-expired] .ho-code-text { text-decoration: line-through; text-decoration-thickness: 1px; }
+.ho-acts { margin-top: auto; padding-top: var(--sp-1); align-items: center; }
+/* Linked: who and how, Send a test, Unlink asked in place. */
+.ho-linked { display: flex; align-items: flex-start; gap: var(--sp-2); margin: 0; font-size: var(--fs-3); color: var(--ink-2); overflow-wrap: anywhere; }
+.ho-linked svg { flex: none; width: 16px; height: 16px; margin-top: 2px; color: var(--ok); }
+.ho-linked b { color: var(--ink); font-weight: var(--fw-name); }
+.ho-acts .ask { font-size: var(--fs-2); color: var(--ink); font-weight: var(--fw-name); margin-right: var(--sp-1); }
+.mini.bad.solid { background: var(--bad); color: #fff; }
+.mini.bad.solid:hover { background: color-mix(in srgb, var(--bad) 88%, #000); color: #fff; }
+.ho-err { margin: 0; padding: var(--sp-2) var(--sp-3); border-radius: var(--r-1); background: color-mix(in srgb, var(--bad) 12%, transparent); color: var(--bad-ink); font-size: var(--fs-2); overflow-wrap: anywhere; }
+.ho-msg { margin: 0; }
+/* What goes: rows with a check, a name and a line each, divided by hairlines. */
+.ho-opts { display: grid; margin: 0; padding: 0; list-style: none; }
+.ho-opts li { border-top: 1px solid var(--edge); }
+.ho-opt { position: relative; display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: var(--sp-3); align-items: start; padding: var(--sp-3) var(--sp-2); margin: 0 calc(-1 * var(--sp-2)); border-radius: var(--r-2); cursor: pointer; transition: background var(--t-hover); }
+.ho-opt:hover { background: var(--hover); }
+.ho-opt span { display: grid; gap: 2px; min-width: 0; }
+.ho-opt b { font-weight: 500; color: var(--ink); }
+.ho-opt small { font-size: var(--fs-2); color: var(--ink-2); }
+.ho-check { appearance: none; position: relative; display: grid; place-items: center; width: 16px; height: 16px; margin: 2px 0 0; border: 1.5px solid var(--edge-input); border-radius: 4px; background: var(--bg); cursor: pointer; transition: background var(--t-hover), border-color var(--t-hover); }
+.ho-check::after { content: ""; width: 4px; height: 8px; margin-top: -2px; border: solid #fff; border-width: 0 2px 2px 0; rotate: 45deg; opacity: 0; scale: 0.6; transition: opacity var(--t-hover), scale var(--t-hover); }
+.ho-check:checked { border-color: var(--accent-fill); background: var(--accent-fill); }
+.ho-check:checked::after { opacity: 1; scale: 1; }
+.ho-check:disabled { cursor: default; opacity: 0.5; }
+.ho-opt:has(.ho-check:disabled) { cursor: default; }
+.ho-opt:has(.ho-check:disabled):hover { background: transparent; }
+.ho-check:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ho-answer { margin-top: 0; padding-top: var(--sp-3); border-top: 1px solid var(--edge); }
+/* Privacy: one quiet line with a lock. */
+.ho-privacy { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: var(--sp-3); align-items: start; }
+.ho-privacy svg { width: 16px; height: 16px; margin-top: 2px; color: var(--ink-2); }
+.ho-privacy p { margin: 0; font-size: var(--fs-2); color: var(--ink-2); }
+@media (prefers-reduced-motion: reduce) { .ho-dot::after { animation: none; opacity: 0; } }
+@media (prefers-color-scheme: light) {
+  :root[data-embedded] .ho-check:not(:checked) { background: #FFFFFF; }
+  :root[data-embedded] .ho-card { background: var(--bg); }
+}

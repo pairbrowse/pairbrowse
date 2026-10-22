@@ -8,14 +8,17 @@
 // banners, open tabs, your name, Away), profile.json / profile (passwords, remembered details), the
 // joinhost event / joinhost (join addresses), invites.json / invite { op: "revoke" } (invites out
 // now), network.json / network (proxies, the default, each session's choice: ui/network.js; shown
-// only when the helper answers), diagnostics.json and diagnostics/report, and report (Report a problem; shown only while the
+// only when the helper answers), handoff.json / handoff (Telegram or Discord linked to your phone,
+// what goes there: settings/handoff.js; shown only when the helper answers), diagnostics.json and diagnostics/report, and report (Report a problem; shown only while the
 // helper says it relays reports). Saved sessions link to the sessions page, their one home. The
-// config, invites and network events keep them current. This is a tab page: in the browser only window.pairbrowse.session exists here, so the
-// page never calls another interface. Nothing ticks: no timer, no observer (framed, one
+// config, invites, network and handoff events keep them current. This is a tab page: in the browser only window.pairbrowse.session exists here, so the
+// page never calls another interface. Nothing ticks but a pending Handoff code's countdown (once a
+// second while one waits and the page shows): no other timer, no observer (framed, one
 // ResizeObserver while it shows); one shared event stream.
 import { $, el, avatar, hostPanel, profilePanel, helperConnection, reportPayload, sendReport, NO_AGENT, noAgentLine, awaySwitch, networkPanel } from "../common.js";
 import { hostKind, followHelper, postReply, UNREACHABLE } from "../helper.js";
 import { servedByBrowser, settingsHomeFor, viewOf, ENGINE_SETTINGS_ORIGIN } from "../urls.js";
+import { handoffPanel } from "./handoff.js";
 
 const NATIVE = hostKind() === "native";
 // ---- at home in the engine's settings (580) -----------------------------------------------------
@@ -29,11 +32,13 @@ const NATIVE = hostKind() === "native";
 const FRAMED = window.top !== window;
 const EMBEDDED = FRAMED && (NATIVE || servedByBrowser());
 // Which of the engine settings' pages frames it (?view=, 580): "proxies" (its Proxies page) shows
-// the Network section alone, "pairbrowse" (its PairBrowse section) everything else; none (an older
-// build, the extension's options page, a tab of its own) shows every section.
+// the Network section alone, "handoff" (its Handoff page) the Handoff section alone, "pairbrowse"
+// (its PairBrowse section) everything else; none (an older build, the extension's options page, a
+// tab of its own) shows every section.
 const VIEW = EMBEDDED ? viewOf(location.search) : "";
+const ALONE = { proxies: "network", handoff: "handoff" };
 // A section this view leaves out: hidden for good, whatever the helper or the search says.
-const outOfView = (sec) => (VIEW === "proxies" ? sec.id !== "network" : VIEW === "pairbrowse" && sec.id === "network");
+const outOfView = (sec) => (ALONE[VIEW] ? sec.id !== ALONE[VIEW] : VIEW === "pairbrowse" && (sec.id === "network" || sec.id === "handoff"));
 if (EMBEDDED) {
   document.documentElement.dataset.embedded = "";
   if (VIEW) document.documentElement.dataset.view = VIEW;
@@ -77,6 +82,14 @@ const away = awaySwitch($("away-on"), $("away-state"), () => base);
 // Network (ui/network.js): its section and nav link show once the helper answers network.json.
 // Out of this view (the PairBrowse section, 580), both stay hidden.
 const network = networkPanel($("network-panel"), () => base, { shown: (on) => { const show = on && !outOfView($("network")); $("network").hidden = !show; $("nav-network").hidden = !show; applySearch(); } });
+// Handoff (settings/handoff.js): its section and nav link show once the helper answers handoff.json;
+// the Handoff page (view=handoff) shows it from the start, and says so when the helper has none.
+const showHandoff = (on) => { const show = on && !outOfView($("handoff")); $("handoff").hidden = !show; $("nav-handoff").hidden = !show; applySearch(); };
+const handoff = handoffPanel({ $, base: () => base, live: () => conn === "live",
+  shown: (on) => { $("ho-missing").hidden = true; showHandoff(on); },
+  missing: () => { $("ho-missing").hidden = VIEW !== "handoff"; $("ho-none").hidden = true; for (const id of ["handoff-away", "handoff-send", "handoff-privacy"]) $(id).hidden = VIEW === "handoff"; showHandoff(VIEW === "handoff"); } });
+// (applySearch is not defined yet here: the section and its link only.)
+if (VIEW === "handoff") { $("handoff").hidden = false; $("nav-handoff").hidden = false; }
 
 // A select's menu (settings.css) opens under its field, or above it (select.up) when the page has
 // too little room below for it: a row per option (30 px) and MENU_EXTRA, up to its 18rem.
@@ -112,6 +125,7 @@ function setConn(state, text) {
   // Nothing writes while the helper is away; what was read stays on screen.
   for (const f of document.querySelectorAll("main fieldset, main form")) f.toggleAttribute("disabled", state !== "live");
   for (const b of document.querySelectorAll("#tl-on, #ask-on, #pics-on, #dl-reset, #diag-copy, #report-open, .needs-live")) b.disabled = state !== "live";
+  handoff?.setLive();
 }
 
 
@@ -156,6 +170,7 @@ function drawConfig(c) {
   if (document.activeElement !== $("dl-path")) $("dl-path").value = dl || "";
   $("pics-on").setAttribute("aria-checked", String(config.pictures !== false));
   away.draw(config.away);
+  handoff.drawAway(config.away);
   for (const r of document.querySelectorAll("input[name=cookies]")) r.checked = r.value === (config.cookies === "reject" ? "reject" : "accept");
   if (document.activeElement !== $("max-tabs")) $("max-tabs").value = String(config.maxTabs ?? 20);
   $("tabs-save").hidden = true;
@@ -653,7 +668,7 @@ const connect = helperConnection({
   },
   onOpen: async () => {
     await loadConfig();
-    loadInvites(); profile.load(); loadTimelineCount(); loadDiag(); network.load();
+    loadInvites(); profile.load(); loadTimelineCount(); loadDiag(); network.load(); handoff.load();
     if (location.hash === "#report") openReport();
   },
 }, (stream, url) => {
@@ -665,6 +680,7 @@ const connect = helperConnection({
   on("timeline", () => loadTimelineCount());
   on("invites", drawInvites);
   on("network", network.draw);
+  on("handoff", handoff.draw);
 });
 
 setConn("connecting", "Connecting to PairBrowse…");

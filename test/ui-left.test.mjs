@@ -128,7 +128,7 @@ scenario("left: open, rail, hidden", { viewport: OPEN }, async (ctx) => {
 
 scenario("left: nav rows, active state, History and Browser", { viewport: OPEN }, async (ctx) => {
   const { until, inPage } = ctx;
-  assert.deepEqual(await inPage(() => [...document.querySelectorAll(".nav .row")].map((b) => b.id)), ["nav-browser", "nav-sessions", "nav-history", "nav-activity", "nav-proxies"]);
+  assert.deepEqual(await inPage(() => [...document.querySelectorAll(".nav .row")].map((b) => b.id)), ["nav-browser", "nav-sessions", "nav-history", "nav-activity", "nav-proxies", "nav-handoff"]);
   // Tools is the agent panel's tab: no row here opens the other dock (DESIGN.md Part I).
   assert.equal(await inPage(() => document.getElementById("nav-tools")), null);
   assert.equal(await inPage(() => document.getElementById("nav-browser").getAttribute("aria-current")), "page");
@@ -338,6 +338,45 @@ scenario("left: Proxies served without the browser's API", { viewport: OPEN, nat
   await clean(ctx);
 });
 
+// Handoff opens the engine settings' Handoff page (pairbrowse://settings/handoff) the same way:
+// found or opened in this window, current under either spelling, from the rail too.
+scenario("left: Handoff opens the settings' Handoff page", { viewport: OPEN }, async (ctx) => {
+  const { until, inPage } = ctx;
+  assert.equal(await inPage(() => document.querySelector("#nav-handoff .ic use").getAttribute("href")), "#i-handoff");
+  assert.equal(await inPage(() => document.querySelector("#nav-handoff .label").textContent), "Handoff");
+  await ctx.page.click("#nav-handoff");
+  await until("a handoff tab", () => window.__pairbrowse.calls.some((c) => c.iface === "tabs" && c.method === "create"));
+  assert.deepEqual((await calls(ctx, "tabs", "create")).map((c) => c.args), [["pairbrowse://settings/handoff", true, 1]]);
+  await until("Handoff current", () => document.getElementById("nav-handoff").getAttribute("aria-current") === "page" && !document.getElementById("nav-browser").hasAttribute("aria-current") && !document.getElementById("nav-proxies").hasAttribute("aria-current"));
+  const id = await inPage(() => window.__pairbrowse.fixture.tabs.find((t) => t.url === "pairbrowse://settings/handoff").id);
+  await ctx.shim.change({ id, url: "chrome://settings/handoff" });
+  await ctx.page.waitForTimeout(150);
+  assert.equal(await inPage(() => document.getElementById("nav-handoff").getAttribute("aria-current")), "page");
+  await ctx.page.click("#nav-browser");
+  await until("Browser current", () => document.getElementById("nav-browser").getAttribute("aria-current") === "page" && !document.getElementById("nav-handoff").hasAttribute("aria-current"));
+  assert.deepEqual((await calls(ctx, "tabs", "activate")).at(-1).args, [11], "the last web tab, not the handoff page");
+  await ctx.page.click("#nav-handoff");
+  await until("Handoff again", () => document.getElementById("nav-handoff").getAttribute("aria-current") === "page");
+  assert.deepEqual((await calls(ctx, "tabs", "activate")).at(-1).args, [id]);
+  assert.equal((await calls(ctx, "tabs", "create")).length, 1, "no second handoff tab");
+  await clean(ctx);
+});
+scenario("left: Handoff from the rail, and off without the browser's API", { viewport: { width: 44, height: 936 }, shim: { layout: { left: 1 } } }, async (ctx) => {
+  const { until, inPage } = ctx;
+  await until("the rail", () => document.body.dataset.dock === "rail");
+  assert.equal(await inPage(() => document.getElementById("nav-handoff").title), "Handoff");
+  await ctx.page.click("#nav-handoff");
+  await until("a handoff tab", () => window.__pairbrowse.calls.some((c) => c.iface === "tabs" && c.method === "create"));
+  assert.deepEqual((await calls(ctx, "tabs", "create")).map((c) => c.args), [["pairbrowse://settings/handoff", true, 1]]);
+  assert.equal(await inPage(() => document.body.dataset.dock), "rail");
+  await clean(ctx);
+});
+scenario("left: Handoff served without the browser's API", { viewport: OPEN, native: false }, async (ctx) => {
+  const { inPage } = ctx;
+  assert.deepEqual(await inPage(() => [document.getElementById("nav-handoff").disabled, document.getElementById("nav-handoff").title]), [true, "Handoff · opens in the PairBrowse browser"]);
+  await clean(ctx);
+});
+
 // Served without the browser's API: the activity page's file in a new tab.
 scenario("left: Activity served without the browser's API", { viewport: OPEN, native: false }, async (ctx) => {
   const { page, inPage } = ctx;
@@ -421,10 +460,10 @@ scenario("left: keyboard", { viewport: OPEN, shim: { layout: { right: 1 } } }, a
   await inPage(() => { document.activeElement?.blur?.(); document.body.tabIndex = -1; document.body.focus(); document.body.removeAttribute("tabindex"); });
   const order = [];
   await until("the collapse button", () => document.getElementById("dock-collapse").checkVisibility());
-  for (let i = 0; i < 8; i++) { await ctx.page.keyboard.press("Tab"); order.push(await inPage(() => document.activeElement.id)); }
+  for (let i = 0; i < 9; i++) { await ctx.page.keyboard.press("Tab"); order.push(await inPage(() => document.activeElement.id)); }
   // Share is the strip's (DESIGN.md Part G) and Tools the agent panel's tab (Part I): neither is a
   // stop; the collapse chevron sits at the foot after the gear (2026-10-14).
-  assert.deepEqual(order, ["nav-browser", "nav-sessions", "nav-history", "nav-activity", "nav-proxies", "add-agent", "settings", "dock-collapse"]);
+  assert.deepEqual(order, ["nav-browser", "nav-sessions", "nav-history", "nav-activity", "nav-proxies", "nav-handoff", "add-agent", "settings", "dock-collapse"]);
   await ctx.page.focus("#nav-sessions");
   await ctx.page.keyboard.press("Enter");
   // In the browser the Sessions row opens the sessions page as a tab (a page of its own reaches
@@ -581,7 +620,7 @@ scenario("left: rail at 44 px", { viewport: { width: 44, height: 936 }, shim: { 
   assert.equal(seen.gear, true);
   assert.deepEqual(seen.avatars, [[true, true, 28], [true, true, 28], [true, true, 28]]);
   assert.deepEqual(seen.titles, ["Claude · Working · 1 tab", "Alice · Codex · Waiting for you", "You · Online"]);
-  assert.deepEqual(seen.rows, ["Browser · 3 open tabs", "Sessions · work", "History", "Activity", "Proxies"]);
+  assert.deepEqual(seen.rows, ["Browser · 3 open tabs", "Sessions · work", "History", "Activity", "Proxies", "Handoff"]);
   await clean(ctx);
 });
 

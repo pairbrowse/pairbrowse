@@ -6,6 +6,7 @@ import "./helpers/home.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { pageTest } from "./helpers/ui-page.mjs";
+import { SHARED_STREAM_EVENTS } from "../ui/events.js";
 
 const FX = JSON.parse(readFileSync(new URL("./fixtures/ui-settings.json", import.meta.url), "utf8"));
 const fixtures = FX.helper;
@@ -39,7 +40,7 @@ both({ fixtures, viewport: VIEW }, async ({ helper, until, inPage, errors }) => 
     appearance: !!document.getElementById("appearance"),
     report: document.getElementById("report-open").hidden,
   }));
-  assert.deepEqual(top.ids, ["general", "agents", "sharing", "network", "data", "about"]);
+  assert.deepEqual(top.ids, ["general", "agents", "handoff", "sharing", "network", "data", "about"]);
   assert.deepEqual(top.network, [true, true], "a helper without network.json: no Network section");
   assert.deepEqual(top.nav, [["General", "#general"], ["Agents and approvals", "#agents"], ["Sharing", "#sharing"], ["Your data", "#data"], ["About and diagnostics", "#about"], ["Browser settings", "chrome://settings"]]);
   const ext = top.host === "open";
@@ -833,5 +834,118 @@ pageTest("settings", { fixtures: { ...fixtures, network: NET, networkTest: TEST 
   await until("the section", () => !document.getElementById("network").hidden);
   assert.equal(await inPage(() => document.getElementById("general").hidden), false);
   assert.equal(await inPage(() => document.documentElement.dataset.view), undefined);
+  assert.deepEqual(errors, []);
+});
+
+// 15. Handoff (the Handoff spec): GET handoff.json draws Telegram and Discord with their states;
+// Link posts the token once (the field empties), the code shows with its countdown, Cancel, Send a
+// test and Unlink (asked in place) post their ops; each answer is said in that app's card; what
+// goes and answering from chat post { op: "set" } with only what changed; the switch on top is
+// Away (POST config { away }). A helper without the route: no section, no nav link; the Handoff
+// page (view=handoff) shows the section alone and says the helper has none.
+const NONE = { state: "none", bot: "", chat: "" };
+const HO = { on: false, server: false, ready: false, send: { approvals: true, checks: true, submits: true, runs: false }, answer: false, telegram: NONE, discord: NONE };
+const TG_LINKED = { state: "linked", bot: "@pb_handoff_bot", chat: "Dion" };
+const TOKEN = "123456789:AAFabcdefghijklmnopqrstuvwxyz012";
+const card = (app) => { const c = document.getElementById(`ho-${app}`); return { state: c.dataset.state, pill: c.querySelector(".ho-pill").textContent, msg: c.querySelector(".ho-msg").textContent, kind: c.querySelector(".ho-msg").dataset.kind || "" }; };
+both({ fixtures: { ...fixtures, handoff: HO, config: { ...fixtures.config, away: { on: false, server: false, ready: false } } }, viewport: VIEW }, async ({ page, helper, until, inPage, errors }) => {
+  await until("the section", () => !document.getElementById("handoff").hidden && !document.getElementById("nav-handoff").hidden && document.querySelectorAll(".ho-card").length === 2);
+  assert.deepEqual(await inPage(card, "telegram"), { state: "none", pill: "Not linked", msg: "", kind: "" });
+  assert.deepEqual(await inPage(() => [document.getElementById("ho-away").disabled, document.getElementById("ho-away-state").textContent]), [true, "Link Telegram or Discord below first."]);
+  assert.deepEqual(await inPage(() => [...document.querySelectorAll("#ho-send .ho-check")].map((b) => [b.dataset.send, b.checked])), [["approvals", true], ["checks", true], ["submits", true], ["runs", false]]);
+  assert.deepEqual(await inPage(() => [document.getElementById("ho-telegram-token").type, document.getElementById("ho-telegram-token").autocomplete, document.getElementById("ho-telegram-token").spellcheck]), ["password", "off", false]);
+  // Link without a token: said in the card, nothing posted.
+  await page.click("#ho-telegram-link");
+  await until("asked for the token", () => document.querySelector("#ho-telegram .ho-msg").textContent === "Paste the Telegram bot token first.");
+  assert.equal(helper.posts.filter((p) => p.route === "handoff").length, 0);
+  // A token Discord refuses: the helper's words in the Discord card.
+  await page.fill("#ho-discord-token", "bad-token");
+  await page.click("#ho-discord-link");
+  await posted(helper, page, "the refused link", "handoff", { op: "link", app: "discord", token: "bad-token" });
+  await until("the refusal", () => document.querySelector("#ho-discord .ho-msg").dataset.kind === "error" && /didn't accept that token/.test(document.querySelector("#ho-discord .ho-msg").textContent));
+  // Link: posted once, the field empties, the code and its countdown show.
+  await page.fill("#ho-telegram-token", TOKEN);
+  await page.click("#ho-telegram-link");
+  await posted(helper, page, "the link", "handoff", { op: "link", app: "telegram", token: TOKEN });
+  await until("pending", () => document.getElementById("ho-telegram").dataset.state === "pending");
+  const pending = await inPage(() => ({ code: document.getElementById("ho-telegram-code").textContent, pill: document.querySelector("#ho-telegram .ho-pill").textContent,
+    line: document.querySelector("#ho-telegram .ho-line").textContent, left: document.getElementById("ho-telegram-left").textContent, msg: document.querySelector("#ho-telegram .ho-msg").textContent }));
+  assert.equal(pending.code, "PB-K7Q2XM");
+  assert.equal(pending.pill, "Waiting for your message");
+  assert.equal(pending.line, "Send this code to @pb_handoff_bot in Telegram.");
+  assert.match(pending.left, /^(10:00|9:5\d) left$/);
+  assert.equal(pending.msg, "Send PB-K7Q2XM to @pb_handoff_bot within 10 minutes.");
+  assert.doesNotMatch(await inPage(() => document.body.innerText), /AAFabcdefghij/, "the token is never shown");
+  // Cancel.
+  await page.click("#ho-telegram-cancel");
+  await posted(helper, page, "the cancel", "handoff", { op: "cancel", app: "telegram" });
+  await until("none again", () => document.getElementById("ho-telegram").dataset.state === "none" && document.querySelector("#ho-telegram .ho-msg").textContent === "Stopped linking Telegram.");
+  // What goes, and answering from chat: only what changed.
+  await page.click("#ho-send .ho-check[data-send=runs]");
+  await posted(helper, page, "runs", "handoff", { op: "set", send: { runs: true } });
+  await until("saved", () => document.getElementById("ho-set-msg").textContent === "Saved.");
+  await page.click("#ho-answer");
+  await posted(helper, page, "answer", "handoff", { op: "set", answer: true });
+  await until("answer on", () => document.getElementById("ho-answer").getAttribute("aria-checked") === "true" && document.getElementById("ho-set-msg").textContent === "Saved.");
+  assert.equal(helper.fixtures.handoff.answer, true);
+  assert.deepEqual(errors, []);
+});
+pageTest("settings", { fixtures: { ...fixtures, handoff: { ...HO, on: true, ready: true, telegram: TG_LINKED, discord: { ...NONE, error: "This bot has a webhook set." } }, config: { ...fixtures.config, away: { on: true, server: false, ready: true } } }, viewport: VIEW }, async ({ page, helper, until, inPage, errors }) => {
+  await until("linked", () => document.getElementById("ho-telegram")?.dataset.state === "linked");
+  assert.equal(await inPage(() => document.querySelector("#ho-telegram .ho-linked").textContent), "Linked to Dion via @pb_handoff_bot");
+  assert.deepEqual(await inPage(() => [document.getElementById("ho-discord-err").hidden, document.getElementById("ho-discord-err").textContent]), [false, "This bot has a webhook set."]);
+  assert.deepEqual(await inPage(() => [document.getElementById("ho-away").getAttribute("aria-checked"), document.getElementById("ho-away").disabled]), ["true", false]);
+  await page.click("#ho-telegram-test");
+  await posted(helper, page, "the test", "handoff", { op: "test", app: "telegram" });
+  await until("sent", () => document.querySelector("#ho-telegram .ho-msg").textContent === "Sent. Check Telegram.");
+  // Unlink asks in place; Keep goes back, Unlink posts.
+  await page.click("#ho-telegram-unlink");
+  await until("the question", () => document.querySelector("#ho-telegram .ask")?.textContent === "Unlink Telegram?");
+  await page.keyboard.press("Escape");
+  await until("back", () => !!document.getElementById("ho-telegram-unlink") && document.activeElement?.id === "ho-telegram-unlink");
+  await page.click("#ho-telegram-unlink");
+  await page.click("#ho-telegram-unlink-yes");
+  await posted(helper, page, "the unlink", "handoff", { op: "unlink", app: "telegram" });
+  await until("unlinked", () => document.getElementById("ho-telegram").dataset.state === "none" && document.querySelector("#ho-telegram .ho-msg").textContent === "Unlinked Telegram.");
+  // Nothing linked any more: Send to your phone goes off and can't come back on.
+  await until("away off", () => document.getElementById("ho-away").getAttribute("aria-checked") === "false" && document.getElementById("ho-away").disabled);
+  assert.deepEqual(errors, []);
+});
+// The switch on top is Away: POST config { away }.
+pageTest("settings", { fixtures: { ...fixtures, handoff: { ...HO, on: true, ready: true, telegram: TG_LINKED }, config: { ...fixtures.config, away: { on: true, server: false, ready: true } } }, viewport: VIEW, frame: "view=handoff" }, async ({ page, frame, helper, until, inPage, errors }) => {
+  await until("linked", () => document.getElementById("ho-telegram")?.dataset.state === "linked");
+  const c = await inPage(chromeOf);
+  assert.deepEqual([c.embedded, c.header, c.nav, c.sections], [true, false, false, ["handoff"]]);
+  assert.equal(await inPage(() => document.documentElement.dataset.view), "handoff");
+  await frame.click("#ho-away");
+  await posted(helper, page, "away", "config", { away: false });
+  await until("off", () => document.getElementById("ho-away").getAttribute("aria-checked") === "false" && document.getElementById("ho-away-state").textContent === "Off: steps handed to you stay in this window.");
+  // The helper's handoff event redraws the page (listed in ui/events.js for the pages' stream).
+  if (SHARED_STREAM_EVENTS.includes("handoff")) {
+    helper.push("handoff", { ...helper.fixtures.handoff, discord: { state: "pending", bot: "PairBrowse Handoff", chat: "", code: "PB-ABCDEF", expiresAt: Date.now() + 60_000 } });
+    await until("the event", () => document.getElementById("ho-discord-code")?.textContent === "PB-ABCDEF");
+  }
+  assert.deepEqual(errors, []);
+});
+// A helper without the route: no section and no nav link; the Handoff page says so; the PairBrowse
+// section never shows Handoff.
+pageTest("settings", { fixtures, viewport: VIEW }, async ({ helper, until, inPage, errors }) => {
+  await until("the stream", live);
+  await until("asked", () => true);
+  for (let i = 0; i < 40 && !helper.gets.includes("handoff.json"); i++) await new Promise((r) => setTimeout(r, 50));
+  assert.deepEqual(await inPage(() => [document.getElementById("handoff").hidden, document.getElementById("nav-handoff").hidden]), [true, true]);
+  assert.deepEqual(errors, []);
+});
+pageTest("settings", { fixtures, viewport: VIEW, frame: "view=handoff" }, async ({ until, inPage, errors }) => {
+  await until("the note", () => !document.getElementById("ho-missing").hidden);
+  assert.deepEqual((await inPage(chromeOf)).sections, ["handoff"]);
+  assert.deepEqual(await inPage(() => ["handoff-away", "handoff-send"].map((id) => document.getElementById(id).hidden)), [true, true]);
+  assert.deepEqual(errors, []);
+});
+pageTest("settings", { fixtures: { ...fixtures, handoff: HO }, viewport: VIEW, frame: "view=pairbrowse" }, async ({ helper, until, inPage, errors }) => {
+  await until("the stream", live);
+  for (let i = 0; i < 40 && !helper.gets.includes("handoff.json"); i++) await new Promise((r) => setTimeout(r, 50));
+  await inPage(() => new Promise((r) => setTimeout(r, 150)));
+  assert.deepEqual(await inPage(() => [document.getElementById("handoff").hidden, document.getElementById("nav-handoff").hidden]), [true, true]);
   assert.deepEqual(errors, []);
 });

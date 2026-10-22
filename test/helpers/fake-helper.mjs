@@ -48,6 +48,12 @@
 // refused with the U4 sentence; the username and password only mark it saved, never kept) and push
 // a `network` event; test answers the `networkTest` fixture. The real checks are tested in
 // test/liveview-network-routes.test.mjs.
+// GET handoff.json / POST handoff (the Handoff spec's helper API): the `handoff` fixture is the
+// summary (null: 404, a helper without the route); link (a Telegram token must look like one, a
+// token with "bad" in it is refused as the app would; no token is 409 unless the app has its bot
+// already), cancel, unlink, test (409 unless linked) and set change it in outline and push a
+// `handoff` event; each answer is 200 { text, handoff } or 409 { error }. The pending code is
+// HANDOFF_CODE, ending HANDOFF_MS after the link; the bot's name is HANDOFF_BOT's. Never a token.
 // GET profiles.json (spec server-mode step 38): the `profiles` fixture, { profiles, sessions,
 // current } (unset or null: 404, a helper without browser profiles); POST profiles is recorded and
 // answered from replies. The real routes are tested in test/session-route.test.mjs.
@@ -128,6 +134,8 @@ export const defaultFixtures = () => ({
   // GET network.json (null: 404) and POST network { op: "test" }'s answer.
   network: null,
   networkTest: { verdict: "ok", reason: "", exit: { ip: "203.0.113.7", country: "US" }, sameAsDirect: false, coherence: [], locale: { timezone: "Europe/Berlin", languages: ["de-DE"] }, note: "The browser's own read, WebRTC and its name lookups are checked when a session using this proxy starts." },
+  // GET handoff.json (null: 404): { on, server, ready, send, answer, telegram, discord }.
+  handoff: null,
   // POST report's answer while config.report is true: { status, body }.
   sent: { status: 200, body: { ok: true, id: "PB-1042" } },
 });
@@ -135,7 +143,7 @@ export const defaultFixtures = () => ({
 // The event each fixture goes out as (the names liveview.mjs broadcasts); null: none.
 const EVENT = { status: "status", session: "session", collaboration: "collaboration", activity: "activity", join: "join", tabs: "tabs", layout: "layout",
   agentTabs: "agent-tabs", config: "config", profile: "profile", dev: "dev", joinhost: "joinhost", board: "board", pause: "pause", record: "record", timeline: "timeline",
-  sessions: "sessions", invites: "invites", network: "network" };
+  sessions: "sessions", invites: "invites", network: "network", handoff: "handoff" };
 
 const plainObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 export function merge(base, over) {
@@ -276,6 +284,55 @@ function pickAnswer(body, fx, push) {
   return { status: 200, body: { text: body.action === "new" ? "Starting a fresh session." : `Opening ${to}.` } };
 }
 
+// POST handoff as the helper answers it, in outline (fx: the fixtures; push: the stream).
+export const HANDOFF_CODE = "PB-K7Q2XM";
+export const HANDOFF_MS = 10 * 60_000;
+export const HANDOFF_BOT = { telegram: "@pb_handoff_bot", discord: "PairBrowse Handoff" };
+const HANDOFF_APPS = { telegram: "Telegram", discord: "Discord" };
+export const handoffNone = () => ({ state: "none", bot: "", chat: "" });
+function handoffAnswer(body, fx, push) {
+  if (fx.handoff === null) return { status: 404 };
+  const no = (error) => ({ status: 409, body: { error } });
+  if (!plainObject(body) || typeof body.op !== "string") return no("A Handoff change is { op: link | cancel | unlink | test | set }.");
+  const h = { ...fx.handoff, send: { ...fx.handoff.send }, telegram: { ...fx.handoff.telegram }, discord: { ...fx.handoff.discord } };
+  let text;
+  if (body.op === "set") {
+    if (body.answer !== undefined && typeof body.answer !== "boolean") return no("answer is true or false.");
+    if (body.send !== undefined && (!plainObject(body.send) || Object.entries(body.send).some(([k, v]) => !(k in h.send) || typeof v !== "boolean"))) return no("send is { approvals, checks, submits, runs }, each true or false.");
+    if (body.answer !== undefined) h.answer = body.answer;
+    Object.assign(h.send, body.send || {});
+    text = "Saved.";
+  } else {
+    const name = HANDOFF_APPS[body.app];
+    if (!name) return no('app is "telegram" or "discord".');
+    const a = h[body.app];
+    if (body.op === "link") {
+      const token = typeof body.token === "string" ? body.token : "";
+      if (!token && !a.bot) return no(`Paste the ${name} bot token first.`);
+      if (token && body.app === "telegram" && !/^\d{1,20}:[A-Za-z0-9_-]{20,100}$/.test(token)) return no("That doesn't look like a Telegram bot token. It is the line BotFather sent, like 123456789:AAF…");
+      if (token.includes("bad")) return no(`${name} didn't accept that token. Copy it again and paste it here.`);
+      h[body.app] = { state: "pending", bot: HANDOFF_BOT[body.app], chat: "", code: HANDOFF_CODE, expiresAt: Date.now() + HANDOFF_MS };
+      text = `Send ${HANDOFF_CODE} to ${HANDOFF_BOT[body.app]} within 10 minutes.`;
+    } else if (body.op === "cancel") {
+      if (a.state !== "pending") return no(`No ${name} link is waiting.`);
+      h[body.app] = handoffNone();
+      text = `Stopped linking ${name}.`;
+    } else if (body.op === "unlink") {
+      if (a.state !== "linked") return no(`${name} isn't linked.`);
+      h[body.app] = handoffNone();
+      text = `Unlinked ${name}.`;
+    } else if (body.op === "test") {
+      if (a.state !== "linked") return no(`Link ${name} first.`);
+      text = `Sent. Check ${name}.`;
+    } else return no("A Handoff change is { op: link | cancel | unlink | test | set }.");
+  }
+  h.ready = h.telegram.state === "linked" || h.discord.state === "linked";
+  if (!h.ready && !h.server) h.on = false;
+  fx.handoff = h;
+  if (body.op !== "test") push("handoff", h);
+  return { status: 200, body: { text, handoff: h } };
+}
+
 // POST network as the helper answers it, in outline (fx: the fixtures; push: the stream).
 function networkAnswer(body, fx, push) {
   if (fx.network === null) return { status: 404 };
@@ -370,10 +427,10 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
     "joins.json": () => fx.joins, "tabs.json": () => fx.tabs, "agent-tabs.json": () => fx.agentTabs, "timeline.json": () => fx.timeline, "layout.json": () => fx.layout,
     "approvals.json": () => fx.approvals, "config.json": () => fx.config, "outline.json": () => fx.outline,
     "handoffs.json": () => fx.handoffs, "downloads.json": () => fx.downloads, "recordings.json": () => fx.recordings, "diagnostics.json": () => fx.diagnostics,
-    "invites.json": () => fx.invites, "network.json": () => fx.network, "profiles.json": () => fx.profiles ?? null,
+    "invites.json": () => fx.invites, "network.json": () => fx.network, "handoff.json": () => fx.handoff, "profiles.json": () => fx.profiles ?? null,
   };
   const POSTS = new Set(["approve", "dev", "joinhost", "profile", "invite", "pick", "picker", "input", "tab", "record", "pause", "layout", "timeline", "session",
-    "handoffs", "downloads", "recordings", "diagnostics", "tab-order", "config", "report", "capture", "network", "profiles"]);
+    "handoffs", "downloads", "recordings", "diagnostics", "tab-order", "config", "report", "capture", "network", "profiles", "handoff"]);
   const hasItem = (name, id) => Array.isArray(fx[name]?.items) && fx[name].items.some((it) => it && String(it.id) === id);
 
   // The answer to a POST without a reply of the test's own.
@@ -450,6 +507,7 @@ export async function startFakeHelper({ pageOrigin = null, fixtures = {}, replie
       return { status: 200, body: out };
     }
     if (route === "network") return networkAnswer(body, fx, push);
+    if (route === "handoff") return handoffAnswer(body, fx, push);
     if (route === "report") {
       if (fx.config?.report !== true) return { status: 404 };
       return fx.sent;

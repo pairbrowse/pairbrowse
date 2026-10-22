@@ -61,10 +61,16 @@ export const isSettingsPage = (url) => isOwnTabPage("settings", url, "\\/|#|$") 
 // The browser's proxies: the engine settings' Proxies page (580), which frames PairBrowse's settings
 // page in its proxies view. Opened by its shown address; its tab reports chrome://settings/proxies.
 export const PROXIES_PAGE = "pairbrowse://settings/proxies";
+// Handoff: the engine settings' Handoff page (580), which frames PairBrowse's settings page in its
+// handoff view (Telegram and Discord linked to your phone). Opened by its shown address; its tab
+// reports chrome://settings/handoff.
+export const HANDOFF_PAGE = "pairbrowse://settings/handoff";
 // The view the engine settings' page asks of PairBrowse's settings page it frames (?view=):
-// "proxies" or "pairbrowse", "" for anything else.
-export const viewOf = (search) => { const v = new URLSearchParams(String(search ?? "")).get("view"); return v === "proxies" || v === "pairbrowse" ? v : ""; };
+// "proxies", "handoff" or "pairbrowse", "" for anything else.
+const VIEWS = new Set(["proxies", "handoff", "pairbrowse"]);
+export const viewOf = (search) => { const v = new URLSearchParams(String(search ?? "")).get("view"); return VIEWS.has(v) ? v : ""; };
 export const isProxiesPage = (url) => /^(chrome|pairbrowse):\/\/settings\/proxies([/#?]|$)/.test(url || "");
+export const isHandoffPage = (url) => /^(chrome|pairbrowse):\/\/settings\/handoff([/#?]|$)/.test(url || "");
 // The picture page under the name the browser shows for it.
 export const isShownScreenPage = (url) => /^pairbrowse:\/\/screen(?:[/#?]|$)/.test(String(url || ""));
 

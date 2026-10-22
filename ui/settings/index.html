@@ -30,6 +30,7 @@
     <nav class="nav" aria-label="Settings sections">
       <a href="#general" data-sec="general"><svg aria-hidden="true" viewBox="0 0 16 16"><rect x="2.5" y="3" width="11" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M6 3v10" stroke="currentColor" stroke-width="1.4"/></svg>General</a>
       <a href="#agents" data-sec="agents"><svg aria-hidden="true" viewBox="0 0 16 16"><path d="M8 2.5 13 4.5v3.6c0 2.9-2.1 4.9-5 5.9-2.9-1-5-3-5-5.9V4.5z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>Agents and approvals</a>
+      <a href="#handoff" data-sec="handoff" id="nav-handoff" hidden><svg aria-hidden="true" viewBox="0 0 16 16"><rect x="7.2" y="1.8" width="7" height="12.4" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M9.8 11.6h1.8M1.8 8h3.8M3.8 6l2 2-2 2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>Handoff</a>
       <a href="#sharing" data-sec="sharing"><svg aria-hidden="true" viewBox="0 0 16 16"><circle cx="6" cy="6" r="2.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M2 13c.6-2.2 2.1-3.3 4-3.3s3.4 1.1 4 3.3M10.5 3.6a2.5 2.5 0 0 1 0 4.8M12 9.9c1 .5 1.7 1.5 2 3.1" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>Sharing</a>
       <a href="#network" data-sec="network" id="nav-network" hidden><svg aria-hidden="true" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M2.5 8h11M8 2.5c1.6 1.5 2.4 3.3 2.4 5.5S9.6 12 8 13.5C6.4 12 5.6 10.2 5.6 8S6.4 4 8 2.5z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>Network</a>
       <a href="#data" data-sec="data"><svg aria-hidden="true" viewBox="0 0 16 16"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>Your data</a>
@@ -139,7 +140,7 @@
             <span class="sw-text"><span id="away-label">Send steps handed to you to your phone</span><small id="away-state" role="status" aria-live="polite"></small></span>
             <button class="switch" id="away-on" type="button" role="switch" aria-checked="false" aria-labelledby="away-label" aria-describedby="away-state" disabled><i aria-hidden="true"></i></button>
           </div>
-          <p class="help">A sign-in, code, CAPTCHA or payment an agent hands to you goes to your hand-off channel (Telegram, Discord, Slack, ntfy or a webhook, set in config.json) with a link to take over from your phone. Only the step's kind, the site and the expiry go, never what the agent wrote.</p>
+          <p class="help">A sign-in, code, CAPTCHA or payment an agent hands to you goes to your hand-off channel (Telegram or Discord, linked under Handoff; Slack, ntfy or a webhook, set in config.json) with a link to take over from your phone. Only the step's kind, the site and the expiry go, never what the agent wrote.</p>
         </div>
         <div class="item cfg-item" id="results" data-field="pictures" data-k="pictures picture screenshot screenshots result image see text only">
           <h3 class="item-h">What agents see</h3>
@@ -170,6 +171,49 @@
             <button class="action" type="submit" id="tabs-save" hidden>Save</button>
           </form>
           <p class="msg" id="tabs-msg" role="status" aria-live="polite"></p>
+        </div>
+      </section>
+
+      <!-- Handoff (the engine settings' Handoff page frames this page with ?view=handoff, 580): Telegram
+           or Discord linked by a one-time code, what goes to your phone, answering approvals from
+           chat. GET handoff.json / POST handoff (owner only); settings/handoff.js builds the apps and
+           draws every part, hidden until the helper answers (a helper without the route: 404). -->
+      <section class="sec" id="handoff" aria-labelledby="handoff-h" hidden>
+        <h2 class="sec-h" id="handoff-h">Handoff</h2>
+        <div class="item" id="handoff-away" data-k="handoff away phone send hand-off telegram discord switch on off">
+          <div class="sw-row ho-top">
+            <span class="sw-text"><span id="ho-away-label" class="ho-away-label">Send to your phone</span><small id="ho-away-state" role="status" aria-live="polite"></small></span>
+            <button class="switch" id="ho-away" type="button" role="switch" aria-checked="false" aria-labelledby="ho-away-label" aria-describedby="ho-away-state" disabled><i aria-hidden="true"></i></button>
+          </div>
+          <p class="help">When an agent hands you a sign-in, a code, a CAPTCHA or a payment, or waits for your yes on a final click, a short message reaches the app you link below, with a link to take over from your phone.</p>
+        </div>
+        <div class="item" id="handoff-apps" data-k="handoff telegram discord link unlink bot token code test message phone app">
+          <h3 class="item-h">Apps</h3>
+          <p class="help">Link an app with a bot of your own: paste its token, then send it the one-time code PairBrowse shows. Only that chat is ever written to or read.</p>
+          <p class="ho-missing" id="ho-missing" hidden>This PairBrowse helper has no Handoff yet. Update PairBrowse to link Telegram or Discord here.</p>
+          <p class="empty ho-none" id="ho-none">Connecting to PairBrowse…</p>
+          <div class="ho-apps-wrap"><div class="ho-apps" id="ho-apps"></div></div>
+        </div>
+        <div class="item" id="handoff-send" data-k="handoff what goes phone approvals approval cards sign-in sign-ins codes captcha 2fa payments submits runs finished answer approve deny chat reply">
+          <fieldset class="group ho-send" id="ho-send">
+            <legend class="item-h">What goes to your phone</legend>
+            <p class="help">Each kind goes only while Send to your phone is on.</p>
+            <ul class="ho-opts" role="list">
+              <li><label class="ho-opt"><input type="checkbox" class="ho-check" data-send="approvals"><span><b>Approval cards</b><small>A final click waiting for your yes: pay, delete, publish, send or submit.</small></span></label></li>
+              <li><label class="ho-opt"><input type="checkbox" class="ho-check" data-send="checks"><span><b>Sign-ins, codes and CAPTCHAs</b><small>A login, a two-factor code or a CAPTCHA an agent hands to you.</small></span></label></li>
+              <li><label class="ho-opt"><input type="checkbox" class="ho-check" data-send="submits"><span><b>Payments and final submits</b><small>The last step an agent leaves to you.</small></span></label></li>
+              <li><label class="ho-opt"><input type="checkbox" class="ho-check" data-send="runs"><span><b>Finished runs</b><small>A fast-mode run that finished, stopped or failed.</small></span></label></li>
+            </ul>
+          </fieldset>
+          <div class="sw-row ho-answer">
+            <span class="sw-text"><span id="ho-answer-label">Answer approvals from chat</span><small id="ho-answer-help">Approve or deny a final click from the linked chat: Telegram shows two buttons, in Discord you reply "approve" or "deny" with the card's code. Only the linked chat can answer, and each code works for one card until it ends.</small></span>
+            <button class="switch" id="ho-answer" type="button" role="switch" aria-checked="false" aria-labelledby="ho-answer-label" aria-describedby="ho-answer-help"><i aria-hidden="true"></i></button>
+          </div>
+          <p class="msg" id="ho-set-msg" role="status" aria-live="polite"></p>
+        </div>
+        <div class="item ho-privacy" id="handoff-privacy" data-k="handoff privacy token tokens secrets what is sent never">
+          <svg aria-hidden="true" viewBox="0 0 16 16"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>
+          <p>Messages carry the kind of step, the site's address, the kind of click, a short code and when it ends: never page contents, what anyone typed or the agent's words. Bot tokens stay in secrets.env on this computer, readable only by you, and are never shown again.</p>
         </div>
       </section>
 

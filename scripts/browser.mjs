@@ -420,6 +420,12 @@ export function launchOptions(config = {}, { shell, firstRun = false, helper = n
     env,
     executablePath,
     viewport: null,
+    // The driver answers every page's media queries itself unless told not to (its context default is
+    // a light color scheme, no reduced motion, no forced colors), over the browser's own settings: the
+    // browser's own pages (Settings, History, Downloads) and dark-mode sites showed light, and every
+    // session answered alike. The browser's settings answer instead (the profile's scheme,
+    // profiles/map.mjs display; the system's reduced motion and contrast).
+    colorScheme: "no-override", reducedMotion: "no-override", forcedColors: "no-override", contrast: "no-override",
     ignoreDefaultArgs: [...(ownPages && !blankStart ? ["--disable-extensions", "about:blank"] : ["--disable-extensions"]), ...(storage.mock ? [] : ["--use-mock-keychain"])],
     args: launchArgs(config, { firstRun, browserPages: ownPages, helper, safeStorageKeyFile: storage.keyFile, screen, profileArgs }),
   };

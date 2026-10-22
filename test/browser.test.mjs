@@ -529,3 +529,12 @@ test("payment autofill stays off by default and turns on only for a savedCard pr
   const given = { keyFile: key, mock: true };
   assert.ok(launchOptions({}, { shell: can, platform: "linux", storage: given }).args.includes(`--pairbrowse-safe-storage-key-file=${key}`));
 });
+
+test("launchOptions leaves every page's media queries to the browser's own settings", async () => {
+  const { launchOptions } = await import("../scripts/browser.mjs");
+  // The driver's context defaults (a light color scheme, no reduced motion, no forced colors, no
+  // contrast preference) answered every page over the browser's settings: the browser's own pages
+  // and dark-mode sites showed light in every session (2026-10-23).
+  const o = launchOptions({}, { shell: { ownPages: true }, platform: "darwin", storage: { mock: true, keyFile: null } });
+  for (const k of ["colorScheme", "reducedMotion", "forcedColors", "contrast"]) assert.equal(o[k], "no-override", k);
+});

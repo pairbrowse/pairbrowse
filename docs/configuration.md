@@ -271,7 +271,9 @@
   session (one helper log line says so). A proxied session's pages see the proxy's exit as their
   one WebRTC address on a native build whose manifest says `webrtcExit` (older builds: no
   address), and a session without a proxy keeps the browser's everyday WebRTC (an mDNS name for
-  the local address, the public address through STUN). With `strict` `false` through an `http:` or `https:`
+  the local address, the public address through STUN) on the Linux build and on a macOS build whose
+  manifest says `webrtcMdns` (an older macOS build keeps the deny policy for a direct session: no
+  address at all). With `strict` `false` through an `http:` or `https:`
   proxy, the browser also looks names up itself (the leak test reads pages' names and its own
   background services' in the browser's network log), though the pages still load through the
   proxy. A SOCKS5 session gets the same name rule even with `strict` `false`. A proxy with `auth`

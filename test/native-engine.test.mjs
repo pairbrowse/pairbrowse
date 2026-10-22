@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync, statSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { launchNative, launchEnv, applyGraphicsPlan, DRIVER_BLINK_SWITCH, DRIVER_BACKGROUND_SWITCH, nativeManifest, declaresOwnPages, macHostProfile, hostFonts, captureMacHost, MEASURING, hostCachePath, screenInfoArg, CANVAS_BRIDGE_DROPPED, isCanvasBridgeSwitch, personaProxyRefusal, PROXY_CREDENTIALS_REFUSAL, proxyCredentials, withoutAddresses, proxyAuthFile, webrtcExit, WEBRTC_EVERYDAY, everydayWebrtc, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE, paceSets, flatWebgpuProfile, personaBindingRefusal, droppedLine, clockZoneNote } from "../scripts/native-engine.mjs";
+import { launchNative, launchEnv, applyGraphicsPlan, DRIVER_BLINK_SWITCH, DRIVER_BACKGROUND_SWITCH, nativeManifest, declaresOwnPages, macHostProfile, hostFonts, captureMacHost, MEASURING, hostCachePath, screenInfoArg, CANVAS_BRIDGE_DROPPED, isCanvasBridgeSwitch, personaProxyRefusal, PROXY_CREDENTIALS_REFUSAL, proxyCredentials, withoutAddresses, proxyAuthFile, webrtcExit, webrtcMdns, WEBRTC_EVERYDAY, everydayWebrtc, fillSettings, keystrokeSchedule, humanFill, humanType, TYPING_PACE, FILL_PACE_FLOOR, SLOW_TYPE_PACE, paceSets, flatWebgpuProfile, personaBindingRefusal, droppedLine, clockZoneNote } from "../scripts/native-engine.mjs";
 import { PAIRBROWSE_ENGINE_KEYS } from "../scripts/config-schema.mjs";
 import { loadEngine } from "../scripts/native/pack.mjs";
 import { normalizeWebgpu, GRAPHICS } from "../scripts/native/graphics.mjs";
@@ -74,6 +74,7 @@ test("a native launch on Linux after the font setup: PairBrowse's font file, and
     const lines = [];
     const env = launchEnv({}, { given: undefined, pack: stubPack, executablePath: "/b/PairBrowse/chrome", args: ["--lang=de-DE"], log: (l) => lines.push(l), fonts });
     assert.equal(env.FONTCONFIG_FILE, file, "PairBrowse's font configuration in the build's place");
+    assert.ok(readFileSync(file, "utf8").includes("<dir>/b/PairBrowse/fonts</dir>"), "the build's own font folder stays in it (the stand-ins on)");
     assert.equal(env.LANGUAGE, "de_DE", "the identity's language, not the helper's");
     assert.match(lines[0], /stand-ins for the Windows names on/, "on by default");
     // A caller env of its own keeps its keys; no pack: this process's env with the font file.
@@ -855,13 +856,32 @@ packTest("a WebRTC IP policy in browserArgs is never the launch's: a proxied ses
   await launchNative(chromium, { pairbrowse: { fingerprint: "rtc-seed", humanize: false } }, mkdtempSync(join(tmpdir(), "pairbrowse-profile-")),
     { executablePath: app.executablePath, headless: false, args: [...policies, "--lang=en"] }, pack, (l) => lines.push(l));
   const direct = chromium.calls[1].options.args;
-  // Only where the build hides local addresses under it (Linux); the macOS build keeps the deny.
-  assert.deepEqual(direct.filter((a) => /webrtc/i.test(a)), everydayWebrtc() ? [WEBRTC_EVERYDAY] : ["--webrtc-ip-handling-policy=disable_non_proxied_udp"], direct.join(" "));
+  // Only where the build hides local addresses under it: Linux, and a macOS build whose manifest
+  // says webrtcMdns (the fixture's doesn't); an older macOS build keeps the deny.
+  const manifest = nativeManifest(app.executablePath);
+  assert.deepEqual(direct.filter((a) => /webrtc/i.test(a)), everydayWebrtc(process.platform, manifest) ? [WEBRTC_EVERYDAY] : ["--webrtc-ip-handling-policy=disable_non_proxied_udp"], direct.join(" "));
   assert.equal(everydayWebrtc("linux"), true);
+  assert.equal(everydayWebrtc("linux", {}), true);
   assert.equal(everydayWebrtc("darwin"), false);
-  assert.equal(everydayWebrtc("win32"), false);
+  assert.equal(everydayWebrtc("darwin", { webrtcMdns: 0 }), false);
+  assert.equal(everydayWebrtc("darwin", { webrtcMdns: "1" }), false);
+  assert.equal(everydayWebrtc("darwin", { webrtcMdns: 1 }), true);
+  assert.equal(everydayWebrtc("win32", { webrtcMdns: 1 }), false);
+  assert.equal(webrtcMdns({ webrtcMdns: 1 }), true);
+  assert.equal(webrtcMdns(manifest), false);
   assert.equal(WEBRTC_EVERYDAY, "--webrtc-ip-handling-policy=default");
   assert.ok(lines.some((l) => /WebRTC IP handling switch in browserArgs was dropped/.test(l)));
+  // A macOS build whose manifest says webrtcMdns: the everyday policy for a direct session.
+  if (process.platform === "darwin") {
+    const mdnsApp = appFixture({ product: "PairBrowse", version: "150.0.7871.114", arch: "arm64", webrtcMdns: 1 });
+    await launchNative(chromium, { pairbrowse: { fingerprint: "rtc-seed", humanize: false } }, mkdtempSync(join(tmpdir(), "pairbrowse-profile-")),
+      { executablePath: mdnsApp.executablePath, headless: false, args: ["--lang=en"] }, pack, () => {});
+    const mdnsDirect = chromium.calls[2].options.args;
+    assert.deepEqual(mdnsDirect.filter((a) => /webrtc/i.test(a)), [WEBRTC_EVERYDAY], mdnsDirect.join(" "));
+    await launchNative(chromium, { pairbrowse: { fingerprint: "rtc-seed", humanize: false } }, mkdtempSync(join(tmpdir(), "pairbrowse-profile-")),
+      { executablePath: mdnsApp.executablePath, headless: false, proxy: { server: "http://127.0.0.1:3128" }, args: [] }, pack, () => {});
+    assert.deepEqual(chromium.calls[3].options.args.filter((a) => /webrtc-ip/i.test(a)), ["--webrtc-ip-handling-policy=disable_non_proxied_udp"], "a proxied session still denies");
+  }
 });
 
 // A proxied session's WebRTC address is the proxy's exit as the helper read it (config.webrtcExit,

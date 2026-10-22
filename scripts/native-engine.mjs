@@ -559,9 +559,10 @@ export function engineHasGpuPool(pack, executablePath) {
 // fonts, and the open stand-ins under the Windows names only while pairbrowse.fontStandIns is on
 // (native/fontconf.mjs, spec step 52). Only FONTCONFIG_FILE goes over the caller's env, never
 // this process's whole env, so a LANGUAGE the helper was started with never outranks --lang's.
-// fonts: browserFontEnv's options (tests).
+// fonts: browserFontEnv's options (tests). The build's own font folder (beside executablePath)
+// stays in that configuration with the stand-ins on (native/fontconf.mjs).
 export function launchEnv(config, { given, pack, executablePath, args, log = () => {}, fonts = {} }) {
-  const fontEnv = browserFontEnv(config, { log, ...fonts });
+  const fontEnv = browserFontEnv(config, { log, executablePath, ...fonts });
   if (fontEnv) log(`launch: fonts: this computer's font set, stand-ins for the Windows names ${fontStandInsOf(config) ? "on" : "off"} (pairbrowse.fontStandIns)`);
   const givenEnv = fontEnv ? { ...(given ?? {}), ...fontEnv } : given;
   if (pack.fontLaunchEnv) return pack.fontLaunchEnv(executablePath, givenEnv, args);

@@ -105,7 +105,9 @@ On Debian and Ubuntu it installs:
    licence pinned by SHA-256, kept under their own names in `~/.pairbrowse/fonts/selawik/`.
 4. **The browser's font configuration** (`~/.pairbrowse/fonts.conf`, written again at each browser
    start): the browser then reads this computer's fonts (everything above) rather than only the
-   fonts the Linux build carries. Whether the Windows names point at the stand-ins is
+   fonts the Linux build carries; with the stand-ins on, the build's own font folder stays in reach
+   too, so the Windows names the build's engine answers with its own open faces (Cambria Math,
+   Bahnschrift, Gadugi, Lucida Console and others) still resolve. Whether the Windows names point at the stand-ins is
    `pairbrowse.fontStandIns` in `config.json` (see [Configuration](configuration.md)), `true` by
    default (the ordinary-browser measurement found the Windows names with it and lost no check's
    verdict): on, those names find their stand-in; off, the switched stand-ins (Selawik, Carlito,

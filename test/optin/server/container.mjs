@@ -64,32 +64,34 @@ export function dockerfile() {
 // The image's tag names its recipe, so a changed package list builds a new one.
 export const imageTag = () => `pairbrowse-test-server:${createHash("sha256").update(dockerfile()).digest("hex").slice(0, 12)}`;
 
-// The image with the server setup's font set (spec step 52; test/optin/server-fonts.test.mjs): the
-// base image, Debian's contrib section added, and the setup's own Debian packages (native/fontsetup.mjs
-// PACKAGES: emoji, CJK, the open stand-ins, and Microsoft's core fonts through Debian's own package,
-// whose download it checks against its own SHA-256 sums). Built only for a person who set
-// PAIRBROWSE_TEST_COREFONTS_EULA=accept, their acceptance of Microsoft's EULA
-// (scripts/native/corefonts-eula.txt); Debian's package asks nothing itself.
-export function fontsDockerfile(base = imageTag()) {
+// The image with the server setup's font set (spec step 52; test/optin/server-fonts.test.mjs and
+// linux-graphics.test.mjs): the base image and the setup's own Debian packages (native/fontsetup.mjs
+// PACKAGES: emoji, CJK, the open stand-ins), and, with core, Debian's contrib section added and
+// Microsoft's core fonts through Debian's own package (whose download it checks against its own
+// SHA-256 sums). That one is built only for a person who set PAIRBROWSE_TEST_COREFONTS_EULA=accept,
+// their acceptance of Microsoft's EULA (scripts/native/corefonts-eula.txt); Debian's package asks
+// nothing itself. Without core (the free set alone) the setup names the core fonts as absent.
+export function fontsDockerfile(base = imageTag(), { core = true } = {}) {
   const plan = FONT_PACKAGES.debian;
+  const contrib = core ? `sed -i -E 's/^(Components: .*main)$/\\1 ${plan.component}/' /etc/apt/sources.list.d/debian.sources && ` : "";
   return [
     `FROM ${base}`,
     "USER root",
     "ENV DEBIAN_FRONTEND=noninteractive",
-    `RUN sed -i -E 's/^(Components: .*main)$/\\1 ${plan.component}/' /etc/apt/sources.list.d/debian.sources && apt-get update && apt-get install -y --no-install-recommends ${[...freePackages(plan), plan.core].join(" ")} && rm -rf /var/lib/apt/lists/*`,
+    `RUN ${contrib}apt-get update && apt-get install -y --no-install-recommends ${[...freePackages(plan), ...(core ? [plan.core] : [])].join(" ")} && rm -rf /var/lib/apt/lists/*`,
     `USER ${USER}`,
     "",
   ].join("\n");
 }
-export const fontsImageTag = () => `pairbrowse-test-server-fonts:${createHash("sha256").update(fontsDockerfile()).digest("hex").slice(0, 12)}`;
+export const fontsImageTag = (opts = {}) => `pairbrowse-test-server-fonts:${createHash("sha256").update(fontsDockerfile(imageTag(), opts)).digest("hex").slice(0, 12)}`;
 
-// Builds the fonts image when this recipe has none yet.
-export function ensureFontsImage(log = () => {}) {
+// Builds the fonts image (with or without the core fonts) when this recipe has none yet.
+export function ensureFontsImage(log = () => {}, opts = {}) {
   ensureImage(log);
-  const tag = fontsImageTag();
+  const tag = fontsImageTag(opts);
   try { sh(["image", "inspect", tag], 30_000); return tag; } catch {}
   log(`building ${tag} (once)`);
-  sh(["build", "--platform", PLATFORM, "-t", tag, "-"], 1_800_000, fontsDockerfile());
+  sh(["build", "--platform", PLATFORM, "-t", tag, "-"], 1_800_000, fontsDockerfile(imageTag(), opts));
   return tag;
 }
 

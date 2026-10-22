@@ -6,7 +6,7 @@
 // from an agent's snapshot.
 import { createServer } from "node:http";
 
-export const GRAPHICS_PAGE = `<!doctype html><title>graphics</title><p id=g>graphics: waiting</p><script>
+export const GRAPHICS_PAGE = `<!doctype html><meta charset="utf-8"><title>graphics</title><p id=g>graphics: waiting</p><script>
 (async () => {
   const out = {};
   const hash = (bytes) => { let h = 0x811c9dc5; for (let i = 0; i < bytes.length; i++) { h ^= bytes[i]; h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(16) + ":" + bytes.length; };
@@ -36,7 +36,9 @@ export const GRAPHICS_PAGE = `<!doctype html><title>graphics</title><p id=g>grap
   const width = (f) => { x.font = "72px " + f; return x.measureText("mmmmmmmmmmlli1WQ@#").width; };
   const bases = ["monospace", "serif", "sans-serif"]; const base = bases.map(width);
   const has = (n) => bases.some((b, i) => width('"' + n + '", ' + b) !== base[i]);
-  const emoji = (() => { const c = document.createElement("canvas"); c.width = 48; c.height = 48; const g = c.getContext("2d"); g.font = "32px sans-serif"; g.textBaseline = "top"; g.fillText("\u{1F600}", 4, 4); const d = g.getImageData(0, 0, 48, 48).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 0 && (d[i] !== d[i + 1] || d[i + 1] !== d[i + 2])) n++; return n; })();
+  // The emoji as a JS escape, never the character itself: the page is served without a charset,
+  // and a UTF-8 emoji read as Latin-1 draws four letters, which no colour font has.
+  const emoji = (() => { const c = document.createElement("canvas"); c.width = 48; c.height = 48; const g = c.getContext("2d"); g.font = "32px sans-serif"; g.textBaseline = "top"; g.fillText("\\u{1F600}", 4, 4); const d = g.getImageData(0, 0, 48, 48).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 0 && (d[i] !== d[i + 1] || d[i + 1] !== d[i + 2])) n++; return n; })();
   out.fonts = { found: ["DejaVu Sans", "Liberation Sans", "Noto Sans", "Arial", "Helvetica", "Times New Roman", "Segoe UI", "Verdana"].filter(has), controlFound: ["PairBrowse Control Sans 7f3a", "Zq Control Mono 4be1"].filter(has), colorEmojiPixels: emoji };
   out.screen = { width: screen.width, height: screen.height, availWidth: screen.availWidth, availHeight: screen.availHeight, colorDepth: screen.colorDepth, dpr: devicePixelRatio };
   out.navigator = { platform: navigator.platform, cores: navigator.hardwareConcurrency, memory: navigator.deviceMemory === undefined ? null : navigator.deviceMemory };

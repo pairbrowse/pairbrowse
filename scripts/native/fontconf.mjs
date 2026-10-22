@@ -10,10 +10,16 @@
 // (the default, as the fourth ordinary-browser measurement settled: the Windows names found, no
 // check's verdict lost), the open stand-ins (winfonts.mjs STAND_INS) under the Windows names:
 // Selawik from the setup's own folder (Microsoft's release, pinned), Carlito and Caladea from the
-// distribution's packages. Set off, the switched stand-ins are kept from the browser altogether, so a width check finds no Windows name there: what is
-// left is the free fonts alone. The fonts keep their own names and files; only fontconfig's
-// matching changes, and only for the browser. Before the setup has run, the build's own
-// configuration stays as it is. Node's standard library only.
+// distribution's packages, and the build's own font folder (BUILD_FONTS_DIR beside the binary:
+// Arimo, Tinos, Cousine, Gelasio, Anton, Comic Neue, Inconsolata, DejaVu and the rest), which the
+// engine's own metric substitutes name for the Windows families it lists (Cambria Math, Bahnschrift,
+// Gadugi, Lucida Console and more), so a local() load of such a name finds a face as it does under
+// the build's own configuration (the fourth measurement's CreepJS font load fell to 1 of 51 without
+// the folder). Set off, the switched stand-ins are kept from the browser altogether and the build's
+// folder stays out, so a width check finds no Windows name there: what is left is the free fonts
+// alone. The fonts keep their own names and files; only fontconfig's matching changes, and only
+// for the browser. Before the setup has run, the build's own configuration stays as it is. Node's
+// standard library only.
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { paths } from "../paths.mjs";
@@ -24,6 +30,11 @@ import { STAND_INS, SWITCHED_STAND_INS, fontGroups, fontStatus, readFontFamilies
 export const SYSTEM_CONF = "/etc/fonts/fonts.conf";
 // The folder in the setup's font folder that holds Selawik (fontsetup.mjs SELAWIK).
 export const SELAWIK_DIR = "selawik";
+// The Linux build's own font folder, beside its binary (the package's fontconfig folder, which its
+// own fonts.generated.conf lists).
+export const BUILD_FONTS_DIR = "fonts";
+// That folder for the native executable at exec (null without one).
+export const buildFontsDir = (exec) => (typeof exec === "string" && exec ? join(dirname(exec), BUILD_FONTS_DIR) : null);
 
 // config.json's pairbrowse.fontStandIns: false only when set to false (default true).
 export const fontStandInsOf = (config) => config?.pairbrowse?.fontStandIns !== false;
@@ -31,10 +42,10 @@ export const fontStandInsOf = (config) => config?.pairbrowse?.fontStandIns !== f
 const xml = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const family = (name) => `<family>${xml(name)}</family>`;
 
-// The file's text: on (pairbrowse.fontStandIns), the stand-ins' folders (dirs: Selawik's) and
-// one alias per Windows name (accept: after the family itself, so a real font of that name always
-// wins; binding "same", as fontconfig's own metric aliases); off, the switched stand-ins (never
-// Liberation, the system's own alias) rejected, so the browser lists none of them.
+// The file's text: on (pairbrowse.fontStandIns), the stand-ins' folders (dirs: Selawik's and the
+// build's own) and one alias per Windows name (accept: after the family itself, so a real font of
+// that name always wins; binding "same", as fontconfig's own metric aliases); off, the switched
+// stand-ins (never Liberation, the system's own alias) rejected, so the browser lists none of them.
 export function fontsConf({ on = false, base = SYSTEM_CONF, dirs = [] } = {}) {
   const lines = [
     '<?xml version="1.0"?>',
@@ -59,9 +70,12 @@ export function fontsConf({ on = false, base = SYSTEM_CONF, dirs = [] } = {}) {
 export const setupDone = (record = paths.fontsSetup) => existsSync(record);
 
 // Writes the browser's file (paths.fontsConf) when its text changed, atomically (a browser
-// starting at the same moment reads the old file or the new one, never half of one). Answers its path.
-export function writeFontsConf({ on = false, file = paths.fontsConf, fontsDir = paths.fonts } = {}) {
-  const text = fontsConf({ on, dirs: [join(fontsDir, SELAWIK_DIR)] });
+// starting at the same moment reads the old file or the new one, never half of one). Answers its
+// path. executablePath: the native build's, whose own font folder the file lists with the stand-ins
+// on (none: the setup's write before a build is installed; the next start writes it again).
+export function writeFontsConf({ on = false, file = paths.fontsConf, fontsDir = paths.fonts, executablePath = null } = {}) {
+  const build = buildFontsDir(executablePath);
+  const text = fontsConf({ on, dirs: [join(fontsDir, SELAWIK_DIR), ...(build ? [build] : [])] });
   let now = null;
   try { now = readFileSync(file, "utf8"); } catch {}
   if (now !== text) {
@@ -79,13 +93,13 @@ export function writeFontsConf({ on = false, file = paths.fontsConf, fontsDir = 
 }
 
 // The environment a native launch on Linux adds for its fonts: { FONTCONFIG_FILE } (this file,
-// written for the switch now) once the setup has run; null otherwise, and off Linux, so the
-// build's own configuration applies. Never throws: a file that can't be written leaves the
-// build's (log says so).
-export function browserFontEnv(config, { platform = process.platform, record = paths.fontsSetup, file = paths.fontsConf, fontsDir = paths.fonts, log = () => {} } = {}) {
+// written for the switch now, with the build's own font folder when executablePath names the
+// build) once the setup has run; null otherwise, and off Linux, so the build's own configuration
+// applies. Never throws: a file that can't be written leaves the build's (log says so).
+export function browserFontEnv(config, { platform = process.platform, record = paths.fontsSetup, file = paths.fontsConf, fontsDir = paths.fonts, executablePath = null, log = () => {} } = {}) {
   if (platform !== "linux" || !setupDone(record)) return null;
   try {
-    return { FONTCONFIG_FILE: writeFontsConf({ on: fontStandInsOf(config), file, fontsDir }) };
+    return { FONTCONFIG_FILE: writeFontsConf({ on: fontStandInsOf(config), file, fontsDir, executablePath }) };
   } catch (e) {
     log(`fonts: the browser's font configuration couldn't be written (${e?.code || e?.message || e}); the build's own applies`);
     return null;

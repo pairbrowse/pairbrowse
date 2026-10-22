@@ -9,6 +9,15 @@
 // shown as Windows 11 with NVIDIA GeForce RTX 3060" and "consistent"; a start asking for a GPU
 // is refused by name and nothing runs. The run inside is test/optin/server/graphics-run.mjs.
 //
+// The server font setup runs on the home first, as docs/server.md has a person run it (the fonts
+// image carries its Debian packages; Selawik from Microsoft's pinned release), so the browser reads
+// the computer's fonts through PairBrowse's font configuration, the build's own font folder kept in
+// it: colour emoji come from the setup's font set, as on a server. With
+// PAIRBROWSE_TEST_COREFONTS_EULA=accept (your own acceptance of Microsoft's EULA for the core fonts,
+// scripts/native/corefonts-eula.txt) the image carries Debian's core fonts package too and the
+// setup records the acceptance (its --accept-ms-corefonts-eula, the owner's preset); without it the
+// free set alone, the core fonts named as absent.
+//
 // Needs Docker (OrbStack on a Mac), PAIRBROWSE_TEST_DOCKER=1 and PAIRBROWSE_TEST_RUNTIME; the
 // pinned Linux build and engine pack from PAIRBROWSE_TEST_LINUX_ARCHIVE and
 // PAIRBROWSE_TEST_ENGINE_ARCHIVE (local files matching the pins), else from the release. On
@@ -17,17 +26,38 @@ import "../helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { runGraphicsCase } from "./server/graphics-case.mjs";
+import { ensureFontsImage } from "./server/container.mjs";
 import { SCREEN } from "../helpers/server.mjs";
 import { GPU_LESS_IDENTITY } from "../../scripts/native/graphics.mjs";
+import { dirname } from "node:path";
+import { BUILD_FONTS_DIR } from "../../scripts/native/fontconf.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const SKIP = (!runtime || process.env.PAIRBROWSE_TEST_DOCKER !== "1") && "set PAIRBROWSE_TEST_DOCKER=1 and PAIRBROWSE_TEST_RUNTIME";
+const EULA = process.env.PAIRBROWSE_TEST_COREFONTS_EULA === "accept";
 
 const NAME = GPU_LESS_IDENTITY.name;
-test("Linux without a GPU: backend software, the engine's identity shown in WebGL and WebGPU, consistent; canvas stable, fonts resolve, gpu refused, sandbox on", { skip: SKIP, timeout: 3_000_000 }, async (t) => {
-  const r = await runGraphicsCase("graphics", runtime);
-  t.diagnostic(JSON.stringify({ page: r.page, status: r.status, lines: r.launchLines, validation: r.validation && { status: r.validation.status, shown: r.validation.graphics?.shown, backend: r.validation.graphics?.backend?.renderer, mismatches: r.validation.items.filter((i) => i.status === "mismatch") }, gpu: r.gpu }, null, 1).slice(0, 12000));
+test("Linux without a GPU: backend software, the engine's identity shown in WebGL and WebGPU, consistent; canvas stable, the server font setup run and its fonts resolve, gpu refused, sandbox on", { skip: SKIP, timeout: 3_000_000 }, async (t) => {
+  const image = ensureFontsImage(console.log, { core: EULA });
+  const r = await runGraphicsCase("graphics", runtime, { image, env: { PB_FONT_SETUP: "1", ...(EULA ? { PB_COREFONTS_EULA: "accept" } : {}) } });
+  t.diagnostic(JSON.stringify({ page: r.page, status: r.status, lines: r.launchLines, fontSetup: r.fontSetup, fontLines: r.fontLines, validation: r.validation && { status: r.validation.status, shown: r.validation.graphics?.shown, backend: r.validation.graphics?.backend?.renderer, mismatches: r.validation.items.filter((i) => i.status === "mismatch") }, gpu: r.gpu }, null, 1).slice(0, 12000));
   assert.notEqual(r.uid, 0, "a normal user");
+  // The font setup ran first, as the person runs it: its record and PairBrowse's font
+  // configuration are there, the configuration listing the setup's Selawik folder and then the
+  // build's own font folder (the stand-ins on by default); with the EULA accepted the core fonts
+  // are installed and nothing was asked.
+  assert.ok(r.fontSetup, "the setup ran");
+  assert.ok(r.fontSetup.record, `the setup's record: ${r.fontSetup.out}`);
+  assert.doesNotMatch(r.fontSetup.out, /Type "yes"/, "nothing asked");
+  if (EULA) {
+    assert.equal(r.fontSetup.code, 0, r.fontSetup.out);
+    assert.match(r.fontSetup.out, /Microsoft's core fonts: installed/);
+  } else assert.match(r.fontSetup.out, /Microsoft's core fonts/, "named as absent");
+  assert.match(r.fontSetup.out, /Selawik 1\.01/);
+  assert.equal(r.fontSetup.dirs.length, 2, `the setup's folder and the build's: ${JSON.stringify(r.fontSetup.dirs)}`);
+  assert.ok(r.fontSetup.dirs[0].endsWith("/fonts/selawik"), r.fontSetup.dirs[0]);
+  assert.ok(r.fontSetup.dirs[1].endsWith(`/${dirname(r.native.exe)}/${BUILD_FONTS_DIR}`), `the build's own font folder beside its binary (${r.native.exe}): ${r.fontSetup.dirs[1]}`);
+  assert.ok(r.fontLines.some((l) => l.includes("launch: fonts: this computer's font set, stand-ins for the Windows names on")), r.fontLines.join("\n"));
   // Measured once, and the launch said what it shows.
   assert.equal(r.measured, 1, `measured once: ${r.launchLines.join("\n")}`);
   assert.ok(r.launchLines.some((l) => l.includes(`launch: graphics: software rendering, shown as ${NAME} (the engine's one graphics identity for a host without a GPU, decision 10; canvas noise off), screen 1280x800 (the virtual screen)`)), r.launchLines.join("\n"));
@@ -49,7 +79,7 @@ test("Linux without a GPU: backend software, the engine's identity shown in WebG
   assert.equal(p.canvas.first, p.canvas.second, "the canvas scene draws the same pixels twice (noise is per site, stable within it)");
   assert.ok(p.fonts.found.length >= 2, `fonts resolve: ${JSON.stringify(p.fonts)}`);
   assert.deepEqual(p.fonts.controlFound, [], "no made-up font is found");
-  assert.ok(p.fonts.colorEmojiPixels > 0, `emoji draw in colour (the engine pack lists the computer's font folders): ${JSON.stringify(p.fonts)}`);
+  assert.ok(p.fonts.colorEmojiPixels > 0, `emoji draw in colour (the setup's font set through PairBrowse's font configuration): ${JSON.stringify(p.fonts)}`);
   assert.equal(r.validation?.items.find((i) => i.rule === "fonts.emoji")?.status, "matched", "the probe saw colour emoji too");
   // The wheel: an agent's scroll is whole notches of the identity's platform (Windows: 100 px),
   // each deltaY paired with wheelDeltaY as a real mouse's, never a pixel-sized event (gap 9).

@@ -10,9 +10,16 @@
 //   recovery   after the same start, the browser is killed; the next action brings it back on the
 //              same request and measurement, without measuring again
 //
+// With PB_FONT_SETUP=1 the server font setup (scripts/native/fontsetup.mjs install) runs on the
+// home first, as the person runs it (the fonts image carries its packages; Selawik from Microsoft's
+// release), with the owner's recorded acceptance of the core fonts licence when PB_COREFONTS_EULA
+// is "accept" (the setup's --accept-ms-corefonts-eula; the image's package asks nothing itself), so
+// the browser reads the computer's fonts (colour emoji among them) through PairBrowse's font
+// configuration, with the build's own font folder kept in it.
+//
 // /runtime: the pinned runtime; /cache: the pinned Linux build and engine pack (native-cache.mjs),
 // installed first by native-linux.mjs as the helper's install step installs them.
-import { cpSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { userInfo } from "node:os";
 import { session } from "../../helpers/live.mjs";
@@ -22,6 +29,8 @@ import { installNativeLinux } from "./native-linux.mjs";
 import { GRAPHICS_PAGE, parseGraphics, parseWheel, servePage } from "./graphics-page.mjs";
 import { MEASURING_BUSY } from "../../../scripts/daemon/browser/graphics.mjs";
 import { GRAPHICS_STOP_MS, GRAPHICS_TIMEOUT_MS } from "../../../scripts/native/check.mjs";
+import { EULA_FLAG } from "../../../scripts/native/fontsetup.mjs";
+import { spawnSync } from "node:child_process";
 
 const RUNTIME = "/runtime";
 const which = process.argv[2];
@@ -81,6 +90,12 @@ try {
   result.native = { version: native.version, exe: native.exe.replace(/^.*\/(browser|pairbrowse)/, "$1") };
   home = serverHome(RUNTIME, { prefix: `pb-graphics-${which}-`, executablePath: native.exe, config: { browserEngine: "pairbrowse", sessionPicker: false } });
   cpSync(native.engine, join(home, "engine"), { recursive: true });
+  if (process.env.PB_FONT_SETUP === "1") {
+    const flags = process.env.PB_COREFONTS_EULA === "accept" ? [EULA_FLAG] : [];
+    const s = spawnSync(process.execPath, ["/repo/scripts/native/fontsetup.mjs", "install", ...flags], { env: { ...process.env, PAIRBROWSE_HOME: home }, encoding: "utf8", timeout: 600_000, stdio: ["ignore", "pipe", "pipe"] });
+    const confText = (() => { try { return readFileSync(join(home, "fonts.conf"), "utf8"); } catch { return ""; } })();
+    result.fontSetup = { code: s.status, out: `${s.stdout || ""}${s.stderr || ""}`.slice(-3000), record: existsSync(join(home, "fonts", "setup.json")), dirs: [...confText.matchAll(/<dir>([^<]+)<\/dir>/g)].map((m) => m[1]) };
+  }
 
   const h = await start(home, { PAIRBROWSE_TEST_RELAUNCH_MS: "1000" });
   result.page = await readPage(h, site.url);
@@ -98,6 +113,7 @@ try {
   result.validation = defaultValidation(home, native.version);
   result.measured = logCount(home, /measuring graphics once for this browser version/);
   result.launchLines = logText(home).split("\n").filter((l) => /launch: graphics|graphics probe|graphics not measured/.test(l)).slice(-12);
+  result.fontLines = logText(home).split("\n").filter((l) => /launch: fonts|fonts:/.test(l)).slice(-4);
 
   if (which === "recovery") {
     // After a crash the helper ends agents' connections (their bridges reconnect within 10 s and

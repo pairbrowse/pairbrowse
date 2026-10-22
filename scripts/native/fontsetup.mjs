@@ -318,7 +318,7 @@ async function install({ deps, config, print, preset = null }) {
     ok = false;
   }
   writeJsonAtomic(deps.record, { ...record, version: 1, at: new Date(deps.now()).toISOString(), distro: s.distro, selawik: selawikInstalled(selawikDir) ? SELAWIK.version : null }, { mode: 0o600 });
-  writeFontsConf({ on: fontStandInsOf(config), file: deps.conf, fontsDir: deps.fontsDir });
+  writeFontsConf({ on: fontStandInsOf(config), file: deps.conf, fontsDir: deps.fontsDir, executablePath: deps.exec });
   print(`The browser's font configuration is in place (pairbrowse.fontStandIns ${fontStandInsOf(config) ? "on" : "off"}); it applies at the browser's next start.`);
   s = fontState({ deps, config });
   for (const l of stateLines(s)) print(l);

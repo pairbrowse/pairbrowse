@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { deflateRawSync } from "node:zlib";
 import { createHash } from "node:crypto";
 import { REPORT_FONTS, STAND_INS, SWITCHED_STAND_INS, WINDOWS_FONTS, fontGroups, fontGroupsLine, fontStatus, parseFontList, readFontFamiliesAsync } from "../scripts/native/winfonts.mjs";
-import { SYSTEM_CONF, browserFontEnv, fontSource, fontStandInsOf, fontsConf, fontsReport, writeFontsConf } from "../scripts/native/fontconf.mjs";
+import { BUILD_FONTS_DIR, SYSTEM_CONF, browserFontEnv, buildFontsDir, fontSource, fontStandInsOf, fontsConf, fontsReport, writeFontsConf } from "../scripts/native/fontconf.mjs";
 import { EULA_CONFIG_KEY, EULA_FLAG, UBUNTU_EULA_PRESEED, eulaPreset, CORE_PACKAGE, EULA_FILE, FREE_FAMILIES, PACKAGES, SELAWIK, USAGE, distroOf, eulaAnswer, freeFamiliesLacking, freePackages, installSelawik, parseCandidate, parseDpkgStatus, parseOsRelease, runFontSetup, selawikInstalled, zipEntries, zipRead } from "../scripts/native/fontsetup.mjs";
 import { configProblem } from "../scripts/config-schema.mjs";
 
@@ -84,6 +84,22 @@ test("the browser's font configuration: only on Linux once the setup ran, writte
   const before = statSync(file).mtimeMs;
   writeFontsConf({ on: true, file, fontsDir });
   assert.equal(statSync(file).mtimeMs, before, "unchanged text is not written again");
+  // The build's own font folder (beside the executable the launch names) stays reachable with the
+  // stand-ins on: the engine's metric substitutes point Windows names at its faces (Cambria Math,
+  // Bahnschrift, Gadugi, Lucida Console), so a local() load finds one; off, the folder stays out.
+  assert.equal(BUILD_FONTS_DIR, "fonts");
+  assert.equal(buildFontsDir("/opt/pb/chrome"), "/opt/pb/fonts");
+  assert.equal(buildFontsDir(null), null);
+  assert.equal(buildFontsDir(""), null);
+  assert.deepEqual(browserFontEnv({}, { platform: "linux", record, file, fontsDir, executablePath: "/opt/pb/chrome" }), { FONTCONFIG_FILE: file });
+  const withBuild = readFileSync(file, "utf8");
+  assert.ok(withBuild.includes(`<dir>${join(fontsDir, "selawik")}</dir>\n  <dir>/opt/pb/fonts</dir>`), `the setup's folder, then the build's:\n${withBuild}`);
+  browserFontEnv({ pairbrowse: { fontStandIns: false } }, { platform: "linux", record, file, fontsDir, executablePath: "/opt/pb/chrome" });
+  assert.doesNotMatch(readFileSync(file, "utf8"), /<dir>/, "off: no folder, the build's included");
+  writeFontsConf({ on: true, file, fontsDir, executablePath: "/opt/pb/chrome" });
+  assert.equal(readFileSync(file, "utf8"), withBuild);
+  writeFontsConf({ on: true, file, fontsDir });
+  assert.doesNotMatch(readFileSync(file, "utf8"), /\/opt\/pb\/fonts/, "no executable named: the setup's folder alone");
   // A file that can't be written leaves the build's own, said in the log.
   const lines = [];
   assert.equal(browserFontEnv({}, { platform: "linux", record, file: join(record, "x.conf"), fontsDir, log: (l) => lines.push(l) }), null);

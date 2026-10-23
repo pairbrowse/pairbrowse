@@ -43,7 +43,7 @@
   --ctl: 32px; /* text buttons: Pause, Take control, Save, End session, Make invite */
   --ctl-sm: 28px; /* chevrons, folds, collapse, nav icons */
   --ctl-xs: 24px; /* a section's "+" */
-  --ctl-strip: 34px; /* the strip's Live pill and Share (B2, the mockup's) */
+  --ctl-strip: 34px; /* the strip brand mark's box (B2, the mockup's) */
   --row-nav: 36px; /* the left dock's nav rows (B3) */
   --row-person: 44px; /* the left dock's agent and people rows (B3) */
   --row-peer: 56px; /* the right dock's people rows (B4) */

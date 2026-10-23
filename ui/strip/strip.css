@@ -99,9 +99,15 @@ body[data-dragging] #tabs li.drag { position: relative; z-index: 1; transition: 
 .avatar.plain { background: var(--elevated); color: var(--ink); box-shadow: inset 0 0 0 1px var(--edge-input), 0 0 0 1.5px var(--bg); }
 .avatar.more { background: var(--elevated); color: var(--ink); font-weight: 500; font-size: var(--fs-3); }
 
-#share-btn { display: inline-flex; align-items: center; gap: 9px; height: var(--ctl-strip); padding: 0 14px 0 13px; border: 1px solid var(--edge-btn); border-radius: var(--r-2); background: var(--btn); box-shadow: inset 0 1px 0 var(--edge-light); color: var(--ink); font-size: var(--fs-3); font-weight: 500; cursor: default; transition: background-color var(--t-hover); } /* mockup */
-#share-btn svg { width: 16px; height: 16px; }
-#share-btn:hover, #share-btn[aria-expanded="true"] { background: var(--hover); }
+/* Share, PairBrowse's main action and the one accent in the corner (the user, 2026-10-24): the
+   primary buttons' blue (--accent-fill, as Save in Settings), white icon and label, no outline; the
+   toolbar buttons' 28 px height and corner; its right edge on the card's, as the toolbar's last group
+   below, the "..." over the side rail's column (525). Hover darker, pressed darker with an inset
+   shade, open as hovered; the focus ring outside it. */
+#share-btn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px 0 10px; border: 0; border-radius: var(--r-2); background: var(--accent-fill); color: #fff; font-size: var(--fs-3); font-weight: 600; line-height: 1; cursor: default; transition: background-color var(--t-hover), box-shadow var(--t-hover); } /* native: the toolbar's buttons, optically centred */
+#share-btn svg { width: 15px; height: 15px; } /* native: the label's cap height */
+#share-btn:hover, #share-btn[aria-expanded="true"] { background: var(--accent-fill-hover); }
+#share-btn:active { background: var(--accent-fill-hover); box-shadow: inset 0 1px 3px rgb(0 0 0 / 0.35); }
 #menu-btn { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink); cursor: default; transition: background-color var(--t-hover), color var(--t-hover); }
 #menu-btn svg { width: 18px; height: 18px; } /* mockup */
 #menu-btn:hover, #menu-btn[aria-expanded="true"] { background: var(--hover); color: var(--ink); }
@@ -180,7 +186,7 @@ body[data-bubble="native"] .m-pop { transition: none; }
 #tabs li:focus-visible, #menu .item:focus-visible { outline-offset: -2px; box-shadow: var(--glow-focus); }
 /* Focus keeps an element's own light first, then the halo. */
 #tabs li[aria-selected="true"]:focus-visible { box-shadow: inset 0 1px 0 var(--edge-light), var(--halo), var(--glow-focus); }
-#share-btn:focus-visible { box-shadow: inset 0 1px 0 var(--edge-light), var(--glow-focus); }
+#share-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; box-shadow: var(--glow-focus); }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 /* Said to a screen reader only: where Share opened its card (another part of the window). */

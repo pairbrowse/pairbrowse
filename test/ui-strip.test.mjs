@@ -596,7 +596,7 @@ describe("no status pill in the row; Share on the line", () => pageTest("strip",
     return { pill: !!document.getElementById("pill"), status: !!document.querySelector("#right .dot, #right [data-state]"), words: /Live session|\bLocal\b/.test(document.getElementById("row").textContent), share: b.top + b.height / 2, h: b.height, above: b.top, below: innerHeight - b.bottom };
   });
   assert.deepEqual([r.pill, r.status, r.words], [false, false, false], "no pill, no Local or Live words in the row");
-  assert.equal(r.h, 34);
+  assert.equal(r.h, 28, "Share is the toolbar buttons' height");
   assert.ok(Math.abs(r.share - 23.5) <= 0.5, `Share's centre ${r.share} on the row's middle`);
   assert.ok(Math.abs(r.above - r.below) <= 0.5, `Share's gaps ${r.above} above, ${r.below} below`);
 }));

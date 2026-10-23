@@ -8,9 +8,11 @@
 // gets this file instead (native-engine.mjs launchNative, the caller's env winning over the
 // pack's): the computer's own configuration and fonts, and, while pairbrowse.fontStandIns is on
 // (the default, as the fourth ordinary-browser measurement settled: the Windows names found, no
-// check's verdict lost), the open stand-ins (winfonts.mjs STAND_INS) under the Windows names:
-// Selawik from the setup's own folder (Microsoft's release, pinned), Carlito and Caladea from the
-// distribution's packages, and the build's own font folder (BUILD_FONTS_DIR beside the binary:
+// check's verdict lost), the open stand-ins (winfonts.mjs STAND_INS, one distinct family per
+// Windows name) under the Windows names: Selawik (Microsoft's release) and the rest
+// (native/standins.mjs: Arimo, Tinos, Cousine, Gelasio, Carlito, Caladea, DejaVu Sans, Fira Sans,
+// Comic Relief, Anton, Inconsolata) from the setup's own folders, each pinned from its publisher,
+// and the build's own font folder (BUILD_FONTS_DIR beside the binary:
 // Arimo, Tinos, Cousine, Gelasio, Anton, Comic Neue, Inconsolata, DejaVu and the rest), which the
 // engine's own metric substitutes name for the Windows families it lists (Cambria Math, Bahnschrift,
 // Gadugi, Lucida Console and more), so a local() load of such a name finds a face as it does under
@@ -24,7 +26,8 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync 
 import { dirname, join } from "node:path";
 import { paths } from "../paths.mjs";
 import { readJson } from "../util.mjs";
-import { STAND_INS, SWITCHED_STAND_INS, fontGroups, fontStatus, readFontFamiliesAsync } from "./winfonts.mjs";
+import { STAND_IN_DIRS } from "./standins.mjs";
+import { NAME_ALIASES, STAND_INS, SWITCHED_STAND_INS, fontGroups, fontStatus, readFontFamiliesAsync } from "./winfonts.mjs";
 
 // The computer's own fontconfig configuration (its fonts, folders, cache and metric aliases).
 export const SYSTEM_CONF = "/etc/fonts/fonts.conf";
@@ -42,10 +45,13 @@ export const fontStandInsOf = (config) => config?.pairbrowse?.fontStandIns !== f
 const xml = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const family = (name) => `<family>${xml(name)}</family>`;
 
-// The file's text: on (pairbrowse.fontStandIns), the stand-ins' folders (dirs: Selawik's and the
-// build's own) and one alias per Windows name (accept: after the family itself, so a real font of
-// that name always wins; binding "same", as fontconfig's own metric aliases); off, the switched
-// stand-ins (never Liberation, the system's own alias) rejected, so the browser lists none of them.
+// The file's text: on (pairbrowse.fontStandIns), the stand-ins' folders (dirs: the setup's and the
+// build's own), one alias per Windows name (accept: after the family itself, so a real font of
+// that name, Microsoft's core font where installed, always wins; binding "same", as fontconfig's
+// own metric aliases) and one per other name for a Windows family's faces (NAME_ALIASES:
+// Helvetica answered with Arial, then Arial's stand-in); off, the switched stand-ins rejected, so
+// the browser lists none of them (never Liberation, the system's own alias, nor DejaVu Sans, the
+// system's own text face).
 export function fontsConf({ on = false, base = SYSTEM_CONF, dirs = [] } = {}) {
   const lines = [
     '<?xml version="1.0"?>',
@@ -57,6 +63,7 @@ export function fontsConf({ on = false, base = SYSTEM_CONF, dirs = [] } = {}) {
   if (on) {
     for (const d of dirs) lines.push(`  <dir>${xml(d)}</dir>`);
     for (const s of STAND_INS) lines.push(`  <alias binding="same">${family(s.family)}<accept>${family(s.standIn)}</accept></alias>`);
+    for (const a of NAME_ALIASES) lines.push(`  <alias binding="same">${family(a.name)}<accept>${family(a.of)}${family(STAND_INS.find((s) => s.family === a.of).standIn)}</accept></alias>`);
   } else {
     lines.push("  <selectfont><rejectfont>");
     for (const name of SWITCHED_STAND_INS) lines.push(`    <pattern><patelt name="family"><string>${xml(name)}</string></patelt></pattern>`);
@@ -75,7 +82,7 @@ export const setupDone = (record = paths.fontsSetup) => existsSync(record);
 // on (none: the setup's write before a build is installed; the next start writes it again).
 export function writeFontsConf({ on = false, file = paths.fontsConf, fontsDir = paths.fonts, executablePath = null } = {}) {
   const build = buildFontsDir(executablePath);
-  const text = fontsConf({ on, dirs: [join(fontsDir, SELAWIK_DIR), ...(build ? [build] : [])] });
+  const text = fontsConf({ on, dirs: [join(fontsDir, SELAWIK_DIR), ...STAND_IN_DIRS.map((d) => join(fontsDir, d)), ...(build ? [build] : [])] });
   let now = null;
   try { now = readFileSync(file, "utf8"); } catch {}
   if (now !== text) {

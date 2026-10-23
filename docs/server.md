@@ -97,12 +97,48 @@ On Debian and Ubuntu it installs:
 2. **Colour emoji and CJK**: `fonts-noto-color-emoji` and `fonts-noto-cjk` (with `fontconfig`). Not
    optional on a computer without a graphics card: the install check (`fonts.emoji` in a profile's
    checks) warns when emoji draw in black and white.
-3. **The open stand-ins** for Windows-only names: Carlito for Calibri and Caladea for Cambria
-   (`fonts-crosextra-carlito`, `fonts-crosextra-caladea`), Liberation for Arial, Times New Roman and
-   Courier New where the core fonts are absent (`fonts-liberation`), all SIL OFL 1.1, and Selawik,
-   Microsoft's own open stand-in for Segoe UI (OFL 1.1; close to Segoe UI, not the same: its kerning
-   differs), taken from Microsoft's release on GitHub with the archive, each font in it and its
-   licence pinned by SHA-256, kept under their own names in `~/.pairbrowse/fonts/selawik/`.
+3. **The open stand-ins** for Windows names, one distinct open family per Windows family, so no
+   two Windows names answer with the same font and a width check (Verdana's width against
+   Arial's) finds them apart as it would on Windows. Each comes from its publisher only, every font
+   file and its licence pinned by SHA-256 in the setup (`scripts/native/standins.mjs`, Selawik in
+   `fontsetup.mjs`), kept under its published name in its own folder of `~/.pairbrowse/fonts/` with
+   its licence file beside it, never renamed or modified; a file that doesn't match its pin is not
+   written, and `install` exits 1 until every family is in place:
+
+   | Windows name | Stand-in | Licence | Source | Measured against the Windows font |
+   | --- | --- | --- | --- | --- |
+   | Arial, Helvetica | Arimo | SIL OFL 1.1 (Apache-2.0 in the Croscore release) | Google Fonts | same advance width for every ASCII glyph |
+   | Times New Roman, Times | Tinos | SIL OFL 1.1 (Apache-2.0 in the Croscore release) | Google Fonts (licence from googlefonts/tinos) | same for every ASCII glyph |
+   | Courier New, Courier | Cousine | SIL OFL 1.1 (Apache-2.0 in the Croscore release) | Google Fonts | same for every ASCII glyph |
+   | Georgia | Gelasio | SIL OFL 1.1 | Google Fonts | same for every ASCII glyph |
+   | Calibri | Carlito | SIL OFL 1.1 | Google Fonts | metric-compatible by design (no Calibri measured here) |
+   | Cambria | Caladea | SIL OFL 1.1 | Google Fonts | metric-compatible by design (no Cambria measured here) |
+   | Segoe UI (Light, Semilight, Semibold) | Selawik (its styles) | SIL OFL 1.1 | Microsoft's release | close, not the same: its kerning differs |
+   | Verdana | DejaVu Sans | DejaVu Fonts licence | DejaVu's release 2.37 | probe strings within 3%, glyphs 5% apart on average |
+   | Tahoma | DejaVu Sans Condensed | DejaVu Fonts licence | DejaVu's release 2.37 | probe strings within 5%, glyphs 6.5% apart on average |
+   | Trebuchet MS | Fira Sans | SIL OFL 1.1 | Google Fonts | probe strings within 3% |
+   | Comic Sans MS | Comic Relief | SIL OFL 1.1 | Google Fonts | same for every ASCII glyph (regular and bold) |
+   | Impact | Anton | SIL OFL 1.1 | Google Fonts | probe strings within 4% |
+   | Consolas | Inconsolata | SIL OFL 1.1 | Google Fonts | monospace 0.5 em a character, narrower than Consolas (see below) |
+
+   Google Fonts here is its own repository (`github.com/google/fonts`) at one pinned commit;
+   DejaVu's release is the one dejavu-fonts.github.io links (its GitHub release 2.37, the archive
+   pinned, DejaVu Sans and DejaVu Sans Condensed and the `LICENSE` taken from it); Selawik is
+   Microsoft's own release on GitHub (1.01). How the choices were made: each candidate's advance
+   widths (the font's `hmtx`, at its default instance) against the Windows font's, on the probe
+   string width checks use (`mmmmmmmmmmlli`), a pangram and all printable ASCII. For Trebuchet MS,
+   Fira Sans came closest (+2.9%, +0.2%, -1.0%) of the open sans families measured: PT Sans
+   (-2 to -5%), Noto Sans (+4 to +10%), Lato, Cabin, Open Sans, Source Sans 3, Mulish, Work Sans
+   and Comic Neue all further. For Comic Sans MS, Comic Relief matches glyph for glyph, where Comic
+   Neue (+4% to -12%) and Noto Sans (+18% to -5%) don't. For Consolas no metric-compatible open
+   monospace exists: Cousine (0.6 em) is Courier New's already, so Inconsolata at 0.5 em, its
+   default width unchanged, is the nearest distinct one; a width check finds a monospace there, as on
+   Windows, but narrower than Consolas (which wasn't on the measuring computer; its own width is
+   for the live check to compare). The probe widths of all sixteen stand-ins differ pairwise (the
+   closest pair, Comic Relief and Tinos, is as close as Comic Sans MS and Times New Roman are on
+   Windows). Microsoft's own font of a name always wins over its stand-in: the alias file accepts the
+   stand-in only after the name itself, so with the core fonts installed (step 1) Arial is Arial,
+   and Helvetica answers with Arial before Arimo.
 4. **The browser's font configuration** (`~/.pairbrowse/fonts.conf`, written again at each browser
    start): the browser then reads this computer's fonts (everything above) rather than only the
    fonts the Linux build carries; with the stand-ins on, the build's own font folder stays in reach
@@ -110,31 +146,31 @@ On Debian and Ubuntu it installs:
    Bahnschrift, Gadugi, Lucida Console and others) still resolve. Whether the Windows names point at the stand-ins is
    `pairbrowse.fontStandIns` in `config.json` (see [Configuration](configuration.md)), `true` by
    default (the ordinary-browser measurement found the Windows names with it and lost no check's
-   verdict): on, those names find their stand-in; off, the switched stand-ins (Selawik, Carlito,
-   Caladea) are kept from the browser altogether, so a width check finds no
-   Segoe UI, Calibri or Cambria (Liberation stays: fontconfig's own aliases use it for Arial, Times
-   New Roman and Courier New, as on any Linux desktop). Only the browser's font matching changes,
+   verdict): on, those names find their stand-in; off, the stand-ins are kept from the browser
+   altogether, so a width check finds no Segoe UI, Calibri, Cambria or the other Windows names
+   there (DejaVu Sans stays, the system's own text face, as does Liberation where its package is
+   installed: fontconfig's own aliases use it for Arial, Times New Roman and Courier New, as on any
+   Linux desktop). Only the browser's font matching changes,
    nothing else on the computer. Until the setup has run, the browser keeps the Linux build's own
    font configuration, which reads only the fonts the build carries (its own clones always stand
    in there, and none of the computer's fonts, its colour emoji among them, reach it).
 
-On Fedora (`sudo dnf install fontconfig google-noto-color-emoji-fonts google-noto-sans-cjk-fonts
-google-carlito-fonts google-crosextra-caladea-fonts liberation-sans-fonts liberation-serif-fonts
-liberation-mono-fonts`) and Arch (`sudo pacman -S fontconfig noto-fonts-emoji noto-fonts-cjk
-ttf-carlito ttf-caladea ttf-liberation`) the setup names these packages for you to install, then
+On Fedora (`sudo dnf install fontconfig google-noto-color-emoji-fonts google-noto-sans-cjk-fonts`)
+and Arch (`sudo pacman -S fontconfig noto-fonts-emoji noto-fonts-cjk`) the setup names these packages for you to install, then
 does steps 3 and 4 itself, and `install` exits 1 until this computer's fontconfig lists their fonts; Microsoft's core fonts aren't in those distributions' own repositories,
 and PairBrowse never takes them from elsewhere. On another distribution install the equivalent
-packages (fontconfig, a colour emoji font, Noto CJK, Carlito, Caladea, Liberation) and run the
-setup for Selawik and the configuration (it checks for the same fonts).
+packages (fontconfig, a colour emoji font, Noto CJK) and run the setup for the stand-ins and the
+configuration (it checks for the same fonts). The stand-ins come from their publishers, pinned, on
+every distribution.
 
-What stays absent: Segoe UI, Calibri, Cambria, Consolas, Marlett, MS UI Gothic, Franklin Gothic and
+What stays absent: Segoe UI, Calibri, Cambria, Consolas, Tahoma, Marlett, MS UI Gothic, Franklin Gothic and
 the other fonts only Windows carries are Microsoft's, licensed with Windows, and no free package
 has them. The setup's check, the install self-check ("Windows fonts: ..."), a diagnostics report
 and Settings (About and diagnostics) list each Windows font as present, standing in (and by which
 open font) or absent, so you know what a strict font check will see. The open build
 (`"browser": "pairbrowse-open"`) is never given PairBrowse's font configuration: it reads this
-computer's own, whose metric aliases stand Carlito and Caladea in for Calibri and Cambria whatever
-`pairbrowse.fontStandIns` says, and the report lists its fonts that way.
+computer's own, whose metric aliases stand Carlito and Caladea (where the distribution's packages
+are installed) in for Calibri and Cambria whatever `pairbrowse.fontStandIns` says, and the report lists its fonts that way.
 
 ## The helper as a service
 

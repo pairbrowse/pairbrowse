@@ -100,7 +100,8 @@ export const paths = {
   tools: join(SHARED, "tools"),
   tunnels: join(HOME, "tunnels"),
   // The server setup's fonts (native/fontsetup.mjs, shared by instances): Selawik from Microsoft's
-  // pinned release with its licence, and the setup's record (setup.json: what it found and did,
+  // pinned release and the other open stand-ins from their publishers (native/standins.mjs), each
+  // family in its own folder with its licence, and the setup's record (setup.json: what it found and did,
   // and the core fonts' EULA as the person accepted it). The browser's font configuration on
   // Linux (native/fontconf.mjs, this home's pairbrowse.fontStandIns) is written at each start.
   fonts: join(SHARED, "fonts"),

@@ -20,20 +20,32 @@ const FC_LIST_MS = 10_000;
 const LONGER_NAMES = new Set(["franklin gothic"]);
 
 // The Windows families a report lists (diagnostics, Settings, the setup's check): the eight
-// above, Cambria (Office's serif, Caladea's), the Segoe UI weights Selawik has, and Microsoft's
+// above, Cambria (Office's serif, Caladea's), the Segoe UI weights Selawik has, Microsoft's
 // core fonts for the web (the distribution's package: ttf-mscorefonts-installer on Debian and
-// Ubuntu), in that order.
+// Ubuntu) and Tahoma (Windows' own, not among them), in that order.
 export const REPORT_FONTS = Object.freeze([...WINDOWS_FONTS, "Segoe UI Semilight", "Segoe UI Semibold", "Cambria",
-  "Arial", "Times New Roman", "Verdana", "Georgia", "Trebuchet MS", "Comic Sans MS", "Impact", "Andale Mono", "Webdings"]);
+  "Arial", "Times New Roman", "Verdana", "Georgia", "Trebuchet MS", "Comic Sans MS", "Impact", "Andale Mono", "Webdings", "Tahoma"]);
 
-// The open stand-ins for Windows-only names (spec decision 11, second route): each keeps its own
-// name and licence (never renamed or modified); only fontconfig's matching points the Windows name
-// at it, through PairBrowse's alias file while pairbrowse.fontStandIns is on. Selawik is
-// Microsoft's own OFL 1.1 stand-in for Segoe UI (close, not exact: its kerning differs), Carlito
-// and Caladea are metric-compatible with Calibri and Cambria (OFL 1.1), Liberation with Arial,
-// Times New Roman and Courier New (OFL 1.1). system: fontconfig's own metric aliases
-// (30-metric-aliases.conf) already point the name there, whatever the switch says, so the
-// alias file never rejects it (Liberation has been part of the server's font set all along).
+// The open stand-ins for Windows names (spec decision 11, second route): one distinct open family
+// per Windows family, so no two Windows names answer with one font and a width check (the width
+// of Verdana against Arial's) sees them apart as on Windows. Each keeps its own name and licence
+// (never renamed or modified); only fontconfig's matching points the Windows name at it, through
+// PairBrowse's alias file while pairbrowse.fontStandIns is on, and after the name itself, so
+// Microsoft's own font of that name (the core fonts, where the person accepted their EULA) always
+// wins. Selawik is Microsoft's own OFL 1.1 stand-in for Segoe UI (close, not exact: its kerning
+// differs); the rest come pinned from their publishers (native/standins.mjs). Measured against
+// the Windows fonts' advance widths (docs/server.md, Fonts): Arimo, Tinos, Cousine, Gelasio and
+// Comic Relief match Arial, Times New Roman, Courier New, Georgia and Comic Sans MS glyph for
+// glyph; Carlito and Caladea are metric-compatible with Calibri and Cambria by design; DejaVu Sans
+// is within 3% of Verdana and DejaVu Sans Condensed within 5% of Tahoma on the probe strings; Fira
+// Sans was the closest of the open sans families measured for Trebuchet MS (within 3%; Noto Sans
+// 4 to 10% wide); Anton within 4% of Impact; Inconsolata, the nearest monospace not already taken
+// (Cousine is Courier New's), is 0.5 em a character, narrower than Consolas. systemAlias: the
+// family fontconfig's own metric aliases (30-metric-aliases.conf) give the name on any Linux
+// desktop, whatever the switch says, so a report counts it standing in with the switch off too
+// (Liberation, where the distribution's package is installed). common: a family Linux desktops
+// carry for their own text (DejaVu Sans is Debian's default face), never kept from the browser
+// with the switch off.
 export const STAND_INS = Object.freeze([
   { family: "Segoe UI", standIn: "Selawik" },
   { family: "Segoe UI Light", standIn: "Selawik Light" },
@@ -41,12 +53,27 @@ export const STAND_INS = Object.freeze([
   { family: "Segoe UI Semibold", standIn: "Selawik Semibold" },
   { family: "Calibri", standIn: "Carlito" },
   { family: "Cambria", standIn: "Caladea" },
-  { family: "Arial", standIn: "Liberation Sans", system: true },
-  { family: "Times New Roman", standIn: "Liberation Serif", system: true },
-  { family: "Courier New", standIn: "Liberation Mono", system: true },
+  { family: "Arial", standIn: "Arimo", systemAlias: "Liberation Sans" },
+  { family: "Times New Roman", standIn: "Tinos", systemAlias: "Liberation Serif" },
+  { family: "Courier New", standIn: "Cousine", systemAlias: "Liberation Mono" },
+  { family: "Georgia", standIn: "Gelasio" },
+  { family: "Verdana", standIn: "DejaVu Sans", common: true },
+  { family: "Tahoma", standIn: "DejaVu Sans Condensed", common: true },
+  { family: "Trebuchet MS", standIn: "Fira Sans" },
+  { family: "Comic Sans MS", standIn: "Comic Relief" },
+  { family: "Impact", standIn: "Anton" },
+  { family: "Consolas", standIn: "Inconsolata" },
+].map(Object.freeze));
+// Names pages use for the same faces as a Windows family (Helvetica for Arial's): the alias file
+// answers each with that Windows family first (Microsoft's font where installed), then its
+// stand-in, so the two names always measure alike, as on Windows.
+export const NAME_ALIASES = Object.freeze([
+  { name: "Helvetica", of: "Arial" },
+  { name: "Times", of: "Times New Roman" },
+  { name: "Courier", of: "Courier New" },
 ].map(Object.freeze));
 // The stand-in families the alias file keeps from the browser while the switch is off.
-export const SWITCHED_STAND_INS = Object.freeze([...new Set(STAND_INS.filter((s) => !s.system).map((s) => s.standIn))]);
+export const SWITCHED_STAND_INS = Object.freeze([...new Set(STAND_INS.filter((s) => !s.common).map((s) => s.standIn))]);
 
 // fontconfig's families as "family[,family...]:style=..." lines (fc-list : family style), parsed
 // to [{ families: [lower-cased names], styles: [lower-cased names] }].
@@ -83,13 +110,14 @@ export const missingWindowsFonts = (entries) => WINDOWS_FONTS.filter((name) => !
 // Per family of families (REPORT_FONTS by default): { family, status, by? }. status "present" (the
 // font itself is listed), "standing-in" (absent, and its open stand-in is listed where the
 // browser looks it up: by is that family) or "absent". standIns: pairbrowse.fontStandIns, which
-// points the Windows names at the switched stand-ins (the alias file); the system's own aliases
-// (Liberation) stand in whatever it says.
+// points the Windows names at their stand-ins (the alias file); the system's own aliases
+// (systemAlias: Liberation) stand in whatever it says, after the stand-in where both are listed.
 export function fontStatus(entries, { standIns = false, families = REPORT_FONTS } = {}) {
   return families.map((family) => {
     if (listed(entries, family)) return { family, status: "present" };
     const s = STAND_INS.find((x) => x.family === family);
-    if (s && (standIns || s.system) && listed(entries, s.standIn)) return { family, status: "standing-in", by: s.standIn };
+    const by = s && [standIns ? s.standIn : null, s.systemAlias].find((f) => f && listed(entries, f));
+    if (by) return { family, status: "standing-in", by };
     return { family, status: "absent" };
   });
 }

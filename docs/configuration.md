@@ -510,11 +510,14 @@ user's file, readable by others), the section says why and refuses a username or
 (the open build reads the computer's own font configuration), and only once the
   font setup of [Running PairBrowse on a server](server.md#fonts) has run, which gives the browser
   PairBrowse's own font configuration, `~/.pairbrowse/fonts.conf`, written again at each start):
-  `true` points the Windows names at the open stand-ins (Segoe UI and its Light, Semilight and
-  Semibold at Selawik, Calibri at Carlito, Cambria at Caladea, and Arial, Times New Roman and
-  Courier New at Liberation where the real font isn't there), so a width-based font check finds
-  them; `false` keeps Selawik, Carlito and Caladea from the browser altogether (Liberation stays,
-  fontconfig's own alias on any Linux desktop). It changes only the browser's font matching, takes
+  `true` points each Windows name, where the real font isn't there, at its own open stand-in (Segoe
+  UI and its Light, Semilight and Semibold at Selawik, Calibri at Carlito, Cambria at Caladea, Arial
+  and Helvetica at Arimo, Times New Roman and Times at Tinos, Courier New and Courier at Cousine,
+  Georgia at Gelasio, Verdana at DejaVu Sans, Tahoma at DejaVu Sans Condensed, Trebuchet MS at Fira
+  Sans, Comic Sans MS at Comic Relief, Impact at Anton, Consolas at Inconsolata), so a width-based
+  font check finds them, no two with one width; `false` keeps the stand-ins from the browser
+  altogether (DejaVu Sans stays, the system's own text face, and Liberation, fontconfig's own
+  alias on any Linux desktop, where its package is installed). It changes only the browser's font matching, takes
   effect at the browser's next start, and a browser profile can't set it (a helper-wide setting).
   `graphics` is the
   `default` profile's graphics backend (a stored profile has its own `graphics.backend`):

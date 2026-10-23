@@ -17,9 +17,11 @@
 //      licence's text sits beside this file); only then is Ubuntu's own question preseeded, as
 //      the distribution itself provides for an unattended install.
 //   2. Colour emoji and CJK (fonts-noto-color-emoji, fonts-noto-cjk).
-//   3. The open stand-ins: Carlito, Caladea and Liberation from the distribution's packages, and
-//      Selawik from Microsoft's own release (SELAWIK: the archive and each font pinned by SHA-256,
-//      its OFL licence beside them), never renamed or modified.
+//   3. The open stand-ins, one distinct family per Windows name (winfonts.mjs STAND_INS): Selawik
+//      from Microsoft's own release (SELAWIK: the archive and each font pinned by SHA-256, its OFL
+//      licence beside them), and the rest from their publishers (native/standins.mjs: Google Fonts'
+//      own repository at one commit, DejaVu's own release), every file and its licence pinned,
+//      each family in its own folder beside its licence, never renamed or modified.
 //   4. The browser's font configuration (native/fontconf.mjs), switched by pairbrowse.fontStandIns.
 // Node's standard library only.
 import { spawnSync } from "node:child_process";
@@ -31,6 +33,7 @@ import { userInfo } from "node:os";
 import { inflateRawSync } from "node:zlib";
 import { paths } from "../paths.mjs";
 import { downloadPinned, readJson, sha256, writeJsonAtomic } from "../util.mjs";
+import { STAND_IN_FONTS, urlName } from "./standins.mjs";
 import { SELAWIK_DIR, fontSource, fontStandInsOf, readSetup, writeFontsConf } from "./fontconf.mjs";
 import { fontGroups, fontGroupsLine, fontStatus, readFontFamilies } from "./winfonts.mjs";
 
@@ -60,18 +63,18 @@ export const SELAWIK = Object.freeze({
 // distribution's own repositories carry none: PairBrowse never takes them from elsewhere);
 // component: the section it lives in.
 export const PACKAGES = Object.freeze({
-  debian: { manager: "apt", core: CORE_PACKAGE, component: "contrib", base: ["fontconfig"], emoji: ["fonts-noto-color-emoji"], cjk: ["fonts-noto-cjk"], standIns: ["fonts-crosextra-carlito", "fonts-crosextra-caladea", "fonts-liberation"] },
-  ubuntu: { manager: "apt", core: CORE_PACKAGE, component: "multiverse", base: ["fontconfig"], emoji: ["fonts-noto-color-emoji"], cjk: ["fonts-noto-cjk"], standIns: ["fonts-crosextra-carlito", "fonts-crosextra-caladea", "fonts-liberation"] },
-  fedora: { manager: "dnf", core: null, base: ["fontconfig"], emoji: ["google-noto-color-emoji-fonts"], cjk: ["google-noto-sans-cjk-fonts"], standIns: ["google-carlito-fonts", "google-crosextra-caladea-fonts", "liberation-sans-fonts", "liberation-serif-fonts", "liberation-mono-fonts"] },
-  arch: { manager: "pacman", core: null, base: ["fontconfig"], emoji: ["noto-fonts-emoji"], cjk: ["noto-fonts-cjk"], standIns: ["ttf-carlito", "ttf-caladea", "ttf-liberation"] },
+  debian: { manager: "apt", core: CORE_PACKAGE, component: "contrib", base: ["fontconfig"], emoji: ["fonts-noto-color-emoji"], cjk: ["fonts-noto-cjk"] },
+  ubuntu: { manager: "apt", core: CORE_PACKAGE, component: "multiverse", base: ["fontconfig"], emoji: ["fonts-noto-color-emoji"], cjk: ["fonts-noto-cjk"] },
+  fedora: { manager: "dnf", core: null, base: ["fontconfig"], emoji: ["google-noto-color-emoji-fonts"], cjk: ["google-noto-sans-cjk-fonts"] },
+  arch: { manager: "pacman", core: null, base: ["fontconfig"], emoji: ["noto-fonts-emoji"], cjk: ["noto-fonts-cjk"] },
 });
 const MANAGER_COMMAND = { apt: "sudo apt-get install", dnf: "sudo dnf install", pacman: "sudo pacman -S" };
-export const freePackages = (plan) => [...plan.base, ...plan.emoji, ...plan.cjk, ...plan.standIns];
+export const freePackages = (plan) => [...plan.base, ...plan.emoji, ...plan.cjk];
 
 // The families those packages give, as fontconfig names them, for a computer whose packages the
-// person installs (no apt): colour emoji, CJK (Noto Sans CJK JP and its sisters, by the name's
-// start) and the open stand-ins.
-export const FREE_FAMILIES = Object.freeze(["Noto Color Emoji", "Noto Sans CJK", "Carlito", "Caladea", "Liberation Sans", "Liberation Serif", "Liberation Mono"]);
+// person installs (no apt): colour emoji and CJK (Noto Sans CJK JP and its sisters, by the name's
+// start). The open stand-ins come from their publishers on every distribution (STAND_IN_FONTS).
+export const FREE_FAMILIES = Object.freeze(["Noto Color Emoji", "Noto Sans CJK"]);
 // Which of FREE_FAMILIES fontconfig's entries (winfonts.mjs parseFontList) lack; all when fc-list
 // couldn't be asked.
 export function freeFamiliesLacking(entries) {
@@ -175,6 +178,57 @@ export async function installSelawik({ dir, downloads = paths.downloads, pin = S
   return { installed: true };
 }
 
+// Whether one STAND_IN_FONTS family is in dir as pinned (every font and its licence).
+export function standInInstalled(dir, pin) {
+  try {
+    return [...Object.entries(pin.fonts), [pin.license.file, pin.license.sha256]].every(([name, want]) => sha256(readFileSync(join(dir, name))) === want);
+  } catch { return false; }
+}
+
+// The STAND_IN_FONTS families not in place under fontsDir (their dirs).
+export const standInsMissing = (fontsDir, pins = STAND_IN_FONTS) => pins.filter((pin) => !standInInstalled(join(fontsDir, pin.dir), pin)).map((pin) => pin.dir);
+
+// One family into dir: each font (from its URL, or read from the pinned release archive) checked
+// against its own pin, and its licence beside it; every file is fetched and checked before any is
+// written, and nothing else is written. download: util.mjs downloadPinned's stand-in for tests.
+export async function installStandIn({ dir, pin, downloads = paths.downloads, download = downloadPinned }) {
+  if (standInInstalled(dir, pin)) return { installed: false };
+  const files = {};
+  if (pin.archive) {
+    const buf = readFileSync(await download(pin.archive.url, join(downloads, pin.archive.file), pin.archive.sha256));
+    const entries = zipEntries(buf);
+    const take = (inArchive, name, want) => {
+      const entry = entries.get(inArchive);
+      if (!entry) throw new Error(`${pin.family}'s release has no ${name}`);
+      const data = zipRead(buf, entry);
+      if (sha256(data) !== want) throw new Error(`${pin.family}'s ${name} doesn't match its pinned SHA-256`);
+      files[name] = data;
+    };
+    for (const [name, want] of Object.entries(pin.fonts)) take(pin.archive.prefix + name, name, want);
+    take(pin.license.inArchive, pin.license.file, pin.license.sha256);
+  } else {
+    const staging = join(downloads, "fonts", pin.dir);
+    for (const [name, want] of [...Object.entries(pin.fonts), [pin.license.file, pin.license.sha256]]) {
+      const url = name === pin.license.file ? pin.license.url : pin.base + urlName(name);
+      files[name] = readFileSync(await download(url, join(staging, name), want));
+    }
+  }
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  for (const [name, data] of Object.entries(files)) writeFileSync(join(dir, name), data, { mode: 0o644 });
+  return { installed: true };
+}
+
+// Every STAND_IN_FONTS family under fontsDir: { installed: [dirs written], failed: [{ dir, error }] }.
+export async function installStandIns({ fontsDir, pins = STAND_IN_FONTS, downloads = paths.downloads, download = downloadPinned } = {}) {
+  const out = { installed: [], failed: [] };
+  for (const pin of pins) {
+    try {
+      if ((await installStandIn({ dir: join(fontsDir, pin.dir), pin, downloads, download })).installed) out.installed.push(pin.dir);
+    } catch (e) { out.failed.push({ dir: pin.dir, error: e?.message || String(e) }); }
+  }
+  return out;
+}
+
 // The person's answer to Microsoft's EULA for the core fonts: { accepted, how } where how is
 // "recorded" (accepted before, same text), "typed" (the text shown, "yes" typed), "package" (the
 // distribution's package asks, Ubuntu: the person goes ahead with "yes" and answers its own
@@ -204,7 +258,7 @@ export async function eulaAnswer({ distro, ask, print, record = null, text = rea
 }
 
 // The font set's state, for check and install: { distro, os, plan, installed (Set), missing,
-// core: { installed, candidate }, selawik, standIns, conf (fontconf.mjs fontSource's kind),
+// core: { installed, candidate }, selawik, standInsMissing (STAND_IN_FONTS dirs not in place), standIns, conf (fontconf.mjs fontSource's kind),
 // groups (winfonts.mjs fontGroups, or null), lacking (where no apt installs them: the
 // FREE_FAMILIES this computer's own font configuration lacks; null with apt) }.
 export function fontState({ deps, config }) {
@@ -226,7 +280,7 @@ export function fontState({ deps, config }) {
   // The system's configuration, not the browser's: with the stand-ins off PairBrowse's file
   // keeps Carlito and Caladea from the browser, installed or not.
   const lacking = plan?.manager === "apt" ? null : freeFamiliesLacking(readFontFamilies({ run: deps.run }));
-  return { os, distro, plan, installed, missing, core, selawik: selawikInstalled(join(deps.fontsDir, SELAWIK_DIR)), standIns: fontStandInsOf(config),
+  return { os, distro, plan, installed, missing, core, selawik: selawikInstalled(join(deps.fontsDir, SELAWIK_DIR)), standInsMissing: standInsMissing(deps.fontsDir), standIns: fontStandInsOf(config),
     conf: src?.conf ?? null, groups: entries ? fontGroups(fontStatus(entries, { standIns: src.standIns })) : null, lacking };
 }
 
@@ -234,15 +288,16 @@ export function fontState({ deps, config }) {
 export function stateLines(s) {
   const out = [`Distribution: ${s.os.name || s.os.id || "unknown"}${s.distro ? "" : " (not one this setup installs for: docs/server.md lists the packages)"}`];
   if (s.plan?.manager === "apt") {
-    out.push(s.missing.length ? `Packages missing: ${s.missing.join(" ")}` : "Packages: emoji, CJK and the open stand-ins installed");
+    out.push(s.missing.length ? `Packages missing: ${s.missing.join(" ")}` : "Packages: emoji and CJK installed");
     out.push(s.core.installed ? "Microsoft's core fonts: installed (the distribution's package)" : s.core.candidate ? "Microsoft's core fonts: not installed (install asks you about Microsoft's licence first)"
       : `Microsoft's core fonts: not installed; their package is in ${s.plan.component}, which this computer's package sources don't include (docs/server.md)`);
   } else if (s.plan) {
     out.push(`Packages to install with ${s.plan.manager}: ${freePackages(s.plan).join(" ")} (${MANAGER_COMMAND[s.plan.manager]} ...)`);
     out.push("Microsoft's core fonts: not in this distribution's own repositories (PairBrowse never takes them from elsewhere)");
   }
-  if (s.lacking) out.push(s.lacking.length ? `Fonts missing: ${s.lacking.join(", ")}` : "Fonts: emoji, CJK and the open stand-ins installed");
+  if (s.lacking) out.push(s.lacking.length ? `Fonts missing: ${s.lacking.join(", ")}` : "Fonts: emoji and CJK installed");
   out.push(s.selawik ? `Selawik ${SELAWIK.version}: installed (Microsoft's release, pinned)` : "Selawik: not installed (install takes it from Microsoft's release)");
+  out.push(s.standInsMissing.length ? `Open stand-ins: not installed: ${s.standInsMissing.join(", ")} (install takes them from their publishers, pinned)` : "Open stand-ins: installed (pinned from their publishers, unchanged)");
   out.push(`Stand-ins (pairbrowse.fontStandIns): ${s.standIns ? "on" : "off"}; the browser reads its fonts through ${{ pairbrowse: "PairBrowse's font configuration", build: "the build's own font configuration (run install to use the computer's fonts)", system: "this computer's font configuration" }[s.conf] || "nothing checked here"}`);
   out.push(fontGroupsLine(s.groups));
   return out;
@@ -317,7 +372,11 @@ async function install({ deps, config, print, preset = null }) {
     print(`Selawik couldn't be installed: ${e?.message || e}`);
     ok = false;
   }
-  writeJsonAtomic(deps.record, { ...record, version: 1, at: new Date(deps.now()).toISOString(), distro: s.distro, selawik: selawikInstalled(selawikDir) ? SELAWIK.version : null }, { mode: 0o600 });
+  const standIns = await deps.installStandIns({ fontsDir: deps.fontsDir });
+  if (standIns.installed.length) print(`Open stand-ins installed from their publishers (pinned, unchanged): ${standIns.installed.join(", ")}.`);
+  for (const f of standIns.failed) { print(`The open stand-in ${f.dir} couldn't be installed: ${f.error}`); ok = false; }
+  for (const pin of STAND_IN_FONTS) if (!standIns.failed.some((f) => f.dir === pin.dir)) deps.run("fc-cache", [join(deps.fontsDir, pin.dir)], { timeout: FC_CACHE_MS, stdio: "ignore" });
+  writeJsonAtomic(deps.record, { ...record, version: 1, at: new Date(deps.now()).toISOString(), distro: s.distro, selawik: selawikInstalled(selawikDir) ? SELAWIK.version : null, standInFonts: STAND_IN_FONTS.map((p) => p.dir).filter((d) => !standInsMissing(deps.fontsDir).includes(d)) }, { mode: 0o600 });
   writeFontsConf({ on: fontStandInsOf(config), file: deps.conf, fontsDir: deps.fontsDir, executablePath: deps.exec });
   print(`The browser's font configuration is in place (pairbrowse.fontStandIns ${fontStandInsOf(config) ? "on" : "off"}); it applies at the browser's next start.`);
   s = fontState({ deps, config });
@@ -360,6 +419,7 @@ export function defaultDeps() {
     },
     ask: askTerminal,
     installSelawik,
+    installStandIns,
     now: Date.now,
     exec: null,
     fontsDir: paths.fonts,

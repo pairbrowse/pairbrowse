@@ -11,9 +11,10 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync
 import { join } from "node:path";
 import { deflateRawSync } from "node:zlib";
 import { createHash } from "node:crypto";
-import { REPORT_FONTS, STAND_INS, SWITCHED_STAND_INS, WINDOWS_FONTS, fontGroups, fontGroupsLine, fontStatus, parseFontList, readFontFamiliesAsync } from "../scripts/native/winfonts.mjs";
+import { NAME_ALIASES, REPORT_FONTS, STAND_INS, SWITCHED_STAND_INS, WINDOWS_FONTS, fontGroups, fontGroupsLine, fontStatus, parseFontList, readFontFamiliesAsync } from "../scripts/native/winfonts.mjs";
 import { BUILD_FONTS_DIR, SYSTEM_CONF, browserFontEnv, buildFontsDir, fontSource, fontStandInsOf, fontsConf, fontsReport, writeFontsConf } from "../scripts/native/fontconf.mjs";
-import { EULA_CONFIG_KEY, EULA_FLAG, UBUNTU_EULA_PRESEED, eulaPreset, CORE_PACKAGE, EULA_FILE, FREE_FAMILIES, PACKAGES, SELAWIK, USAGE, distroOf, eulaAnswer, freeFamiliesLacking, freePackages, installSelawik, parseCandidate, parseDpkgStatus, parseOsRelease, runFontSetup, selawikInstalled, zipEntries, zipRead } from "../scripts/native/fontsetup.mjs";
+import { EULA_CONFIG_KEY, EULA_FLAG, UBUNTU_EULA_PRESEED, eulaPreset, CORE_PACKAGE, EULA_FILE, FREE_FAMILIES, PACKAGES, SELAWIK, USAGE, distroOf, eulaAnswer, freeFamiliesLacking, freePackages, installSelawik, installStandIn, installStandIns, parseCandidate, parseDpkgStatus, parseOsRelease, runFontSetup, selawikInstalled, standInInstalled, standInsMissing, zipEntries, zipRead } from "../scripts/native/fontsetup.mjs";
+import { GOOGLE_FONTS_COMMIT, STAND_IN_DIRS, STAND_IN_FONTS, urlName } from "../scripts/native/standins.mjs";
 import { configProblem } from "../scripts/config-schema.mjs";
 
 const root = new URL("../", import.meta.url).pathname;
@@ -22,10 +23,12 @@ const scratch = (name) => mkdtempSync(join(testHome, `${name}-`));
 
 test("each Windows family is present, standing in (by which open font) or absent", () => {
   assert.deepEqual(REPORT_FONTS.slice(0, 8), [...WINDOWS_FONTS]);
-  for (const f of ["Cambria", "Arial", "Times New Roman", "Verdana", "Georgia", "Trebuchet MS", "Comic Sans MS", "Impact", "Andale Mono", "Webdings"]) assert.ok(REPORT_FONTS.includes(f), f);
+  for (const f of ["Cambria", "Arial", "Times New Roman", "Verdana", "Georgia", "Trebuchet MS", "Comic Sans MS", "Impact", "Andale Mono", "Webdings", "Tahoma"]) assert.ok(REPORT_FONTS.includes(f), f);
   assert.deepEqual(STAND_INS.map((s) => [s.family, s.standIn]), [["Segoe UI", "Selawik"], ["Segoe UI Light", "Selawik Light"], ["Segoe UI Semilight", "Selawik Semilight"], ["Segoe UI Semibold", "Selawik Semibold"],
-    ["Calibri", "Carlito"], ["Cambria", "Caladea"], ["Arial", "Liberation Sans"], ["Times New Roman", "Liberation Serif"], ["Courier New", "Liberation Mono"]]);
-  assert.deepEqual([...SWITCHED_STAND_INS], ["Selawik", "Selawik Light", "Selawik Semilight", "Selawik Semibold", "Carlito", "Caladea"], "Liberation is the system's own alias, never switched");
+    ["Calibri", "Carlito"], ["Cambria", "Caladea"], ["Arial", "Arimo"], ["Times New Roman", "Tinos"], ["Courier New", "Cousine"], ["Georgia", "Gelasio"],
+    ["Verdana", "DejaVu Sans"], ["Tahoma", "DejaVu Sans Condensed"], ["Trebuchet MS", "Fira Sans"], ["Comic Sans MS", "Comic Relief"], ["Impact", "Anton"], ["Consolas", "Inconsolata"]]);
+  assert.deepEqual([...SWITCHED_STAND_INS], ["Selawik", "Selawik Light", "Selawik Semilight", "Selawik Semibold", "Carlito", "Caladea", "Arimo", "Tinos", "Cousine", "Gelasio", "Fira Sans", "Comic Relief", "Anton", "Inconsolata"],
+    "DejaVu Sans is the system's own text face and Liberation the system's own alias: never switched");
   const entries = parseFontList("Arial:style=Regular\nCarlito:style=Regular\nCaladea:style=Bold\nSelawik:style=Regular\nLiberation Serif:style=Regular\n");
   const off = fontStatus(entries, { families: ["Arial", "Calibri", "Segoe UI", "Times New Roman", "Marlett"] });
   assert.deepEqual(off, [{ family: "Arial", status: "present" }, { family: "Calibri", status: "absent" }, { family: "Segoe UI", status: "absent" }, { family: "Times New Roman", status: "standing-in", by: "Liberation Serif" }, { family: "Marlett", status: "absent" }]);
@@ -54,6 +57,13 @@ test("the alias file: off keeps the switched stand-ins from the browser; on poin
   assert.doesNotMatch(off, /<alias|<dir>|Liberation/, "no alias, no Selawik folder, Liberation untouched");
   assert.match(off, /Stand-ins: off/);
   const on = fontsConf({ on: true, dirs: ["/fonts/selawik", "/a&b"] });
+  // Names for a Windows family's faces answer with that family first (Microsoft's font where it is
+  // installed), then its stand-in: Helvetica always measures as Arial does.
+  assert.deepEqual(NAME_ALIASES.map((a) => [a.name, a.of]), [["Helvetica", "Arial"], ["Times", "Times New Roman"], ["Courier", "Courier New"]]);
+  assert.ok(on.includes(`<alias binding="same"><family>Helvetica</family><accept><family>Arial</family><family>Arimo</family></accept></alias>`));
+  assert.ok(on.includes(`<alias binding="same"><family>Times</family><accept><family>Times New Roman</family><family>Tinos</family></accept></alias>`));
+  assert.ok(on.includes(`<alias binding="same"><family>Courier</family><accept><family>Courier New</family><family>Cousine</family></accept></alias>`));
+  assert.doesNotMatch(on, /<prefer>|<default>/, "accept only: a real font of the Windows name always comes first");
   assert.ok(on.includes("<dir>/fonts/selawik</dir>") && on.includes("<dir>/a&amp;b</dir>"), "folders, escaped");
   for (const s of STAND_INS) assert.ok(on.includes(`<alias binding="same"><family>${s.family}</family><accept><family>${s.standIn}</family></accept></alias>`), s.family);
   assert.doesNotMatch(on, /rejectfont/);
@@ -80,6 +90,7 @@ test("the browser's font configuration: only on Linux once the setup ran, writte
   const text = readFileSync(file, "utf8");
   assert.match(text, /Stand-ins: on/);
   assert.ok(text.includes(`<dir>${join(fontsDir, "selawik")}</dir>`));
+  for (const d of STAND_IN_DIRS) assert.ok(text.includes(`<dir>${join(fontsDir, d)}</dir>`), `the ${d} folder listed`);
   assert.deepEqual(readdirSync(dir).filter((f) => f.endsWith(".tmp")), [], "no half-written file left");
   const before = statSync(file).mtimeMs;
   writeFontsConf({ on: true, file, fontsDir });
@@ -93,7 +104,7 @@ test("the browser's font configuration: only on Linux once the setup ran, writte
   assert.equal(buildFontsDir(""), null);
   assert.deepEqual(browserFontEnv({}, { platform: "linux", record, file, fontsDir, executablePath: "/opt/pb/chrome" }), { FONTCONFIG_FILE: file });
   const withBuild = readFileSync(file, "utf8");
-  assert.ok(withBuild.includes(`<dir>${join(fontsDir, "selawik")}</dir>\n  <dir>/opt/pb/fonts</dir>`), `the setup's folder, then the build's:\n${withBuild}`);
+  assert.ok(withBuild.includes(`<dir>${join(fontsDir, "selawik")}</dir>\n${STAND_IN_DIRS.map((d) => `  <dir>${join(fontsDir, d)}</dir>\n`).join("")}  <dir>/opt/pb/fonts</dir>`), `the setup's folders, then the build's:\n${withBuild}`);
   browserFontEnv({ pairbrowse: { fontStandIns: false } }, { platform: "linux", record, file, fontsDir, executablePath: "/opt/pb/chrome" });
   assert.doesNotMatch(readFileSync(file, "utf8"), /<dir>/, "off: no folder, the build's included");
   writeFontsConf({ on: true, file, fontsDir, executablePath: "/opt/pb/chrome" });
@@ -158,7 +169,7 @@ test("the distribution: Ubuntu and its derivatives, Debian, Fedora, Arch; packag
   assert.equal(PACKAGES.debian.core, CORE_PACKAGE);
   assert.equal(PACKAGES.debian.component, "contrib");
   assert.equal(PACKAGES.ubuntu.component, "multiverse");
-  assert.deepEqual(freePackages(PACKAGES.debian), ["fontconfig", "fonts-noto-color-emoji", "fonts-noto-cjk", "fonts-crosextra-carlito", "fonts-crosextra-caladea", "fonts-liberation"]);
+  assert.deepEqual(freePackages(PACKAGES.debian), ["fontconfig", "fonts-noto-color-emoji", "fonts-noto-cjk"], "the stand-ins come pinned from their publishers, not the packages");
   assert.equal(PACKAGES.fedora.core, null, "no core fonts outside the distribution's own repositories");
   assert.equal(PACKAGES.arch.core, null);
   assert.deepEqual(parseDpkgStatus("fonts-noto-cjk ii \nfonts-liberation un \nfontconfig:amd64 ii \n"), new Set(["fonts-noto-cjk", "fontconfig"]));
@@ -302,6 +313,7 @@ function machine({ os = "ID=debian\nPRETTY_NAME=\"Debian GNU/Linux 12 (bookworm)
     ask: async () => answers.shift() ?? null,
     preseed: (selections) => { ran.push(["sudo", "debconf-set-selections", selections]); return preseedStatus; },
     installSelawik: async ({ dir }) => { mkdirSync(dir, { recursive: true }); return { installed: true }; },
+    installStandIns: async () => ({ installed: [], failed: [] }),
     now: () => Date.parse("2026-10-22T10:00:00Z"),
     exec: null,
     fontsDir: join(home, "fonts"), record: join(home, "fonts", "setup.json"), conf: join(home, "fonts.conf"),
@@ -417,7 +429,7 @@ test("install elsewhere names the packages; check reports; off Linux and a wrong
   const done = machine({ os: "ID=arch\n", fc: "Noto Color Emoji:style=Regular\nNoto Sans CJK JP:style=Regular\nCarlito:style=Regular\nCaladea:style=Regular\nLiberation Sans:style=Regular\nLiberation Serif:style=Regular\nLiberation Mono:style=Regular\n" });
   const doneSaid = [];
   assert.equal(await runFontSetup(["install"], { deps: done.deps, config: {}, print: (l) => doneSaid.push(l) }), 0, doneSaid.join("\n"));
-  assert.ok(doneSaid.includes("Fonts: emoji, CJK and the open stand-ins installed"));
+  assert.ok(doneSaid.includes("Fonts: emoji and CJK installed"));
   // A distribution the setup doesn't know: the same check.
   assert.equal(await runFontSetup(["install"], { deps: machine({ os: "ID=gentoo\n" }).deps, config: {}, print: () => {} }), 1);
   assert.deepEqual(freeFamiliesLacking(null), [...FREE_FAMILIES], "fc-list not asked: nothing counts as installed");
@@ -426,13 +438,119 @@ test("install elsewhere names the packages; check reports; off Linux and a wrong
   assert.equal(await runFontSetup(["check"], { deps: m.deps, config: {}, print: (l) => lines.push(l) }), 0);
   assert.deepEqual(m.ran, [], "check installs nothing");
   assert.equal(lines[0], "Distribution: Debian GNU/Linux 12 (bookworm)");
-  assert.match(lines[1], /^Packages missing: fonts-noto-color-emoji fonts-noto-cjk fonts-crosextra-carlito fonts-crosextra-caladea fonts-liberation$/);
+  assert.match(lines[1], /^Packages missing: fonts-noto-color-emoji fonts-noto-cjk$/);
   assert.match(lines[2], /core fonts: not installed \(install asks you about Microsoft's licence first\)/);
-  assert.match(lines.at(-1), /^Windows fonts: standing in Arial \(Liberation Sans\); absent /);
+  assert.match(lines.at(-1), /^Windows fonts: standing in Arial \(Liberation Sans\); absent /, "Liberation, the system's own alias, while Arimo isn't installed");
+  assert.ok(lines.includes(`Open stand-ins: not installed: ${STAND_IN_DIRS.join(", ")} (install takes them from their publishers, pinned)`));
   const notLinux = [];
   assert.equal(await runFontSetup(["check"], { deps: { ...m.deps, platform: "darwin" }, config: {}, print: (l) => notLinux.push(l) }), 0);
   assert.match(notLinux[0], /for a Linux server/);
   const usage = [];
   assert.equal(await runFontSetup(["remove"], { deps: m.deps, config: {}, print: (l) => usage.push(l) }), 2);
   assert.deepEqual(usage, [USAGE]);
+});
+
+test("one distinct stand-in per Windows family: no two Windows names answer with one font", () => {
+  const standIns = STAND_INS.map((s) => s.standIn);
+  assert.equal(new Set(standIns).size, standIns.length, "every Windows family its own stand-in");
+  assert.equal(new Set(STAND_INS.map((s) => s.family)).size, STAND_INS.length);
+  for (const s of STAND_INS) assert.ok(REPORT_FONTS.includes(s.family), `${s.family} is reported`);
+  // Every other name for a Windows family's faces leans on that family, never a stand-in of its own.
+  for (const a of NAME_ALIASES) {
+    assert.ok(STAND_INS.some((s) => s.family === a.of), a.name);
+    assert.ok(!STAND_INS.some((s) => s.family === a.name), `${a.name} has no stand-in of its own`);
+  }
+  // The probe a width check draws ("mmmmmmmmmmlli", in em at the font's default instance), as
+  // measured from the pinned files (hmtx advances; docs/server.md, Fonts): pairwise apart, so
+  // width(Verdana) == width(Arial) and its like never hold where Windows has them apart.
+  const probe = { Selawik: 9.3398, "Selawik Light": 8.8330, "Selawik Semilight": 9.0889, "Selawik Semibold": 9.7896, Carlito: 8.6768, Caladea: 8.9490, Arimo: 8.9966, Tinos: 8.6118,
+    Cousine: 7.8013, Gelasio: 9.6738, "DejaVu Sans": 10.5747, "DejaVu Sans Condensed": 9.5146, "Fira Sans": 9.4380, "Comic Relief": 8.5967, Anton: 8.3223, Inconsolata: 6.5 };
+  assert.deepEqual(Object.keys(probe).sort(), [...standIns].sort(), "each stand-in measured");
+  const widths = Object.values(probe);
+  for (let i = 0; i < widths.length; i++) for (let j = i + 1; j < widths.length; j++) assert.ok(Math.abs(widths[i] - widths[j]) > 0.01, `${Object.keys(probe)[i]} and ${Object.keys(probe)[j]} measure apart`);
+  // Which family each pinned folder carries: every stand-in but Selawik's (its own pin) and DejaVu
+  // Sans Condensed (DejaVu's folder) has one.
+  const pinned = new Set(STAND_IN_FONTS.map((f) => f.family));
+  for (const s of standIns) if (!/^Selawik/.test(s) && s !== "DejaVu Sans Condensed") assert.ok(pinned.has(s), `${s} pinned`);
+});
+
+test("the stand-ins' files: each from its publisher, every font and licence pinned, published names kept", () => {
+  assert.match(GOOGLE_FONTS_COMMIT, /^[0-9a-f]{40}$/);
+  assert.equal(new Set(STAND_IN_DIRS).size, STAND_IN_DIRS.length);
+  assert.ok(!STAND_IN_DIRS.includes("selawik"), "Selawik keeps its own folder and pin");
+  for (const pin of STAND_IN_FONTS) {
+    assert.match(pin.dir, /^[a-z]+$/);
+    assert.ok(Object.keys(pin.fonts).length > 0, pin.dir);
+    for (const [name, h] of Object.entries(pin.fonts)) { assert.match(h, /^[0-9a-f]{64}$/, name); assert.match(name, /\.ttf$/); assert.doesNotMatch(name, /[/\\]/); }
+    assert.match(pin.license.sha256, /^[0-9a-f]{64}$/);
+    assert.ok(["OFL.txt", "LICENSE"].includes(pin.license.file), "the licence under its published name");
+    if (pin.archive) {
+      assert.match(pin.archive.url, /^https:\/\/github\.com\/dejavu-fonts\/dejavu-fonts\/releases\/download\/version_2_37\//);
+      assert.match(pin.archive.sha256, /^[0-9a-f]{64}$/);
+      assert.ok(pin.license.inArchive);
+    } else {
+      assert.equal(pin.base, `https://raw.githubusercontent.com/google/fonts/${GOOGLE_FONTS_COMMIT}/ofl/${pin.dir}/`, "Google Fonts' own repository at the pinned commit");
+      assert.match(pin.license.url, /^https:\/\/raw\.githubusercontent\.com\/(google\/fonts|googlefonts\/[a-z]+)\/[0-9a-f]{40}\//, "a licence from the publisher, at a commit");
+      assert.equal(pin.licence, "SIL OFL 1.1");
+    }
+  }
+  // Only publishers' own addresses: Google Fonts' repository, the family's own repository under
+  // googlefonts, DejaVu's release.
+  const urls = STAND_IN_FONTS.flatMap((p) => [p.base, p.license.url, p.archive?.url].filter(Boolean));
+  for (const u of urls) assert.match(u, /^https:\/\/(raw\.githubusercontent\.com\/(google\/fonts|googlefonts\/tinos)\/|github\.com\/dejavu-fonts\/dejavu-fonts\/releases\/)/, u);
+  assert.equal(urlName("Inconsolata[wdth,wght].ttf"), "Inconsolata%5Bwdth%2Cwght%5D.ttf");
+});
+
+test("a stand-in installs only as pinned: fonts and licence checked, from a URL or the release archive, nothing else written", async () => {
+  const a = Buffer.from("font a ".repeat(40)), b = Buffer.from("font b"), lic = Buffer.from("SIL Open Font License 1.1");
+  const served = new Map([["https://example.test/f/A%5Bwght%5D.ttf", a], ["https://example.test/f/B.ttf", b], ["https://example.test/f/OFL.txt", lic]]);
+  const asked = [];
+  const download = async (url, dest, want) => {
+    asked.push(url);
+    const data = served.get(url);
+    if (!data || sha(data) !== want) throw new Error("doesn't match its pinned SHA-256");
+    mkdirSync(join(dest, ".."), { recursive: true });
+    writeFileSync(dest, data);
+    return dest;
+  };
+  const home = scratch("standin");
+  const pin = { dir: "fam", family: "Fam", base: "https://example.test/f/", fonts: { "A[wght].ttf": sha(a), "B.ttf": sha(b) }, license: { file: "OFL.txt", url: "https://example.test/f/OFL.txt", sha256: sha(lic) } };
+  const dir = join(home, "fonts", "fam");
+  assert.deepEqual(await installStandIn({ dir, pin, downloads: join(home, "dl"), download }), { installed: true });
+  assert.deepEqual(readdirSync(dir).sort(), ["A[wght].ttf", "B.ttf", "OFL.txt"], "published names, the licence beside them");
+  assert.deepEqual(readFileSync(join(dir, "A[wght].ttf")), a, "unchanged");
+  assert.ok(standInInstalled(dir, pin));
+  assert.deepEqual(await installStandIn({ dir, pin, downloads: join(home, "dl"), download }), { installed: false });
+  assert.equal(asked.length, 3, "in place: nothing fetched again");
+  // A file off its pin: nothing written at all.
+  const bad = join(home, "fonts", "bad");
+  await assert.rejects(installStandIn({ dir: bad, pin: { ...pin, fonts: { "B.ttf": sha(a) } }, downloads: join(home, "dl2"), download }), /pinned SHA-256/);
+  assert.equal(existsSync(bad), false);
+  // From a release archive: only the pinned fonts and the licence, under their own names.
+  const archive = zip([["rel/ttf/A.ttf", a, 8], ["rel/ttf/Other.ttf", b, 0], ["rel/LICENSE", lic, 8]]);
+  const apin = { dir: "rel", family: "Rel", archive: { url: "https://example.test/rel.zip", file: "rel.zip", sha256: sha(archive), prefix: "rel/ttf/" }, fonts: { "A.ttf": sha(a) }, license: { file: "LICENSE", inArchive: "rel/LICENSE", sha256: sha(lic) } };
+  served.set("https://example.test/rel.zip", archive);
+  const rdir = join(home, "fonts", "rel");
+  assert.deepEqual(await installStandIn({ dir: rdir, pin: apin, downloads: join(home, "dl"), download }), { installed: true });
+  assert.deepEqual(readdirSync(rdir).sort(), ["A.ttf", "LICENSE"]);
+  await assert.rejects(installStandIn({ dir: join(home, "fonts", "x"), pin: { ...apin, fonts: { "C.ttf": sha(a) } }, downloads: join(home, "dl"), download }), /Rel's release has no C\.ttf/);
+  await assert.rejects(installStandIn({ dir: join(home, "fonts", "y"), pin: { ...apin, license: { ...apin.license, sha256: sha(a) } }, downloads: join(home, "dl"), download }), /Rel's LICENSE doesn't match/);
+  // All of them: each family on its own, a failure named and the rest still installed.
+  const all = await installStandIns({ fontsDir: join(home, "all"), pins: [pin, { ...pin, dir: "broken", fonts: { "B.ttf": sha(a) } }, apin], downloads: join(home, "dl"), download });
+  assert.deepEqual(all.installed, ["fam", "rel"]);
+  assert.deepEqual(all.failed.map((f) => f.dir), ["broken"]);
+  assert.deepEqual(standInsMissing(join(home, "all"), [pin, apin]), []);
+  assert.deepEqual(standInsMissing(join(home, "none"), [pin, apin]), ["fam", "rel"]);
+});
+
+test("install puts the stand-ins in place, caches their folders, records them, and fails while one is missing", async () => {
+  const m = machine({ installed: [...freePackages(PACKAGES.debian), CORE_PACKAGE] });
+  m.deps.installStandIns = async ({ fontsDir }) => { assert.equal(fontsDir, m.deps.fontsDir); return { installed: ["arimo"], failed: [{ dir: "tinos", error: "Tinos's Tinos-Bold.ttf doesn't match its pinned SHA-256" }] }; };
+  const said = [];
+  assert.equal(await runFontSetup(["install"], { deps: m.deps, config: {}, print: (l) => said.push(l) }), 1);
+  assert.ok(said.includes("Open stand-ins installed from their publishers (pinned, unchanged): arimo."));
+  assert.ok(said.includes("The open stand-in tinos couldn't be installed: Tinos's Tinos-Bold.ttf doesn't match its pinned SHA-256"));
+  assert.ok(m.calls.some((c) => c[0] === "fc-cache" && c[1] === join(m.deps.fontsDir, "arimo")));
+  assert.ok(!m.calls.some((c) => c[0] === "fc-cache" && c[1] === join(m.deps.fontsDir, "tinos")), "a failed family isn't cached");
+  assert.deepEqual(JSON.parse(readFileSync(m.deps.record, "utf8")).standInFonts, [], "the record lists only the families in place as pinned");
 });

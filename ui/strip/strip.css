@@ -2,7 +2,7 @@
    native address bar, and the popovers alone for the shell's bubbles. Colors from tokens.css only;
    participant and agent colors arrive as inline backgrounds from strip.js. The light is static (the
    sheet's gradient, edge and glow tokens): never animated, never a backdrop-filter. */
-html, body { margin: 0; }
+html, body { margin: 0; height: 100%; } /* the host view's real height: nothing on the row assumes one */
 body { background: var(--bg); color: var(--ink); font: var(--fs-3)/1 var(--sans); -webkit-font-smoothing: antialiased; overflow: hidden; }
 /* The tab row's height: the slot the shell sizes this page to (pairbrowse::kTabRowHeight: 47 px
    since 580, 53 px before), at most 53 px (a page taller than its row, outside the browser). Every
@@ -13,7 +13,7 @@ button { font: inherit; color: inherit; margin: 0; }
 svg { flex: none; }
 
 /* ---- the tab row ---- */
-.row { position: relative; display: flex; align-items: stretch; gap: 8px; height: var(--tab-row); padding: 0 12px; -webkit-app-region: drag; } /* mockup */
+.row { position: relative; display: flex; align-items: center; gap: 8px; height: 100%; max-height: var(--tab-row); padding: 0 12px; -webkit-app-region: drag; } /* mockup */
 body[data-platform="mac"] .row { padding-left: 92px; } /* the traffic lights end at 74: 18 px clear space */
 /* Linux has no window buttons on the left (they sit at the row's right end, 525): the logo stands
    right above the left dock's icons, its centre on theirs. The rail (and a hidden dock) is
@@ -30,28 +30,25 @@ body[data-host="native"] .row { padding-right: 8px; }
 
 /* The brand mark: the logo and the wordmark, a static mark (no hover, press or focus; the sessions'
    door is the left dock's Sessions row), part of the window's drag region. One centre line for the
-   whole row (the user, 2026-10-15: the tabs on the window buttons' line, a tab's contents centred
-   in the tab), where the shell centres the traffic lights and the "..." (pairbrowse::kTabRowLine:
-   27 px from the top since 580, 30 before). The tabs, the row less 6 px with a 1 px top edge, sit
-   on the row's bottom edge, so their contents' box is the row less 7 px and its middle
-   (row + 7) / 2: 47 - 40 / 2 = 27, or 53 - 46 / 2 = 30; the logo, the wordmark, the + and the
-   right end sit on the same line through the same box. The logo and wordmark keep their places; with the
-   chevron gone (12 px and its 1 px margin) the 11 px gap before it stays as padding, so the tabs
-   move left by 13 px. */
-.brand { display: flex; align-items: center; gap: 11px; align-self: flex-end; margin-bottom: calc((var(--tab-row) - 7px - var(--ctl-strip)) / 2); height: var(--ctl-strip); padding: 0 calc(6px + 11px) 0 2px; flex: none; user-select: none; } /* mockup */
+   whole row: its middle (the user, 2026-10-24: Share as high above as below), where the shell
+   centres the traffic lights and the "..." (pairbrowse::kTabRowLine, the row's middle, 525). The
+   row fills the host view and centres its items (align-items: center), so no item assumes a
+   height; the tabs sit on the row's bottom edge (6 px under its top, a 1 px top edge) and keep
+   their contents on the same middle with a 7 px bottom padding (6 + 1). */
+.brand { display: flex; align-items: center; gap: 11px; height: var(--ctl-strip); padding: 0 calc(6px + 11px) 0 2px; flex: none; user-select: none; } /* mockup */
 .brand img { display: block; flex: none; }
 .brand .wordmark { font-size: var(--fs-6); font-weight: 600; letter-spacing: -0.005em; color: var(--ink); white-space: nowrap; }
 
 /* The tabs sit on the row's bottom edge, from 6 px under the window's top (41 px, or 47 before 580) (their outline
    joins the nav row under them), their contents centred in them on the row's line; the padding
    keeps the active tab's feet unclipped. */
-#tabs { display: flex; align-items: flex-end; flex: 0 1 auto; gap: 2px; min-width: 0; margin: 0 calc(-1 * var(--sp-3)); padding: 0 var(--sp-3); list-style: none; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+#tabs { display: flex; align-self: stretch; align-items: flex-end; flex: 0 1 auto; gap: 2px; min-width: 0; margin: 0 calc(-1 * var(--sp-3)); padding: 0 var(--sp-3); list-style: none; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
 /* Past the 160 px minimum the row scrolls (strip.js keeps the active tab in view): a 24 px fade at
    each edge that has hidden tabs, set by two classes from the scroll handler. Static, never animated. */
 #tabs.fade-start, #tabs.fade-end { --fade-s: 0px; --fade-e: 0px; mask-image: linear-gradient(90deg, transparent, #000 var(--fade-s), #000 calc(100% - var(--fade-e)), transparent); }
 #tabs.fade-start { --fade-s: 24px; }
 #tabs.fade-end { --fade-e: 24px; }
-#tabs li { position: relative; display: flex; align-items: center; gap: var(--sp-2); flex: 0 1 235px; width: 235px; min-width: 160px; max-width: 240px; height: calc(var(--tab-row) - 6px); padding: 0 7px 0 9px; border: 1px solid var(--edge-light); border-bottom: 0; border-radius: 10px 10px 0 0; background-color: var(--tab-idle); color: var(--ink-2); cursor: default; user-select: none; transition: background-color var(--t-hover), color var(--t-hover); } /* mockup */
+#tabs li { position: relative; display: flex; align-items: center; gap: var(--sp-2); flex: 0 1 235px; width: 235px; min-width: 160px; max-width: 240px; height: calc(var(--tab-row) - 6px); padding: 0 7px 7px 9px; border: 1px solid var(--edge-light); border-bottom: 0; border-radius: 10px 10px 0 0; background-color: var(--tab-idle); color: var(--ink-2); cursor: default; user-select: none; transition: background-color var(--t-hover), color var(--t-hover); } /* mockup */
 #tabs li:not([aria-selected="true"]):hover { background-color: var(--elevated); }
 /* The active tab: lit at the top, fading into the centre column (--column: the nav row under it),
    blue whoever drives it (the user, 2026-10-12; the owner shows by its dot): a blue edge, its top
@@ -86,14 +83,13 @@ body[data-host="native"] .row { padding-right: 8px; }
 body[data-dragging] #tabs li { transition: background-color var(--t-hover), color var(--t-hover), transform var(--t); }
 body[data-dragging] #tabs li.drag { position: relative; z-index: 1; transition: none; }
 
-/* On the row's line, with the tabs' contents and the window buttons: (row - 7 - 28) / 2 above the
-   edge (6 px, or 9 before 580). */
-#new { display: grid; place-items: center; flex: none; align-self: flex-end; margin-bottom: calc((var(--tab-row) - 7px - 28px) / 2); width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink-2); cursor: default; transition: background-color var(--t-hover), color var(--t-hover); } /* native: the window buttons' line */
+/* On the row's middle, with the tabs' contents and the window buttons. */
+#new { display: grid; place-items: center; flex: none; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink-2); cursor: default; transition: background-color var(--t-hover), color var(--t-hover); } /* native: the window buttons' line */
 #new svg { width: 16px; height: 16px; }
 #new:hover { background: var(--hover); color: var(--ink); }
 
 /* ---- the right end ---- */
-#right { display: flex; align-items: center; gap: 12px; flex: none; margin-left: auto; align-self: flex-end; height: calc(var(--tab-row) - 7px); } /* native: on the row's line, as the tabs' contents */
+#right { display: flex; align-items: center; gap: 12px; flex: none; margin-left: auto; } /* centred in the row's full height, as high above as below (the user, 2026-10-24) */
 
 #avatars { display: flex; margin: 0; padding: 0; list-style: none; }
 #avatars:empty { display: none; }

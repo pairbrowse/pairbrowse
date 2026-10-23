@@ -416,11 +416,11 @@ describe("the brand mark is static", () => pageTest("strip", { viewport: ROW, sh
   assert.equal((await brandAt("mac", "open")).left, 94, "macOS: the dock's state changes nothing");
   assert.equal((await brandAt("other")).left, 14, "elsewhere: unchanged");
   await brandAt(...shown);
-  // One centre line for the row (the user, 2026-10-15: the tabs on the window buttons' line, a
-  // tab's contents centred in the tab): the logo, the wordmark's text, the first tab's icon, title
-  // and close, the + and the right end's controls share 27 px from the top, where the shell centres
-  // the traffic lights and the "..." (pairbrowse::kTabRowLine). The tab's outline, 41 px from 6 px
-  // down to the row's bottom edge, has its contents' middle there too.
+  // One centre line for the row (the user, 2026-10-15: the tabs on the window buttons' line;
+  // 2026-10-24: Share as high above as below): the logo, the wordmark's text, the first tab's icon,
+  // title and close, the + and the right end's controls share the row's middle (23.5 px in 47),
+  // where the shell centres the traffic lights and the "..." (pairbrowse::kTabRowLine). The tab's
+  // outline, 41 px from 6 px down to the row's bottom edge, keeps its contents there (7 px below).
   const line = await inPage(() => {
     const mid = (r) => r.top + r.height / 2;
     const img = document.querySelector("#brand img").getBoundingClientRect();
@@ -437,12 +437,12 @@ describe("the brand mark is static", () => pageTest("strip", { viewport: ROW, sh
   assert.deepEqual(line.size, [28, 28], "the logo stays 28 x 28");
   assert.ok(Math.abs(line.logo - line.icon) <= 0.5, `logo ${line.logo} on the favicons' centre ${line.icon}`);
   assert.ok(Math.abs(line.word - line.icon) <= 0.5, `wordmark ${line.word} on the favicons' centre ${line.icon}`);
-  assert.ok(Math.abs(line.icon - 27) <= 0.5, `the favicons' centre ${line.icon}`);
-  assert.ok(Math.abs(line.title - 27) <= 0.75, `the tab title's centre ${line.title}`);
-  assert.ok(Math.abs(line.close - 27) <= 0.5, `the tab close's centre ${line.close}`);
-  for (const [id, y] of line.right) assert.ok(Math.abs(y - 27) <= 0.5, `${id}'s centre ${y}`);
+  assert.ok(Math.abs(line.icon - 23.5) <= 0.5, `the favicons' centre ${line.icon}`);
+  assert.ok(Math.abs(line.title - 23.5) <= 0.75, `the tab title's centre ${line.title}`);
+  assert.ok(Math.abs(line.close - 23.5) <= 0.5, `the tab close's centre ${line.close}`);
+  for (const [id, y] of line.right) assert.ok(Math.abs(y - 23.5) <= 0.5, `${id}'s centre ${y}`);
   // The tab's contents centred in the tab's own box (below its 1 px top edge).
-  assert.ok(Math.abs((line.tab[0] + 1 + line.tab[1]) / 2 - line.icon) <= 0.5, `the icon ${line.icon} in the tab's middle`);
+  assert.ok(Math.abs((line.tab[0] + 1 + line.tab[1] - 7) / 2 - line.icon) <= 0.5, `the icon ${line.icon} in the tab's contents box`);
   assert.deepEqual(line.tab.slice(0, 2), [6, 47], "the tab's outline: 41 px on the row's bottom edge");
   // No hover state: hovered, it looks as it did.
   await page.hover("#brand .wordmark");
@@ -471,8 +471,8 @@ describe("the brand mark is static", () => pageTest("strip", { viewport: ROW, sh
 // One page for both builds: the shell sizes the strip page to its tab row (53 px before 580, 47
 // since), and every place on the row follows from that height. The tabs run from 6 px under the
 // top to the row's bottom edge; the logo, the wordmark, a tab's icon, title and close, the + and
-// the right end's controls share the shell's line (kTabRowLine: 30, then 27), within 0.5 px.
-for (const [row, line] of [[53, 30], [47, 27]]) {
+// the right end's controls share the row's middle (kTabRowLine), within 0.5 px.
+for (const [row, line] of [[53, 26.5], [47, 23.5]]) {
   describe(`one line through a ${row} px row, at ${line} px`, () => pageTest("strip", { viewport: { width: 1200, height: row } }, async ({ inPage }) => {
     const at = await inPage(() => {
       const mid = (r) => r.top + r.height / 2;
@@ -585,18 +585,20 @@ describe("thirty tabs under reduced motion: the row jumps to the active tab at o
 }));
 
 // Local or Live moved to the left dock's foot (the user, 2026-10-23; test/ui-left.test.mjs): the row
-// keeps no status pill, and Share sits on the row's one line, where the traffic lights centre.
+// keeps no status pill, and Share sits in the row's middle, as high above as below, where the
+// traffic lights centre (the user, 2026-10-24).
 describe("no status pill in the row; Share on the line", () => pageTest("strip", { viewport: ROW, fixtures: { collaboration: { guests: [{ label: "Ana", role: "drive" }] } } }, async ({ helper, inPage, until }) => {
   await until("live", () => document.body.dataset.s === "live");
   // the strip's stream is a panel stream: never a viewer, so the helper starts no screencast for it
   assert.deepEqual([...helper.streams].map((s) => [s.kind, s.panel]), [["strip", true]]);
   const r = await inPage(() => {
     const b = document.getElementById("share-btn").getBoundingClientRect();
-    return { pill: !!document.getElementById("pill"), status: !!document.querySelector("#right .dot, #right [data-state]"), words: /Live session|\bLocal\b/.test(document.getElementById("row").textContent), share: b.top + b.height / 2, h: b.height };
+    return { pill: !!document.getElementById("pill"), status: !!document.querySelector("#right .dot, #right [data-state]"), words: /Live session|\bLocal\b/.test(document.getElementById("row").textContent), share: b.top + b.height / 2, h: b.height, above: b.top, below: innerHeight - b.bottom };
   });
   assert.deepEqual([r.pill, r.status, r.words], [false, false, false], "no pill, no Local or Live words in the row");
   assert.equal(r.h, 34);
-  assert.ok(Math.abs(r.share - 27) <= 0.5, `Share's centre ${r.share} on the 27 px line`);
+  assert.ok(Math.abs(r.share - 23.5) <= 0.5, `Share's centre ${r.share} on the row's middle`);
+  assert.ok(Math.abs(r.above - r.below) <= 0.5, `Share's gaps ${r.above} above, ${r.below} below`);
 }));
 
 

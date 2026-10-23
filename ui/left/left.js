@@ -86,12 +86,31 @@ function sessionShown() {
   const instance = typeof session?.instance === "string" ? session.instance.trim().slice(0, 32) : "";
   return instance ? { short: `${instance} · ${open.short}`, long: `${open.long}, instance ${instance}` } : open;
 }
+// ---- Local or Live (the foot's status; the strip's pill before 2026-10-23) ----
+// Live once the helper's stream is open and someone else is in the session (a watch link, a
+// joiner, a remote agent: the collaboration's guests); Local otherwise, also with no helper at all
+// (the resting state, never an error); --warn only while a stream that was open reconnects.
+function drawStatus() {
+  const s = document.body.dataset.s;
+  const offline = s === "closed" || s === "none" || (s === "connecting" && !everLive);
+  const state = s === "live" ? (guests.length ? "live" : "local") : offline ? "local" : "reconnecting";
+  const words = state === "live" ? "Live" : state === "reconnecting" ? "Reconnecting" : "Local";
+  const status = $("status");
+  status.dataset.state = state;
+  $("status-text").textContent = words;
+  const detail = state === "live" ? `Live session, ${guests.length === 1 ? "1 person" : `${guests.length} people`} with you`
+    : state === "reconnecting" ? "Reconnecting to PairBrowse"
+    : offline ? "Local · no agent connected"
+    : session?.name ? `${String(session.where || "Local")} · ${session.name}` : "Local · not shared";
+  status.title = detail;
+}
 function drawSession() {
   const open = sessionShown();
   $("session-name").textContent = open?.short || "";
   $("session-name").toggleAttribute("data-temporary", session?.temporary === true);
   $("session-words").textContent = open ? `, ${open.long}` : "";
   railTitles();
+  drawStatus();
 }
 function setDock(name) {
   const state = DOCK.includes(name) ? name : "open";
@@ -420,6 +439,7 @@ const connect = helperConnection({
     if (s === "live") everLive = true;
     // Before the first open the line keeps saying it is connecting.
     else if (s === "closed" || everLive) $("conn").textContent = s === "closed" ? "PairBrowse is closed" : "Reconnecting to PairBrowse…";
+    drawStatus();
   },
 }, (stream, url) => {
   base = url;
@@ -431,6 +451,7 @@ const connect = helperConnection({
     const label = typeof c?.owner?.label === "string" && c.owner.label ? c.owner.label : "You";
     if (label !== ownerLabel) { ownerLabel = label; drawAgents(); }
     drawGuests();
+    drawStatus();
   });
   on("activity", (list) => {
     activity = Array.isArray(list) ? list.filter((a) => a && Number.isFinite(a.t)) : [];
@@ -464,6 +485,7 @@ function noHelper() {
   noHelperKnown = true;
   document.body.dataset.s = "closed";
   $("conn").hidden = true;
+  drawStatus();
 }
 // The helper's address (ui/helper.js), and each new one the extension's worker stores; the
 // extension's storage without one yet waits for it.

@@ -105,6 +105,17 @@ li[data-state="idle"] .dot { background: var(--muted); }
 .gear svg { width: 20px; height: 20px; }
 .gear:hover { background: var(--hover); color: var(--ink); }
 
+/* Local or Live at the foot, after the gear: an 8 px dot, grey (--muted) while local, green (--ok,
+   its soft halo and the slow pulse) when live, --warn while reconnecting; the word beside it. */
+.status { display: flex; align-items: center; gap: var(--sp-2); flex: 1; min-width: 0; margin: 0 0 0 var(--sp-2); font-size: var(--fs-2); line-height: 16px; color: var(--ink-soft); white-space: nowrap; }
+.status-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.status-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.status[data-state="live"] { color: var(--live-ink); }
+.status[data-state="live"] .status-dot { background: var(--ok); box-shadow: var(--glow-ok); }
+.status[data-state="live"] .live { animation: pulse 2s ease-in-out infinite; } /* the Live dot: the one pulse */
+.status[data-state="reconnecting"] .status-dot { background: var(--warn); }
+@keyframes pulse { 50% { opacity: 0.35; } }
+
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; box-shadow: var(--glow-focus); }
 .add:focus-visible { box-shadow: inset 0 0 0 1px var(--edge), inset 0 1px 0 var(--edge-light), var(--glow-focus); }
 /* Focus keeps the active row's own edge and light first, then the halo. */
@@ -133,6 +144,10 @@ body[data-dock="rail"] .foot { align-items: center; margin: 0; padding: var(--sp
 body[data-dock="rail"] .storage { display: none; }
 /* The rail's foot: the gear, then the expand chevron under it, both centred in the 44 px band. */
 body[data-dock="rail"] .foot-row { flex-direction: column; margin: 0; padding: 0; }
+/* The rail's status: the dot alone, first in the foot, centred over the gear (its word a tooltip
+   and in the accessibility tree). */
+body[data-dock="rail"] .status { order: -1; flex: none; justify-content: center; width: var(--ctl-sm); height: var(--ctl-sm); margin: 0; }
+body[data-dock="rail"] .status-text { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 /* The session switcher served without the browser's API: the picker in a same-origin frame under the
    Sessions row (--pop-top; 360 by 560 at most, narrowed to the dock's width with the gutter on both

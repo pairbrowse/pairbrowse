@@ -65,10 +65,10 @@
   --glow-tab: 0 -2px 10px -2px rgb(50 133 246 / 0.45); /* the active tab's blue halo */
   --glow-ok: 0 0 6px rgb(32 201 151 / 0.8);
   --glow-focus: 0 0 0 4px rgb(50 133 246 / 0.18), 0 0 14px rgb(50 133 246 / 0.35);
-  /* The mockup's own surfaces (2026-10-12, the mockup wins over B): the Live session pill, the
+  /* The mockup's own surfaces (2026-10-12, the mockup wins over B): the left dock's Live word, the
      raised buttons (Share, Pause, Take control, the session row), the accent fill under white text
      (4.6:1, AA), the docks' panel cards and the inner boxes. */
-  --live-bg: #03231F; --live-edge: #0B4A3D; --live-ink: #A8E3D4;
+  --live-ink: #A8E3D4;
   --btn: #1C2A38; --edge-btn: #526D89; /* a plain button's ring: 3:1 on every surface it sits on (WCAG 1.4.11); the mockup's #36485A, lighter only */
   --accent-fill: #2870E4; --accent-fill-hover: #2266D8; /* hovered: darker, white on it 5.3:1 (the mockup's lighter #3480F0 was 3.8) */
   --panel: #0F1A24; --panel-edge: #233243; --inset: #172331;

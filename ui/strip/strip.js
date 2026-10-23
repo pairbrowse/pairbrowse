@@ -613,22 +613,8 @@ function renderFallback(list) {
   inView();
 }
 
-// ---- the helper's stream: the pill, the people ----
-let lastSession = null, lastCollab = null, lastBoard = { people: [] }, everOpen = false;
-const pill = $("pill");
-// No helper (closed, or none to ask) is the normal resting state: "Local" with the muted dot, as
-// when not sharing; --warn is for reconnecting only.
-function drawPill() {
-  const s = document.body.dataset.s;
-  const offline = s === "closed" || s === "none" || (s === "connecting" && !everOpen); // never opened: no helper reached
-  const state = s === "live" ? ((lastCollab?.guests || []).length ? "live" : "local") : offline ? "local"
-    : everOpen && s === "connecting" ? "reconnecting" : "connecting";
-  pill.dataset.state = state;
-  $("pill-text").textContent = state === "live" ? "Live session" : offline ? "Local" : state === "local" ? String(lastSession?.where || "Local")
-    : state === "reconnecting" ? "Reconnecting to PairBrowse" : "Connecting to PairBrowse";
-  pill.title = offline ? "No agent connected" : lastSession?.name ? `${lastSession.where || "Local"} · ${lastSession.name}` : "";
-  inView(); // the pill's width is the row's
-}
+// ---- the helper's stream: the people (Local or Live is the left dock's, ui/left) ----
+let lastCollab = null, lastBoard = { people: [] };
 // Who is in the session (the side panel's header): board people by name with their color, then
 // guests; three shown (the mockup), then "+N".
 const SHOWN = 3;
@@ -649,18 +635,17 @@ function drawAvatars() {
 }
 
 function connect(url) {
-  if (!url) { stream?.close(); stream = null; base = null; document.body.dataset.s = "closed"; drawPill(); return; }
+  if (!url) { stream?.close(); stream = null; base = null; document.body.dataset.s = "closed"; return; }
   if (url === base && stream) return;
   stream?.close();
   base = url;
   // panel=1 always (common.js): the strip is never a viewer, so it never starts the screencast.
   stream = helperStream(base, {
     kind: "strip",
-    onState: (s) => { if (s === "live") everOpen = true; document.body.dataset.s = s; drawPill(); },
+    onState: (s) => { document.body.dataset.s = s; },
   });
   const on = stream.on;
-  on("session", (s) => { lastSession = s && typeof s === "object" ? s : null; drawPill(); });
-  on("collaboration", (c) => { lastCollab = c && typeof c === "object" ? c : null; drawPill(); drawAvatars(); });
+  on("collaboration", (c) => { lastCollab = c && typeof c === "object" ? c : null; drawAvatars(); });
   on("board", (b) => { lastBoard = { people: Array.isArray(b?.people) ? b.people : [] }; drawAvatars(); });
   if (!pb) {
     on("tabs", renderFallback);

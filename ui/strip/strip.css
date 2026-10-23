@@ -94,13 +94,6 @@ body[data-dragging] #tabs li.drag { position: relative; z-index: 1; transition: 
 
 /* ---- the right end ---- */
 #right { display: flex; align-items: center; gap: 12px; flex: none; margin-left: auto; align-self: flex-end; height: calc(var(--tab-row) - 7px); } /* native: on the row's line, as the tabs' contents */
-#pill { display: inline-flex; align-items: center; gap: 10px; height: var(--ctl-strip); padding: 0 14px; border: 1px solid var(--edge); border-radius: var(--r-2); background: var(--elevated); color: var(--ink); font-size: var(--fs-3); font-weight: 500; white-space: nowrap; } /* mockup: the Live session pill */
-#pill .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); } /* mockup */
-#pill[data-state="reconnecting"] .dot { background: var(--warn); }
-#pill[data-state="live"] { background-color: var(--live-bg); border-color: var(--live-edge); color: var(--live-ink); }
-#pill[data-state="live"] .dot { background: var(--ok); box-shadow: var(--glow-ok); }
-#pill[data-state="live"] .live { animation: pulse 2s ease-in-out infinite; }
-@keyframes pulse { 50% { opacity: 0.35; } }
 
 #avatars { display: flex; margin: 0; padding: 0; list-style: none; }
 #avatars:empty { display: none; }

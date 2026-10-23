@@ -837,7 +837,7 @@ test("seven pages on one origin share one event stream, which passes on when its
     const rightText = () => ev("right", () => document.getElementById("collaboration").textContent);
     const collab0 = await rightText();
     helper.set("collaboration", { participants: [{ id: "p1", label: "Ana" }], guests: [{ label: "Ana", role: "drive" }] });
-    await until("the strip's pill", () => ev("strip", () => document.getElementById("pill").dataset.state === "live"));
+    await until("left's status", () => ev("left", () => document.getElementById("status").dataset.state === "live"));
     await until("left's guests", () => ev("left", () => document.querySelectorAll("#guests li").length === 1));
     await until("right's collaboration line", async () => (await rightText()) !== collab0);
     helper.set("activity", [{ t: Date.now(), who: "Claude", text: "typed" }]);

@@ -933,3 +933,67 @@ scenario("left: All sessions from the framed switcher", { viewport: { width: 420
   await tab.close();
   await clean(ctx);
 });
+
+// Local or Live (the user, 2026-10-23: out of the strip's top right into the dock): at the foot,
+// after the gear, a grey dot and "Local" while only you are here, green with "Live" once someone
+// else is in the session (the collaboration's guests: a watch link, a joiner); in the rail the dot
+// alone, centred over the gear, the word its tooltip and still in the accessibility tree.
+const statusOf = () => {
+  const probe = (v) => { const i = document.createElement("i"); i.style.color = `var(--${v})`; document.body.append(i); const c = getComputedStyle(i).color; i.remove(); return c; };
+  const s = document.getElementById("status");
+  const dot = s.querySelector(".status-dot");
+  const word = document.getElementById("status-text");
+  const d = dot.getBoundingClientRect();
+  const gear = document.getElementById("settings").getBoundingClientRect();
+  return { state: s.dataset.state, text: word.textContent, title: s.title, role: s.getAttribute("role"), live: s.getAttribute("aria-live"),
+    dot: getComputedStyle(dot).backgroundColor, muted: probe("muted"), ok: probe("ok"), warn: probe("warn"),
+    size: [d.width, d.height], dotX: d.left + d.width / 2, dotBottom: d.bottom, gearX: gear.left + gear.width / 2, gearTop: gear.top, gearRight: gear.right, dotLeft: d.left,
+    wordShown: word.getBoundingClientRect().width > 1, wordInTree: word.checkVisibility(), inFoot: !!s.closest(".foot") };
+};
+scenario("left: Local, then Live, then Reconnecting at the foot (open dock)", { viewport: OPEN }, async (ctx) => {
+  const { helper, inPage, until } = ctx;
+  await until("live stream", () => document.body.dataset.s === "live");
+  let s = await inPage(statusOf);
+  assert.deepEqual([s.state, s.text, s.role, s.live, s.inFoot, s.wordShown], ["local", "Local", "status", "polite", true, true]);
+  assert.equal(s.dot, s.muted, "a grey dot while local");
+  assert.deepEqual(s.size, [8, 8]);
+  assert.ok(s.dotLeft > s.gearRight, "after the gear");
+  helper.set("collaboration", { guests: [{ label: "Ana", role: "watch" }] });
+  await until("live", () => document.getElementById("status").dataset.state === "live");
+  s = await inPage(statusOf);
+  assert.deepEqual([s.text, s.title], ["Live", "Live session, 1 person with you"]);
+  assert.equal(s.dot, s.ok, "a green dot when live");
+  helper.set("collaboration", { guests: [] });
+  await until("local again", () => document.getElementById("status").dataset.state === "local");
+  helper.set("collaboration", { guests: [{ label: "Ana", role: "drive" }, { label: "Sam", role: "watch" }] });
+  await until("live again", () => document.getElementById("status").dataset.state === "live");
+  assert.equal(await inPage(() => document.getElementById("status").title), "Live session, 2 people with you");
+  for (const st of helper.streams) st.res.destroy();
+  await until("reconnecting", () => document.getElementById("status").dataset.state === "reconnecting");
+  s = await inPage(statusOf);
+  assert.equal(s.text, "Reconnecting");
+  assert.equal(s.dot, s.warn);
+});
+scenario("left: the rail shows the status as a dot alone, over the gear", { viewport: { width: 44, height: 936 }, shim: { layout: { left: 1 } }, fixtures: { collaboration: { guests: [{ label: "Ana", role: "drive" }] } } }, async (ctx) => {
+  const { inPage, until } = ctx;
+  await until("the rail", () => document.body.dataset.dock === "rail");
+  await until("live", () => document.getElementById("status").dataset.state === "live");
+  const s = await inPage(statusOf);
+  assert.equal(s.wordShown, false, "no word in the rail");
+  assert.equal(s.text, "Live", "the word stays for screen readers");
+  assert.equal(s.title, "Live session, 1 person with you", "and as the tooltip");
+  assert.equal(s.dot, s.ok);
+  assert.ok(Math.abs(s.dotX - s.gearX) <= 0.5, `the dot ${s.dotX} centred over the gear ${s.gearX}`);
+  assert.ok(Math.abs(s.dotX - 22) <= 0.5, "centred in the 44 px rail");
+  assert.ok(s.dotBottom <= s.gearTop, "above the gear");
+  await clean(ctx);
+});
+scenario("left: no helper is Local, grey, never an error", { viewport: OPEN, native: false, bridge: false }, async (ctx) => {
+  const { inPage, until } = ctx;
+  await until("closed", () => document.body.dataset.s === "closed");
+  const s = await inPage(statusOf);
+  assert.deepEqual([s.state, s.text, s.title], ["local", "Local", "Local · no agent connected"]);
+  assert.equal(s.dot, s.muted);
+  assert.notEqual(s.dot, s.warn);
+  await clean(ctx);
+});

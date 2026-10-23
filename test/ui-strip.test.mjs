@@ -1,4 +1,4 @@
-// The browser build's top strip (ui/strip): the tab row from window.pairbrowse, the pill, avatars,
+// The browser build's top strip (ui/strip): the tab row from window.pairbrowse, avatars,
 // Share and the menu from the helper's stream, the static brand mark, the nav fragments and the
 // Share bubble by hash, the browser's bubbles (Share, the app menu), keyboard paths, drag reorder
 // and motion. The framed session switcher is the left dock's (its Sessions row,
@@ -584,53 +584,21 @@ describe("thirty tabs under reduced motion: the row jumps to the active tab at o
   assert.equal(l.timeouts + l.intervals + l.frames + l.observers, 0);
 }));
 
-describe("the pill: Local, Live session, Reconnecting", () => pageTest("strip", { viewport: ROW }, async ({ helper, inPage, until }) => {
-  // the pill: Local, Live session, Reconnecting
-  const pill = () => { const p = document.getElementById("pill"); return { state: p.dataset.state, text: document.getElementById("pill-text").textContent, dot: getComputedStyle(p.querySelector(".dot")).backgroundColor, role: p.getAttribute("role"), live: p.getAttribute("aria-live"), anims: document.getAnimations().filter((a) => a.playState === "running" && a.animationName === "pulse").map((a) => [a.effect.target.className, a.effect.getTiming().duration]) }; };
-  let p = await inPage(pill);
-  assert.deepEqual(p, { state: "local", text: "Local", dot: "rgb(134, 153, 177)", role: "status", live: "polite", anims: [] });
+// Local or Live moved to the left dock's foot (the user, 2026-10-23; test/ui-left.test.mjs): the row
+// keeps no status pill, and Share sits on the row's one line, where the traffic lights centre.
+describe("no status pill in the row; Share on the line", () => pageTest("strip", { viewport: ROW, fixtures: { collaboration: { guests: [{ label: "Ana", role: "drive" }] } } }, async ({ helper, inPage, until }) => {
+  await until("live", () => document.body.dataset.s === "live");
   // the strip's stream is a panel stream: never a viewer, so the helper starts no screencast for it
   assert.deepEqual([...helper.streams].map((s) => [s.kind, s.panel]), [["strip", true]]);
-  helper.set("collaboration", { guests: [{ label: "Ana", role: "drive" }] });
-  await until("live", () => document.getElementById("pill").dataset.state === "live");
-  p = await inPage(pill);
-  assert.equal(p.text, "Live session");
-  assert.equal(p.dot, "rgb(32, 201, 151)");
-  assert.deepEqual(p.anims, [["dot live", 2000]]);
-  // the live pill's static light: a green-tinted edge and a soft halo on the dot
-  const lit = await inPage(() => {
-    const probe = document.createElement("i");
-    probe.style.borderColor = "var(--live-edge)";
-    document.body.append(probe);
-    const want = getComputedStyle(probe).borderTopColor;
-    probe.remove();
-    const pill = document.getElementById("pill");
-    return { border: getComputedStyle(pill).borderTopColor, want, dotShadow: getComputedStyle(pill.querySelector(".dot")).boxShadow };
+  const r = await inPage(() => {
+    const b = document.getElementById("share-btn").getBoundingClientRect();
+    return { pill: !!document.getElementById("pill"), status: !!document.querySelector("#right .dot, #right [data-state]"), words: /Live session|\bLocal\b/.test(document.getElementById("row").textContent), share: b.top + b.height / 2, h: b.height };
   });
-  assert.equal(lit.border, lit.want, "the pill's border is --live-edge (the mockup's dark green pill)");
-  assert.match(lit.dotShadow, /rgba?\(32, 201, 151/);
-  for (const s of helper.streams) s.res.destroy();
-  await until("reconnecting", () => document.getElementById("pill-text").textContent === "Reconnecting to PairBrowse");
-  p = await inPage(pill);
-  assert.equal(p.state, "reconnecting");
-  assert.equal(p.dot, "rgb(244, 180, 93)");
+  assert.deepEqual([r.pill, r.status, r.words], [false, false, false], "no pill, no Local or Live words in the row");
+  assert.equal(r.h, 34);
+  assert.ok(Math.abs(r.share - 27) <= 0.5, `Share's centre ${r.share} on the 27 px line`);
 }));
 
-// No helper to ask (no browser API, no extension storage): the resting state, not an error.
-// "Local" with the muted dot, as when not sharing; no --warn, and the title says why.
-describe("the pill with no helper: Local, muted", () => pageTest("strip", { viewport: ROW, native: false, bridge: false }, async ({ inPage, until, errors }) => {
-  await until("closed", () => document.body.dataset.s === "closed");
-  const p = await inPage(() => {
-    const probe = (v) => { const i = document.createElement("i"); i.style.color = `var(--${v})`; document.body.append(i); const c = getComputedStyle(i).color; i.remove(); return c; };
-    const pill = document.getElementById("pill");
-    return { state: pill.dataset.state, text: document.getElementById("pill-text").textContent, title: pill.title, dot: getComputedStyle(pill.querySelector(".dot")).backgroundColor, muted: probe("muted"), warn: probe("warn") };
-  });
-  assert.deepEqual({ state: p.state, text: p.text, title: p.title }, { state: "local", text: "Local", title: "No agent connected" });
-  assert.equal(p.dot, p.muted, "the muted dot");
-  assert.notEqual(p.dot, p.warn, "no --warn");
-  assert.equal(await inPage(() => document.body.textContent.includes("Not connected")), false);
-  assert.deepEqual(errors, []);
-}));
 
 describe("avatar stack with +N", () => pageTest("strip", {
   viewport: ROW,
@@ -794,9 +762,9 @@ describe("the hash modes", () => pageTest("strip", { viewport: TALL }, async ({ 
   assert.equal(await inPage(() => !!document.getElementById("switcher") || !!document.getElementById("picker")), false, "no switcher or picker frame in the strip");
 }));
 
-describe("reduced motion and no timers", () => pageTest("strip", { viewport: ROW, reducedMotion: "reduce", fixtures: { collaboration: { guests: [{ label: "Ana", role: "drive" }] } } }, async ({ page, inPage, harness }) => {
-  // reduced motion: the Live dot still, no transitions
-  assert.equal(await inPage(() => document.getElementById("pill").dataset.state), "live");
+describe("reduced motion and no timers", () => pageTest("strip", { viewport: ROW, reducedMotion: "reduce", fixtures: { collaboration: { guests: [{ label: "Ana", role: "drive" }] } } }, async ({ page, inPage, harness, until }) => {
+  // reduced motion: no transitions
+  await until("live", () => document.body.dataset.s === "live");
   await page.hover('#tabs li[data-id="12"]');
   await page.waitForTimeout(100);
   assert.deepEqual(await harness.animations(), []);
@@ -1131,21 +1099,6 @@ describe("the strip in the browser's Share bubble closes it itself", () => pageT
   assert.deepEqual(await callsOf(shim, "tabs", "create"), []);
 }));
 
-// A helper address that never answers (none running, or gone before the strip opened): the same
-// resting pill as no helper ("Local", muted, titled "No agent connected"), never "Connecting" for
-// ever and no --warn; once it answers the stream opens on its own and the pill names the session.
-describe("the pill with a helper that never answers, then does", () => pageTest("strip", { viewport: ROW, down: true, fixtures: { session: { name: "work", where: "Local" } }, timeout: 90_000 }, async ({ helper, inPage, errors }) => {
-  const pill = () => {
-    const probe = (v) => { const i = document.createElement("i"); i.style.color = `var(--${v})`; document.body.append(i); const c = getComputedStyle(i).color; i.remove(); return c; };
-    const p = document.getElementById("pill");
-    return { s: document.body.dataset.s, state: p.dataset.state, text: document.getElementById("pill-text").textContent, title: p.title, muted: getComputedStyle(p.querySelector(".dot")).backgroundColor === probe("muted") };
-  };
-  assert.deepEqual(await inPage(pill), { s: "connecting", state: "local", text: "Local", title: "No agent connected", muted: true });
-  helper.setDown(false);
-  for (let i = 0; i < 160 && (await inPage(() => document.body.dataset.s)) !== "live"; i++) await inPage(() => new Promise((r) => setTimeout(r, 50)));
-  assert.deepEqual(await inPage(pill), { s: "live", state: "local", text: "Local", title: "Local · work", muted: true });
-  assert.deepEqual(errors, []);
-}));
 
 // 530 F1: a shared-browser joiner's pointer is never drawn in the host's tab (their picture would
 // show it back to them); the helper sends it to the strip, and the row's page passes it on to the

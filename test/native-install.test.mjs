@@ -126,8 +126,8 @@ test("installs, keeps the previous app, and rolls back when the check fails", { 
   const opts = { check: ok, register: false };
   const configFile = join(home, "config.json");
   const before = existsSync(configFile) ? readFileSync(configFile, "utf8") : null;
-  await installNative(fakeArchive("150.0.0.1"), opts);
-  assert.equal(installedVersion(), "150.0.0.1");
+  await installNative(fakeArchive("155.0.0.1"), opts);
+  assert.equal(installedVersion(), "155.0.0.1");
   assert.deepEqual(installedPak(), pak(["Customize PairBrowse", "About PairBrowse", "Settings"]), "interface text says PairBrowse");
   assertAlertsBranded();
   assert.ok(verifies(nativeDirs().app), "signature still verifies");
@@ -137,18 +137,18 @@ test("installs, keeps the previous app, and rolls back when the check fails", { 
   assert.equal(existsSync(configFile) ? readFileSync(configFile, "utf8") : null, before, "config.json untouched");
   assert.equal(checked[0].browserEngine, "pairbrowse");
   assert.equal(checked[0].executablePath, nativeDirs().exec);
-  assert.equal(JSON.parse(readFileSync(nativeDirs().record, "utf8")).version, "150.0.0.1");
+  assert.equal(JSON.parse(readFileSync(nativeDirs().record, "utf8")).version, "155.0.0.1");
   assert.equal(JSON.parse(readFileSync(nativeDirs().record, "utf8")).ownPages, false, "today's builds have no pages of their own");
 
   // A build whose manifest declares its own pages: the record says so.
-  await installNative(fakeArchive("150.0.0.2", undefined, { chrome: 1 }), opts);
-  assert.equal(installedVersion(), "150.0.0.2");
+  await installNative(fakeArchive("155.0.0.2", undefined, { chrome: 1 }), opts);
+  assert.equal(installedVersion(), "155.0.0.2");
   assert.equal(JSON.parse(readFileSync(nativeDirs().record, "utf8")).ownPages, true);
   assert.ok(existsSync(join(nativeDirs().previous, "Contents", "MacOS", "pairbrowse")), "previous app kept");
 
   writeFileSync(join(home, "config.json"), JSON.stringify({ browserDriver: "patchright", mine: 1 }));
-  await assert.rejects(installNative(fakeArchive("150.0.0.3"), { register: false, check: async () => { throw new Error("no bottom bar"); } }), /no bottom bar/);
-  assert.equal(installedVersion(), "150.0.0.2", "the working app is back");
+  await assert.rejects(installNative(fakeArchive("155.0.0.3"), { register: false, check: async () => { throw new Error("no bottom bar"); } }), /no bottom bar/);
+  assert.equal(installedVersion(), "155.0.0.2", "the working app is back");
   assert.deepEqual(JSON.parse(readFileSync(join(home, "config.json"), "utf8")), { browserDriver: "patchright", mine: 1 }, "settings are back");
 });
 
@@ -165,29 +165,29 @@ test("a second install at the same time is refused, a stale lock is taken over",
   mkdirSync(nativeDirs().dir, { recursive: true });
   const lock = join(nativeDirs().dir, ".install.lock");
   writeFileSync(lock, String(process.pid)); // this process is alive
-  await assert.rejects(installNative(fakeArchive("150.0.0.4"), { check: async () => ["ok"], register: false }), /another PairBrowse install is running/);
+  await assert.rejects(installNative(fakeArchive("155.0.0.4"), { check: async () => ["ok"], register: false }), /another PairBrowse install is running/);
   writeFileSync(lock, "999999"); // no such process
   // The self-check's graphics measurement is handed out (step 44: the helper keeps it with the default profile).
   const measured = { runtimeKey: "k" };
   let given = null;
-  await installNative(fakeArchive("150.0.0.4"), { check: async (exec, o) => { o.onGraphics(measured); return ["ok"]; }, register: false, onGraphics: (m) => { given = m; } });
+  await installNative(fakeArchive("155.0.0.4"), { check: async (exec, o) => { o.onGraphics(measured); return ["ok"]; }, register: false, onGraphics: (m) => { given = m; } });
   assert.equal(given, measured);
-  assert.equal(installedVersion(), "150.0.0.4");
+  assert.equal(installedVersion(), "155.0.0.4");
   assert.equal(existsSync(lock), false, "lock released");
 });
 
 test("an install cut short after the swap is undone at the next start", { skip: !mac }, async () => {
   const d = nativeDirs();
-  assert.equal(installedVersion(), "150.0.0.4");
+  assert.equal(installedVersion(), "155.0.0.4");
   // As if killed during the self-check: the old app sits aside, an unchecked one is in place.
   renameSync(d.app, d.rollback);
   const unpacked = temp("pb-unchecked-");
-  execFileSync("ditto", ["-x", "-k", fakeArchive("150.0.0.9"), unpacked]);
+  execFileSync("ditto", ["-x", "-k", fakeArchive("155.0.0.9"), unpacked]);
   renameSync(join(unpacked, "PairBrowse.app"), d.app);
   writeFileSync(d.pending, JSON.stringify({ hadOld: true, config: '{"browserDriver":"patchright"}' }));
   writeFileSync(join(home, "config.json"), '{"browserEngine":"pairbrowse"}');
   await ensureNative(() => {}, offline);
-  assert.equal(installedVersion(), "150.0.0.4", "the replaced app is back");
+  assert.equal(installedVersion(), "155.0.0.4", "the replaced app is back");
   assert.equal(existsSync(d.pending), false);
   assert.equal(existsSync(d.rollback), false);
   assert.deepEqual(JSON.parse(readFileSync(join(home, "config.json"), "utf8")), { browserDriver: "patchright" }, "settings are back");
@@ -201,7 +201,7 @@ test("on start, an installed build branded by an older version is branded again,
   writeFileSync(join(alertsHelper(), "Resources", "base.lproj", "InfoPlist.strings"), '"CFBundleDisplayName" = "Chromium";\n');
   rmSync(join(alertsHelper(), "Resources", "en.lproj"), { recursive: true, force: true });
   execFileSync("codesign", ["--force", "--deep", "--sign", "-", d.app]);
-  writeFileSync(d.record, JSON.stringify({ version: "150.0.0.4", sha256: offline.asset.sha256, branding: 1 }));
+  writeFileSync(d.record, JSON.stringify({ version: "155.0.0.4", sha256: offline.asset.sha256, branding: 1 }));
   assert.equal(await ensureNative(() => {}, offline), d.exec);
   assert.deepEqual(installedPak(), pak(["Customize PairBrowse", "About PairBrowse", "Settings"]));
   assertAlertsBranded();
@@ -216,7 +216,7 @@ test("on start, an installed app is kept while the pinned build can't be had", {
   // can't be fetched: keep using it rather than failing to start.
   const logs = [];
   assert.equal(await ensureNative((m) => logs.push(m), offline), nativeDirs().exec);
-  assert.match(logs.join("\n"), /couldn't install PairBrowse .* \(offline\); keeping 150\.0\.0\.4/);
+  assert.match(logs.join("\n"), /couldn't install PairBrowse .* \(offline\); keeping 155\.0\.0\.4/);
   // Without its engine pack the native browser can't launch: the start fails, and says why.
   await assert.rejects(ensureNative(() => {}, { ...offline, engine: async () => { throw new Error("no engine pack"); } }), /no engine pack/);
   // And with nothing installed it says how to install.
@@ -269,15 +269,15 @@ test("each platform and chip picks its own build", () => {
 test("a Linux/Windows build's manifest sits next to its program and names its platform", () => {
   const dir = temp("pb-manifest-");
   writeFileSync(join(dir, "chrome"), "");
-  writeFileSync(join(dir, "PairBrowse-build.json"), JSON.stringify({ product: "PairBrowse", version: "150.0.7871.114", platform: "linux", arch: "x64" }));
+  writeFileSync(join(dir, "PairBrowse-build.json"), JSON.stringify({ product: "PairBrowse", version: "155.0.8059.84", platform: "linux", arch: "x64" }));
   assert.equal(nativeManifest(join(dir, "chrome")).platform, "linux");
-  writeFileSync(join(dir, "PairBrowse-build.json"), JSON.stringify({ product: "PairBrowse", version: "150.0.7871.114", arch: "x64" }));
+  writeFileSync(join(dir, "PairBrowse-build.json"), JSON.stringify({ product: "PairBrowse", version: "155.0.8059.84", arch: "x64" }));
   assert.throws(() => nativeManifest(join(dir, "chrome")), /names no platform/);
 });
 
 test("a build fits only this platform and chip: arch required, on macOS a Mach-O program for this chip", () => {
   const mac = nativeLayout("darwin", "arm64"), intel = nativeLayout("darwin", "x64"), linux = nativeLayout("linux", "x64");
-  const base = { product: "PairBrowse", version: "150.0.7871.114" };
+  const base = { product: "PairBrowse", version: "155.0.8059.84" };
   assert.doesNotThrow(() => buildFits({ ...base, arch: "arm64" }, mac, ["arm64"]));
   assert.doesNotThrow(() => buildFits({ ...base, arch: "arm64", platform: "macos" }, mac, ["x86_64", "arm64"]));
   assert.doesNotThrow(() => buildFits({ ...base, arch: "x64", platform: "linux" }, linux));
@@ -306,10 +306,10 @@ test("a Linux build whose manifest names no arch is refused before anything chan
   const root = join(dir, "PairBrowse");
   mkdirSync(root, { recursive: true });
   writeFileSync(join(root, "chrome"), "#!/bin/sh\n");
-  writeFileSync(join(root, "PairBrowse-build.json"), JSON.stringify({ product: "PairBrowse", version: "150.0.1.9", platform: "linux", binary: "chrome" }));
-  const archive = join(dir, "pairbrowse-150.0.1.9-linux-x64.tar.xz");
+  writeFileSync(join(root, "PairBrowse-build.json"), JSON.stringify({ product: "PairBrowse", version: "155.0.1.9", platform: "linux", binary: "chrome" }));
+  const archive = join(dir, "pairbrowse-155.0.1.9-linux-x64.tar.xz");
   execFileSync("tar", ["-cJf", archive, "-C", dir, "PairBrowse"]);
-  writeFileSync(`${archive}.sha256`, `${createHash("sha256").update(readFileSync(archive)).digest("hex")}  pairbrowse-150.0.1.9-linux-x64.tar.xz\n`);
+  writeFileSync(`${archive}.sha256`, `${createHash("sha256").update(readFileSync(archive)).digest("hex")}  pairbrowse-155.0.1.9-linux-x64.tar.xz\n`);
   await assert.rejects(installNative(archive, { check: async () => ["fake check"], register: false, layout }), /names no arch/);
   assert.ok(!existsSync(join(d.app, "chrome")), "nothing installed");
 });
@@ -321,15 +321,15 @@ test("Linux layout: installs a tar.xz, keeps the previous build, rolls back, ref
   const opts = { check: async () => ["fake check"], register: false, layout };
   const configFile = join(home, "config.json");
   const before = existsSync(configFile) ? readFileSync(configFile, "utf8") : null;
-  await installNative(fakeLinuxArchive("150.0.1.1"), opts);
-  assert.equal(version(), "150.0.1.1");
+  await installNative(fakeLinuxArchive("155.0.1.1"), opts);
+  assert.equal(version(), "155.0.1.1");
   assert.equal(existsSync(configFile) ? readFileSync(configFile, "utf8") : null, before, "an install writes nothing into config.json");
-  await installNative(fakeLinuxArchive("150.0.1.2"), opts);
+  await installNative(fakeLinuxArchive("155.0.1.2"), opts);
   assert.ok(existsSync(join(d.previous, "chrome")), "previous build kept");
-  await assert.rejects(installNative(fakeLinuxArchive("150.0.1.3"), { ...opts, check: async () => { throw new Error("no side panel"); } }), /no side panel/);
-  assert.equal(version(), "150.0.1.2", "the working build is back");
-  await assert.rejects(installNative(fakeLinuxArchive("150.0.1.4", "windows"), opts), /for windows, not linux/);
-  assert.equal(version(), "150.0.1.2");
+  await assert.rejects(installNative(fakeLinuxArchive("155.0.1.3"), { ...opts, check: async () => { throw new Error("no side panel"); } }), /no side panel/);
+  assert.equal(version(), "155.0.1.2", "the working build is back");
+  await assert.rejects(installNative(fakeLinuxArchive("155.0.1.4", "windows"), opts), /for windows, not linux/);
+  assert.equal(version(), "155.0.1.2");
   rmSync(d.app, { recursive: true, force: true });
   rmSync(d.previous, { recursive: true, force: true });
   rmSync(d.record, { force: true });
@@ -348,7 +348,7 @@ test("with browser: pairbrowse-open (or chromium, or a path) nothing is download
   assert.equal(fetched, 0);
   // installNative: refused before the archive is even read (this one doesn't exist).
   logs.length = 0;
-  const unread = join(temp("pb-noarchive-"), "pairbrowse-150.0.0.0.zip");
+  const unread = join(temp("pb-noarchive-"), "pairbrowse-155.0.0.0.zip");
   assert.equal(await installNative(unread, { log: (m) => logs.push(m), register: false, check: async () => { throw new Error("never"); }, config: { browser: "/bin/sh" } }), null);
   assert.match(logs.join("\n"), /browser is a browser of your own in ~\/\.pairbrowse\/config\.json: nothing to download or install/);
   // A path that isn't a program is the open build (the fallback): nothing installed either.

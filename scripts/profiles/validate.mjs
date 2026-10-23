@@ -25,7 +25,7 @@ export const CLI = fileURLToPath(new URL("./cli.mjs", import.meta.url));
 export const cliCommand = (args) => `node ${/^[\w./:\\-]+$/.test(CLI) ? CLI : JSON.stringify(CLI)} ${args}`;
 
 // store: profiles/store.mjs createProfileStore's. build: the native build's version (its manifest's,
-// "150.0.7871.114"); pack: the engine pack's SHA-256; configSettings: fromConfig(config) for the
+// "155.0.8059.84"); pack: the engine pack's SHA-256; configSettings: fromConfig(config) for the
 // default. Returns { id, name, kind, build, from (the engine it was held to before, or null),
 // status: "unverified", items }. Throws a sentence (err.code PROFILE_*) on a refusal.
 export function validateProfile(store, ref, { build, pack = null, configSettings, platform = process.platform, now = Date.now } = {}) {

@@ -106,7 +106,7 @@ test("an unpinned profile runs in two sessions with different seeds; a pinned on
   const helper = () => { const st = {}; return { st, profiles: createProfiles(st, { config: {}, profileStore: store, now: () => T0, platform: "linux", identityDir: dir }) }; };
   const one = helper(), two = helper();
   const OPEN = { browserKind: "pairbrowse-open" };
-  const NATIVE = { browserKind: "pairbrowse", build: "150.0.7871.114" };
+  const NATIVE = { browserKind: "pairbrowse", build: "155.0.8059.84" };
   // Unpinned: both start, no lock, no seed of the profile's (each session's own, from its folder).
   const a = one.profiles.forLaunch("pl-a", NATIVE), b = two.profiles.forLaunch("pl-b", NATIVE);
   assert.equal(a.id, loose.id);

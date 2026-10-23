@@ -8,7 +8,7 @@
     "--use-angle=vulkan",
     "--enable-features=Vulkan"
   ],
-  "version": "150.0.7871.114",
+  "version": "155.0.8059.84",
   "sandbox": {
     "on": true,
     "required": "in server mode",

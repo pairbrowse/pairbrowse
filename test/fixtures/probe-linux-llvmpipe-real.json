@@ -5,7 +5,7 @@
   "candidate": "auto",
   "mode": "real",
   "args": [],
-  "version": "150.0.7871.114",
+  "version": "155.0.8059.84",
   "sandbox": {
     "on": true,
     "required": "in server mode",
@@ -50,7 +50,7 @@
       "reason": "requestAdapter returned null"
     },
     "navigator": {
-      "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36",
       "platform": "Linux x86_64",
       "hardwareConcurrency": 16,
       "screen": [

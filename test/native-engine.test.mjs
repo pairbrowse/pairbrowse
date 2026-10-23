@@ -15,7 +15,7 @@ import { STRICT_WEBRTC, resolverRule } from "../scripts/net/config.mjs";
 // The Mac host profile is cached in the PairBrowse home: keep tests away from the real one.
 process.env.PAIRBROWSE_HOME = mkdtempSync(join(tmpdir(), "pairbrowse-home-test-"));
 
-function appFixture(metadata = { product: "PairBrowse", version: "150.0.7871.114", arch: "arm64" }) {
+function appFixture(metadata = { product: "PairBrowse", version: "155.0.8059.84", arch: "arm64" }) {
   const root = mkdtempSync(join(tmpdir(), "pairbrowse-native-test-"));
   const contents = join(root, "PairBrowse.app", "Contents");
   const executablePath = join(contents, "MacOS", "pairbrowse");
@@ -96,15 +96,15 @@ test("the Mac host capture is cached privately and reused by new profiles", asyn
   rmSync(hostCachePath(), { force: true });
   const chromium = fakeBrowserType({ webgl: { vendor: "Apple", renderer: "Apple M3 Pro" } });
   const hardware = () => "Mac15,7|AGXAcceleratorG15X";
-  const first = await macHostProfile(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-p1-")), "150.0.7871.114", hardware);
+  const first = await macHostProfile(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-p1-")), "155.0.8059.84", hardware);
   assert.equal(chromium.captures, 1);
   if (process.platform !== "win32") assert.equal(statSync(hostCachePath()).mode & 0o777, 0o600);
-  const second = await macHostProfile(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-p2-")), "150.0.7871.114", hardware);
+  const second = await macHostProfile(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-p2-")), "155.0.8059.84", hardware);
   assert.equal(chromium.captures, 1, "a second profile reuses the cache: no launch");
   assert.deepEqual(second, first);
-  await macHostProfile(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-p3-")), "150.0.7871.200", hardware);
+  await macHostProfile(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-p3-")), "155.0.8059.200", hardware);
   assert.equal(chromium.captures, 2, "a new browser version captures again");
-  await macHostProfile(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-p4-")), "150.0.7871.200", () => "Mac16,1|other GPU");
+  await macHostProfile(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-p4-")), "155.0.8059.200", () => "Mac16,1|other GPU");
   assert.equal(chromium.captures, 3, "other hardware captures again");
 });
 
@@ -115,7 +115,7 @@ test("the Mac host capture says when it starts, once, and two launches share it"
   const chromium = fakeBrowserType({ webgl: { vendor: "Apple", renderer: "Apple M3 Pro" } });
   const hardware = async () => "Mac15,7|AGXAcceleratorG15X";
   let told = 0;
-  const ask = () => macHostProfile(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-m-")), "150.0.7871.114", hardware, () => told++);
+  const ask = () => macHostProfile(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-m-")), "155.0.8059.84", hardware, () => told++);
   const [a, b] = await Promise.all([ask(), ask()]);
   assert.deepEqual(a, b);
   assert.equal(chromium.captures, 1, "one capture for both");
@@ -139,7 +139,7 @@ test("a host capture that hangs fails in its time and closes its browser", async
 test("a software WebGL renderer is never kept as this Mac's profile", async () => {
   rmSync(hostCachePath(), { force: true });
   const chromium = fakeBrowserType({ webgl: { webgl1: { UNMASKED_RENDERER_WEBGL: "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero)), SwiftShader driver)" } } });
-  await assert.rejects(() => macHostProfile(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-sw-")), "150.0.7871.114", () => "x"), /software WebGL renderer/);
+  await assert.rejects(() => macHostProfile(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-sw-")), "155.0.8059.84", () => "x"), /software WebGL renderer/);
   assert.equal(existsSync(hostCachePath()), false);
 });
 
@@ -150,7 +150,7 @@ test("the hidden capture is told the real screen in physical pixels", () => {
 });
 
 test("a build's own pages are read from its manifest's chrome field", () => {
-  const base = { product: "PairBrowse", version: "150.0.7871.114", arch: "arm64" };
+  const base = { product: "PairBrowse", version: "155.0.8059.84", arch: "arm64" };
   assert.equal(declaresOwnPages(nativeManifest(appFixture({ ...base, chrome: 1 }).executablePath)), true);
   assert.equal(declaresOwnPages(nativeManifest(appFixture({ ...base, chrome: 2 }).executablePath)), true);
   for (const chrome of [undefined, 0, "1", true, 1.5, -1, null]) {
@@ -159,16 +159,16 @@ test("a build's own pages are read from its manifest's chrome field", () => {
   assert.equal(declaresOwnPages(null), false);
 });
 
-test("native app metadata requires a PairBrowse build of engine version 150", () => {
+test("native app metadata requires a PairBrowse build of engine version 155", () => {
   const good = appFixture();
-  assert.equal(nativeManifest(good.executablePath).version, "150.0.7871.114");
-  const bad = appFixture({ product: "Other", version: "150.0.7871.114" });
-  assert.throws(() => nativeManifest(bad.executablePath), /PairBrowse build of engine version 150/);
+  assert.equal(nativeManifest(good.executablePath).version, "155.0.8059.84");
+  const bad = appFixture({ product: "Other", version: "155.0.8059.84" });
+  assert.throws(() => nativeManifest(bad.executablePath), /PairBrowse build of engine version 155/);
   const wrongVersion = appFixture({ product: "PairBrowse", version: "149.0.1.1" });
-  assert.throws(() => nativeManifest(wrongVersion.executablePath), /PairBrowse build of engine version 150/);
+  assert.throws(() => nativeManifest(wrongVersion.executablePath), /PairBrowse build of engine version 155/);
   // Malformed manifests refuse with the same sentence, never a TypeError (found by test/fuzz/native.test.js).
   for (const m of [null, { product: "PairBrowse", version: [] }, { product: "PairBrowse", version: 150 }]) {
-    assert.throws(() => nativeManifest(appFixture(m).executablePath), /PairBrowse build of engine version 150/, JSON.stringify(m));
+    assert.throws(() => nativeManifest(appFixture(m).executablePath), /PairBrowse build of engine version 155/, JSON.stringify(m));
   }
 });
 
@@ -873,7 +873,7 @@ packTest("a WebRTC IP policy in browserArgs is never the launch's: a proxied ses
   assert.ok(lines.some((l) => /WebRTC IP handling switch in browserArgs was dropped/.test(l)));
   // A macOS build whose manifest says webrtcMdns: the everyday policy for a direct session.
   if (process.platform === "darwin") {
-    const mdnsApp = appFixture({ product: "PairBrowse", version: "150.0.7871.114", arch: "arm64", webrtcMdns: 1 });
+    const mdnsApp = appFixture({ product: "PairBrowse", version: "155.0.8059.84", arch: "arm64", webrtcMdns: 1 });
     await launchNative(chromium, { pairbrowse: { fingerprint: "rtc-seed", humanize: false } }, mkdtempSync(join(tmpdir(), "pairbrowse-profile-")),
       { executablePath: mdnsApp.executablePath, headless: false, args: ["--lang=en"] }, pack, () => {});
     const mdnsDirect = chromium.calls[2].options.args;
@@ -898,8 +898,8 @@ test("the proxy's exit is the WebRTC address pages see, on a build that shows on
     await launchNative(chromium, config, directory, { executablePath: app.executablePath, headless: false, ...options }, pack, (l) => lines.push(l));
     return { given: pack.given.at(-1), persona: readFileSync(join(directory, "pairbrowse-persona.json"), "utf8"), lines };
   };
-  const shows = { product: "PairBrowse", version: "150.0.7871.114", arch: "arm64", webrtcExit: 1 };
-  const older = { product: "PairBrowse", version: "150.0.7871.114", arch: "arm64" };
+  const shows = { product: "PairBrowse", version: "155.0.8059.84", arch: "arm64", webrtcExit: 1 };
+  const older = { product: "PairBrowse", version: "155.0.8059.84", arch: "arm64" };
   const proxy = { server: "http://127.0.0.1:3128" };
   const a = await launch(shows, { pairbrowse: {}, webrtcExit: "203.0.113.9" }, { proxy });
   assert.equal(a.given.webrtcIp, "203.0.113.9");
@@ -1005,9 +1005,9 @@ test("the Mac host capture marks its fonts as this computer's own, fresh and cac
   const hardware = () => "Mac15,7|AGXAcceleratorG15X";
   const captured = await captureMacHost(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-capture-fonts-")), null);
   assert.deepEqual(captured.fonts, { detected: ["Arial", "Helvetica"], probed: 65 }, "the capture reports what the collector found");
-  const fresh = await macHostProfile(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-fonts-")), "150.0.7871.114", hardware);
+  const fresh = await macHostProfile(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-fonts-")), "155.0.8059.84", hardware);
   assert.deepEqual(fresh.fonts, { detected: ["Arial", "Helvetica"], probed: 65, host: true });
-  const cached = await macHostProfile(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-fonts-")), "150.0.7871.114", hardware);
+  const cached = await macHostProfile(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-fonts-")), "155.0.8059.84", hardware);
   assert.equal(chromium.captures, 2, "a cache hit");
   assert.deepEqual(cached.fonts, { detected: ["Arial", "Helvetica"], probed: 65, host: true });
   assert.deepEqual(hostFonts({ webgl: {} }).fonts, { host: true }, "a capture without a font list is still this computer's");
@@ -1027,10 +1027,10 @@ test("a cached Mac host profile with nested WebGPU comes back flat without a new
   rmSync(hostCachePath(), { force: true });
   const chromium = fakeBrowserType();
   const hardware = () => "Mac15,7|AGXAcceleratorG15X";
-  await macHostProfile(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-cache-webgpu-")), "150.0.7871.114", hardware);
+  await macHostProfile(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-cache-webgpu-")), "155.0.8059.84", hardware);
   const { key } = JSON.parse(readFileSync(hostCachePath(), "utf8"));
   writeFileSync(hostCachePath(), JSON.stringify({ key, profile: { webgl: { vendor: "Apple", renderer: "Apple M3 Pro" }, webgpu: structuredClone(NESTED_WEBGPU) } }));
-  const cached = await macHostProfile(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-cache-webgpu-")), "150.0.7871.114", hardware);
+  const cached = await macHostProfile(chromium, "/fake", fakePack, mkdtempSync(join(tmpdir(), "pairbrowse-cache-webgpu-")), "155.0.8059.84", hardware);
   assert.deepEqual(cached.webgpu, FLAT_WEBGPU);
   assert.equal(chromium.captures, 1, "a cache hit: no capture");
 });
@@ -1285,26 +1285,26 @@ test("proxyAuthFile: the build manifest's field, 1 and up, gates proxy credentia
 // with the new build's version, one an older version kept is not read, and a persona copied from
 // another system brings no platform along. A legacy config.json value (U6) still applies.
 test("in-major update keeps no old brandVersion", async () => {
-  const first = appFixture({ product: "PairBrowse", version: "150.0.7871.114", arch: "arm64" });
-  const later = appFixture({ product: "PairBrowse", version: "150.0.7900.1", arch: "arm64" });
+  const first = appFixture({ product: "PairBrowse", version: "155.0.8059.84", arch: "arm64" });
+  const later = appFixture({ product: "PairBrowse", version: "155.0.8100.1", arch: "arm64" });
   const directory = mkdtempSync(join(tmpdir(), "pairbrowse-f4-"));
   const personaPath = join(directory, "pairbrowse-persona.json");
   const config = { pairbrowse: { fingerprint: "seed", fingerprintProfile: PINNED_PROFILE() } };
   const before = recordingPack();
   await launchNative(fakeBrowserType(), config, directory, { executablePath: first.executablePath, headless: false }, before);
-  assert.equal(before.given[0].brandVersion, "150.0.7871.114");
+  assert.equal(before.given[0].brandVersion, "155.0.8059.84");
   assert.equal(before.given[0].platform, PLATFORM);
   const stored = JSON.parse(readFileSync(personaPath, "utf8")).options;
   assert.equal(stored.brandVersion, undefined, "the derived brand version is never stored");
   assert.equal(stored.platform, undefined, "nor the derived platform");
   const after = recordingPack();
   await launchNative(fakeBrowserType(), config, directory, { executablePath: later.executablePath, headless: false }, after);
-  assert.equal(after.given[0].brandVersion, "150.0.7900.1", "the updated build says its own version");
+  assert.equal(after.given[0].brandVersion, "155.0.8100.1", "the updated build says its own version");
   // A persona an older version wrote, with the first build's values: not read.
-  writeFileSync(personaPath, JSON.stringify({ name: "pairbrowse", options: { ...stored, brandVersion: "150.0.7871.114", platform: PLATFORM } }));
+  writeFileSync(personaPath, JSON.stringify({ name: "pairbrowse", options: { ...stored, brandVersion: "155.0.8059.84", platform: PLATFORM } }));
   const older = recordingPack();
   await launchNative(fakeBrowserType(), config, directory, { executablePath: later.executablePath, headless: false }, older);
-  assert.equal(older.given[0].brandVersion, "150.0.7900.1", "an old stored version is not read");
+  assert.equal(older.given[0].brandVersion, "155.0.8100.1", "an old stored version is not read");
   assert.equal(JSON.parse(readFileSync(personaPath, "utf8")).options.brandVersion, undefined, "and is gone once saved again");
 
   const other = PLATFORM === "windows" ? "linux" : "windows";

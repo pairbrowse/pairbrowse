@@ -280,11 +280,11 @@ test("derived values never written into the profile", () => {
   assert.deepEqual(host.engineKeys, {});
   assert.match(host.results.find((r) => r.field === "persona.source").reason, /host capture/);
   // config.json's geoip and Intl stay out of the default's settings, and the store keeps no derived value.
-  const settings = fromConfig({ browser: "pairbrowse", pairbrowse: { geoip: true, platform: "MacIntel", brandVersion: "150.0.1.2" } }, { platform: "linux" });
+  const settings = fromConfig({ browser: "pairbrowse", pairbrowse: { geoip: true, platform: "MacIntel", brandVersion: "155.0.1.2" } }, { platform: "linux" });
   assert.deepEqual(settings.locale, { languages: null, timezone: null, source: "geoip" });
   const store = makeStore();
   const made = store.configProfile(settings);
-  assert.ok(!JSON.stringify(made).includes("MacIntel") && !JSON.stringify(made).includes("150.0.1.2"));
+  assert.ok(!JSON.stringify(made).includes("MacIntel") && !JSON.stringify(made).includes("155.0.1.2"));
   assert.equal(store.configProfile(fromConfig({ browser: "pairbrowse", pairbrowse: { geoip: true } }, { platform: "linux" })).revision, made.revision, "the same settings: the same revision");
 });
 

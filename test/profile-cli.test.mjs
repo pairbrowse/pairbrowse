@@ -18,7 +18,7 @@ import { paths } from "../scripts/paths.mjs";
 const T0 = Date.parse("2026-10-21T10:00:00Z");
 const dir = mkdtempSync(join(tmpdir(), "pb-cli-"));
 const store = createProfileStore({ now: () => T0 });
-const BUILD = { build: "150.0.7871.114", pack: "4451781446317d6ebf675afa0d75258d826fb1f5ddf06f292a20bfc24e65f793" };
+const BUILD = { build: "155.0.8059.84", pack: "4451781446317d6ebf675afa0d75258d826fb1f5ddf06f292a20bfc24e65f793" };
 async function cli(...argv) {
   let out = "", err = "";
   const code = await runProfilesCli(argv, { out: { write: (s) => { out += s; } }, err: { write: (s) => { err += s; } }, store, config: { browser: "pairbrowse" }, native: true, build: BUILD, running: () => false, now: () => T0, platform: "linux",
@@ -89,9 +89,9 @@ test("profiles from the command line: make, change, retire, assign, import, expo
   // has the verdict); one that can't be made is said and leaves the profile unverified (exit 1).
   r = await cli("validate", "berlin");
   assert.equal(r.code, 1);
-  assert.match(r.out, /^berlin: applies on build 150\.0\.7871\.114; measuring its graphics\.\n$/);
+  assert.match(r.out, /^berlin: applies on build 155\.0\.8059\.84; measuring its graphics\.\n$/);
   assert.match(r.err, /^berlin: graphics: unverified \(not measured: no probe here\); it stays unverified\.\n$/);
-  assert.deepEqual(store.get("berlin").engine, { major: "150", build: BUILD.build });
+  assert.deepEqual(store.get("berlin").engine, { major: "155", build: BUILD.build });
   let none = "";
   const code = await runProfilesCli(["validate"], { out: { write: () => {} }, err: { write: (s) => { none += s; } }, store, config: {}, native: false, build: { problem: "The native PairBrowse build isn't installed yet: start the browser once, then check the profile." }, running: () => false });
   assert.equal(code, 1);

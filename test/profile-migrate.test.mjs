@@ -190,7 +190,7 @@ test("the helper's own home: migrated once before its first launch, the note in 
   const note = migrationNote(readMigration());
   assert.match(note, new RegExp(`${CLI.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} migrate --report`), "the note names the command line by its full path");
   assert.deepEqual(helper.statusParts(), [note]);
-  const got = helper.forLaunch("work", { browserKind: "pairbrowse", build: "150.0.7871.114" });
+  const got = helper.forLaunch("work", { browserKind: "pairbrowse", build: "155.0.8059.84" });
   assert.equal(got.id, readMigration().defaultId);
   helper.release();
   assert.equal(lines.filter((l) => /sessions moved/.test(l)).length, 1, "once per helper");
@@ -199,7 +199,7 @@ test("the helper's own home: migrated once before its first launch, the note in 
   // A new helper on the migrated home: nothing to move, the folders set again.
   const env2 = {};
   const next = createProfiles({}, { config: CONFIG, log: (l) => lines.push(l), now: () => T0, platform: "linux", env: env2 });
-  next.forLaunch("shop", { browserKind: "pairbrowse", build: "150.0.7871.114" });
+  next.forLaunch("shop", { browserKind: "pairbrowse", build: "155.0.8059.84" });
   next.release();
   assert.deepEqual(env2, env);
   assert.equal(lines.filter((l) => /sessions moved/.test(l)).length, 1);
@@ -212,7 +212,7 @@ test("the helper's own home: migrated once before its first launch, the note in 
   const env3 = {};
   const broken = createProfiles({}, { config: CONFIG, log: (l) => failed.push(l), now: () => T0, platform: "linux", env: env3,
     migrateHome: (o) => ensureMigrated({ ...o, failAt: "record" }) });
-  const ran = broken.forLaunch("work", { browserKind: "pairbrowse", build: "150.0.7871.114" });
+  const ran = broken.forLaunch("work", { browserKind: "pairbrowse", build: "155.0.8059.84" });
   assert.equal(ran.kind, "config");
   assert.equal(readMigration(), null);
   assert.deepEqual(env3, {});

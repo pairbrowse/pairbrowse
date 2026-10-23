@@ -450,7 +450,7 @@ export function createProfileStore({ dir = paths.browserProfiles, now = Date.now
     // is. An entry without a measurement is a launch's (recordLaunch). A record of an older schema
     // is refused (it is upgraded at its next change first). Returns whether anything was written.
     recordValidation(id, { build, entry } = {}) {
-      if (typeof build !== "string" || !/^\d{1,4}(?:\.\d{1,6}){3}$/.test(build)) throw fail("PROFILE_INVALID", "A measurement is kept under a build like \"150.0.7871.114\".");
+      if (typeof build !== "string" || !/^\d{1,4}(?:\.\d{1,6}){3}$/.test(build)) throw fail("PROFILE_INVALID", "A measurement is kept under a build like \"155.0.8059.84\".");
       if (!plainObject(entry) || !plainObject(entry.graphics) || typeof entry.runtimeKey !== "string") throw fail("PROFILE_INVALID", "A measurement's entry carries its runtimeKey and graphics; a launch's own entry is kept by recordLaunch.");
       return locked(() => {
         const read = readRaw(id);

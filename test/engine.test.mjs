@@ -9,7 +9,7 @@ import { validateEngine, engineProfile, launchEngine, sandboxDecision, SANDBOX }
 // A Linux native build validateEngine accepts: the executable and its build manifest beside it.
 function nativeBuild() {
   const dir = mkdtempSync(join(tmpdir(), "pairbrowse-engine-test-"));
-  writeFileSync(join(dir, "PairBrowse-build.json"), JSON.stringify({ product: "PairBrowse", version: "150.0.7871.114", platform: "linux" }));
+  writeFileSync(join(dir, "PairBrowse-build.json"), JSON.stringify({ product: "PairBrowse", version: "155.0.8059.84", platform: "linux" }));
   writeFileSync(join(dir, "pairbrowse"), "fake native executable");
   return { browserEngine: "pairbrowse", executablePath: join(dir, "pairbrowse") };
 }

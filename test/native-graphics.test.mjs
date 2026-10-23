@@ -139,8 +139,8 @@ test("a software read on Linux shows the engine's identity (decision 10): identi
   assert.ok(!PAIRBROWSE_ENGINE_KEYS.includes("graphicsNoise"));
   assert.ok(PAIRBROWSE_ENGINE_KEYS.includes("canvasNoise"));
   // What the status part and a record say: the identity, never this computer's GPU, and "consistent".
-  assert.equal(graphicsStatusPart({ kind: "software", renderer: "llvmpipe (LLVM 15)", shown: GPU_LESS_IDENTITY.name, requested: "auto", status: "consistent" }, { build: "150.0.7871.114" }),
-    "Graphics: software (llvmpipe (LLVM 15)), shown as Windows 11 with NVIDIA GeForce RTX 3060, requested auto, consistent on 150.0.7871.114");
+  assert.equal(graphicsStatusPart({ kind: "software", renderer: "llvmpipe (LLVM 15)", shown: GPU_LESS_IDENTITY.name, requested: "auto", status: "consistent" }, { build: "155.0.8059.84" }),
+    "Graphics: software (llvmpipe (LLVM 15)), shown as Windows 11 with NVIDIA GeForce RTX 3060, requested auto, consistent on 155.0.8059.84");
   assert.equal(graphicsStatusPart({ kind: "software", renderer: "llvmpipe", shown: GPU_LESS_IDENTITY.name, requested: "auto", status: "consistent" }, { build: "b", renderer: false }),
     "Graphics: software, shown as Windows 11 with NVIDIA GeForce RTX 3060, requested auto, consistent on b");
   assert.equal(graphicsStatusPart({ kind: "software", renderer: "llvmpipe", shown: LINUX_IDENTITY.name, requested: "auto", status: "consistent" }, { build: "b", renderer: false }),
@@ -268,13 +268,13 @@ test("screen vs virtualScreen", () => {
 
 test("runtimeKey changes with driver, display kind, pack", () => {
   const backend = parseSystemInfo(systemInfo("linux-xvfb-llvmpipe"));
-  const base = { build: "150.0.7871.114", pack: "a".repeat(64), platform: "linux", arch: "x64", display: "xvfb", backend, switches: ["--lang=de", "--use-angle=swiftshader"] };
+  const base = { build: "155.0.8059.84", pack: "a".repeat(64), platform: "linux", arch: "x64", display: "xvfb", backend, switches: ["--lang=de", "--use-angle=swiftshader"] };
   const key = runtimeKey(base);
   assert.match(key, /^[0-9a-f]{64}$/);
   assert.equal(runtimeKey({ ...base, switches: ["--use-angle=swiftshader", "--window-size=1,1"] }), key, "only the backend switches count");
   const changed = [
     { ...base, backend: { ...backend, driver: "23.0.0" } }, { ...base, display: "native" }, { ...base, pack: "b".repeat(64) },
-    { ...base, build: "150.0.7871.200" }, { ...base, arch: "arm64" }, { ...base, backend: { ...backend, device: 7 } }, { ...base, switches: [] },
+    { ...base, build: "155.0.8059.200" }, { ...base, arch: "arm64" }, { ...base, backend: { ...backend, device: 7 } }, { ...base, switches: [] },
   ];
   const keys = changed.map(runtimeKey);
   assert.equal(new Set([key, ...keys]).size, changed.length + 1, "each change is another runtime");

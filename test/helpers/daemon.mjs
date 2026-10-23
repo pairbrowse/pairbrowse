@@ -21,7 +21,7 @@ export const driverBrowserPath = (runtime) => createRequire(join(runtime, "packa
 // from where it is, each helper on a home of its own. The build's manifest is read here rather than
 // through scripts/native-engine.mjs: a project module loaded now would fix paths.mjs on this
 // process's home before a test sets its own (handoff).
-// nativeVersion: that build's version ("150.0.7871.114"), else null.
+// nativeVersion: that build's version ("155.0.8059.84"), else null.
 const nativeBuild = (() => {
   const exe = process.env.PAIRBROWSE_TEST_EXECUTABLE, engine = process.env.PAIRBROWSE_TEST_ENGINE;
   if (!exe || !engine) return null;

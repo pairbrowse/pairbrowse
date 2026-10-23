@@ -29,7 +29,7 @@ import { createDiagnostics, graphicsSummary } from "../scripts/daemon/diagnostic
 const dir = mkdtempSync(join(tmpdir(), "pb-launch-graphics-"));
 after(() => rmSync(dir, { recursive: true, force: true }));
 const fixture = (name) => JSON.parse(readFileSync(new URL(`./fixtures/${name}.json`, import.meta.url), "utf8"));
-const BUILD = "150.0.7871.114";
+const BUILD = "155.0.8059.84";
 const PACK = "4451781446317d6ebf675afa0d75258d826fb1f5ddf06f292a20bfc24e65f793";
 const XVFB = { geometry: { width: 1366, height: 768, depth: 24 } };
 const T0 = Date.parse("2026-10-21T10:00:00Z");
@@ -50,7 +50,7 @@ function measurement(probeName, backend, { display = "xvfb" } = {}) {
     canvas: { stable: true, repeat: true, noise: false }, fonts: { checked: 8, missing: [], controlFound: [] }, media: { "video/mp4": true },
     screen: { width, height, availWidth: width, availHeight: height, colorDepth, devicePixelRatio: f.probe.navigator.dpr },
     locale: { timezone: "UTC", languages: ["en-US"] },
-    navigator: { userAgent: f.probe.navigator.userAgent.replace(/Chrome\/\d+/, "Chrome/150"), platform: f.probe.navigator.platform, hardwareConcurrency: 8, deviceMemory: 8 },
+    navigator: { userAgent: f.probe.navigator.userAgent.replace(/Chrome\/\d+/, "Chrome/155"), platform: f.probe.navigator.platform, hardwareConcurrency: 8, deviceMemory: 8 },
   });
 }
 const LINUX_MEASURED = measurement("probe-linux-llvmpipe-real", LLVMPIPE);
@@ -199,7 +199,7 @@ test("after the start: a GPU over a software read, a backend other than measured
   // requireValidatedProfiles: the entry for this runtime must be validated, else closed.
   const e = part({ live: { ...LLVMPIPE, driver: "23.0.0" }, config: { requireValidatedProfiles: true } });
   const planE = await e.g.before({ ...NATIVE, chosen: chosenWith({ measured: LINUX_MEASURED }) });
-  assert.match((await e.g.after({}, planE, { chosen: chosenWith(), session: "shop" })).refusal, /Browser profile "berlin" is unverified on build 150\.0\.7871\.114 for this computer's graphics, and requireValidatedProfiles is on in config\.json\./);
+  assert.match((await e.g.after({}, planE, { chosen: chosenWith(), session: "shop" })).refusal, /Browser profile "berlin" is unverified on build 155\.0\.8059\.84 for this computer's graphics, and requireValidatedProfiles is on in config\.json\./);
 });
 
 test("a backend read that failed never drops a kept measurement; a probe that isn't kept isn't repeated in this helper run", async () => {
@@ -325,7 +325,7 @@ test("forLaunch hands the graphics steps the request and the measurement kept fo
   assert.equal(profiles.fileValidation(entry, { build: BUILD }), "failed");
   assert.equal(store.get(berlin.id).validation[BUILD].runtimeKey, LINUX_MEASURED.runtimeKey);
   assert.equal(store.get(berlin.id).revision, 1, "evidence, no new revision");
-  assert.match(profiles.statusParts()[0], /^Profile: berlin \(rev 1, failed on 150\.0\.7871\.114\)$/);
+  assert.match(profiles.statusParts()[0], /^Profile: berlin \(rev 1, failed on 155\.0\.8059\.84\)$/);
   assert.deepEqual(profiles.coherence().map((i) => i.id), ["gpu.software-as-hardware"]);
   // The next launch reads it back as the measurement kept for this pack (not for another pack).
   assert.deepEqual(profiles.forLaunch("lg-one", { browserKind: "pairbrowse", build: BUILD, pack: PACK }).measured, LINUX_MEASURED);
@@ -374,7 +374,7 @@ test("cli.mjs validate measures each profile in a probe browser of its own and k
   assert.equal(asked.exec, "/opt/pairbrowse/pairbrowse");
   assert.equal(asked.engineLayer.graphics, "auto");
   assert.equal(asked.engineLayer.geoip, false, "a probe never looks up a region");
-  assert.match(out, /^linuxbox: applies on build 150\.0\.7871\.114; measuring its graphics\.\nlinuxbox: validated on build 150\.0\.7871\.114 \(graphics: software, WebGL 2, WebGPU unavailable\)/);
+  assert.match(out, /^linuxbox: applies on build 155\.0\.8059\.84; measuring its graphics\.\nlinuxbox: validated on build 155\.0\.8059\.84 \(graphics: software, WebGL 2, WebGPU unavailable\)/);
   const kept = store.get("linuxbox").validation[BUILD];
   assert.equal(kept.runtimeKey, LINUX_MEASURED.runtimeKey, "the measurement kept as evidence");
   assert.equal(store.get("linuxbox").revision, 1);

@@ -68,7 +68,7 @@ test("wrong values refused with the key, unknown keys named", () => {
   refused(record({ graphics: { backend: "gpu", require: { webgl: 2, webgpu: true, platforms: ["windows"] } } }), /^graphics\.require\.platforms\[0\] is "linux" or "macos"/);
   refused(record({ persona: { source: "auto", seed: null } }), /^persona\.source is "seed" or "host"/);
   refused(record({ persona: { source: "seed", seed: "off" } }), /^persona\.seed is a seed of letters/);
-  refused(record({ engine: { major: "150", build: "151.0.1.2" } }), /^engine\.build isn't a build of engine\.major 150\.$/);
+  refused(record({ engine: { major: "155", build: "151.0.1.2" } }), /^engine\.build isn't a build of engine\.major 155\.$/);
   refused(record({ screen: { ...RECORD.screen, availWidth: 2000 } }), /^screen\.availWidth \(2000\) is wider than screen\.width \(1920\)\.$/);
   refused(record({ history: [{ revision: 9, at: "2026-10-20T11:00:00Z", change: [], by: "person" }] }), /^history has revision 9, after the record's revision 4\.$/);
   refused(record({ persona: { source: "host", seed: "abc" } }), /persona\.seed is null when persona\.source is "host"/);
@@ -186,32 +186,32 @@ test("provenance, validation and history keep their shapes, bounded", () => {
     runtime: { platform: "linux", arch: "x64", display: "xvfb", emulated: false, sandbox: { on: true, page: [] } },
     backend: { kind: "software", renderer: "llvmpipe" }, webgl: { available: true }, webgl2: null, webgpu: null, canvas: null, fonts: null, media: null, screen: null, locale: null, navigator: null };
   const entry = { status: "validated", at: "2026-10-20T10:00:00Z", pack: "b".repeat(64), runtimeKey: "c".repeat(64), graphics, items: [item] };
-  assert.deepEqual(problems(record({ validation: { "150.0.7871.114": entry } })), []);
+  assert.deepEqual(problems(record({ validation: { "155.0.8059.84": entry } })), []);
   const { runtimeKey: _r, graphics: _g, ...plain } = entry;
-  assert.deepEqual(problems(record({ validation: { "150.0.7871.114": { ...plain, status: "unverified" } } })), [], "runtimeKey and graphics are optional");
+  assert.deepEqual(problems(record({ validation: { "155.0.8059.84": { ...plain, status: "unverified" } } })), [], "runtimeKey and graphics are optional");
   // E6: validated or failed only with a measurement of the entry's runtime key and pack.
-  refused(record({ validation: { "150.0.7871.114": plain } }), /^validation\["150\.0\.7871\.114"\] is validated only with a measurement/);
-  refused(record({ validation: { "150.0.7871.114": { ...plain, status: "failed" } } }), /is failed only with a measurement/);
-  refused(record({ validation: { "150.0.7871.114": { ...entry, runtimeKey: "d".repeat(64) } } }), /graphics is a measurement of another runtime key or pack than the entry's/);
-  refused(record({ validation: { "150.0.7871.114": { ...entry, pack: null } } }), /another runtime key or pack/);
-  assert.deepEqual(problems(record({ validation: { "150.0.7871.114": { ...entry, status: "failed", items: [{ ...item, severity: "error", status: "mismatch" }] } } })), []);
-  refused(record({ validation: { "150.0.7871.114": { ...entry, graphics: { ...graphics, runtime: { ...graphics.runtime, display: "vnc" } } } } }), /graphics\.runtime\.display is "native" or "xvfb"/);
-  refused(record({ validation: { "150.0.7871.114": { ...entry, graphics: { ...graphics, backend: { kind: "fast" } } } } }), /graphics\.backend\.kind is "hardware", "software" or "unverified"/);
-  refused(record({ validation: { "150.0.7871.114": { ...entry, graphics: { ...graphics, extra: 1 } } } }), /unknown key "extra" in validation\["150\.0\.7871\.114"\]\.graphics/);
+  refused(record({ validation: { "155.0.8059.84": plain } }), /^validation\["155\.0\.8059\.84"\] is validated only with a measurement/);
+  refused(record({ validation: { "155.0.8059.84": { ...plain, status: "failed" } } }), /is failed only with a measurement/);
+  refused(record({ validation: { "155.0.8059.84": { ...entry, runtimeKey: "d".repeat(64) } } }), /graphics is a measurement of another runtime key or pack than the entry's/);
+  refused(record({ validation: { "155.0.8059.84": { ...entry, pack: null } } }), /another runtime key or pack/);
+  assert.deepEqual(problems(record({ validation: { "155.0.8059.84": { ...entry, status: "failed", items: [{ ...item, severity: "error", status: "mismatch" }] } } })), []);
+  refused(record({ validation: { "155.0.8059.84": { ...entry, graphics: { ...graphics, runtime: { ...graphics.runtime, display: "vnc" } } } } }), /graphics\.runtime\.display is "native" or "xvfb"/);
+  refused(record({ validation: { "155.0.8059.84": { ...entry, graphics: { ...graphics, backend: { kind: "fast" } } } } }), /graphics\.backend\.kind is "hardware", "software" or "unverified"/);
+  refused(record({ validation: { "155.0.8059.84": { ...entry, graphics: { ...graphics, extra: 1 } } } }), /unknown key "extra" in validation\["155\.0\.8059\.84"\]\.graphics/);
   refused(record({ validation: { "../x": entry } }), /^validation has an entry whose key isn't a build/);
-  refused(record({ validation: { "150.0.7871.114": { ...entry, status: "ok" } } }), /^validation\["150\.0\.7871\.114"\]\.status is "validated", "consistent", "unverified" or "failed"/);
+  refused(record({ validation: { "155.0.8059.84": { ...entry, status: "ok" } } }), /^validation\["155\.0\.8059\.84"\]\.status is "validated", "consistent", "unverified" or "failed"/);
   // The identity shown on a host without a GPU (decision 10): a short name or null; "consistent" needs a measurement like "validated".
-  assert.deepEqual(problems(record({ validation: { "150.0.7871.114": { ...entry, status: "consistent", graphics: { ...graphics, shown: "Intel UHD Graphics 770" } } } })), []);
-  refused(record({ validation: { "150.0.7871.114": { ...plain, status: "consistent" } } }), /is consistent only with a measurement/);
-  refused(record({ validation: { "150.0.7871.114": { ...entry, graphics: { ...graphics, shown: "x".repeat(81) } } } }), /graphics\.shown is a string, or null/);
-  refused(record({ validation: { "150.0.7871.114": { ...entry, graphics: { ...graphics, shown: 7 } } } }), /graphics\.shown is a string, or null/);
-  refused(record({ validation: { "150.0.7871.114": { ...entry, items: [{ ...item, status: "spoofed" }] } } }), /items\[0\]\.status is "applied", "not-applied"/);
-  refused(record({ validation: { "150.0.7871.114": { ...entry, graphics: { ...graphics, webgl: { blob: "x".repeat(20001) } } } } }), /graphics is at most 20000 characters as JSON/);
-  refused(record({ validation: { "150.0.7871.114": { ...entry, items: [{ ...item, measured: "x".repeat(3000) }] } } }), /items\[0\]\.measured is a short JSON value/);
+  assert.deepEqual(problems(record({ validation: { "155.0.8059.84": { ...entry, status: "consistent", graphics: { ...graphics, shown: "Intel UHD Graphics 770" } } } })), []);
+  refused(record({ validation: { "155.0.8059.84": { ...plain, status: "consistent" } } }), /is consistent only with a measurement/);
+  refused(record({ validation: { "155.0.8059.84": { ...entry, graphics: { ...graphics, shown: "x".repeat(81) } } } }), /graphics\.shown is a string, or null/);
+  refused(record({ validation: { "155.0.8059.84": { ...entry, graphics: { ...graphics, shown: 7 } } } }), /graphics\.shown is a string, or null/);
+  refused(record({ validation: { "155.0.8059.84": { ...entry, items: [{ ...item, status: "spoofed" }] } } }), /items\[0\]\.status is "applied", "not-applied"/);
+  refused(record({ validation: { "155.0.8059.84": { ...entry, graphics: { ...graphics, webgl: { blob: "x".repeat(20001) } } } } }), /graphics is at most 20000 characters as JSON/);
+  refused(record({ validation: { "155.0.8059.84": { ...entry, items: [{ ...item, measured: "x".repeat(3000) }] } } }), /items\[0\]\.measured is a short JSON value/);
   // Values with no JSON text (a BigInt, a cycle) are problems, never a throw.
-  refused(record({ validation: { "150.0.7871.114": { ...entry, items: [{ ...item, requested: 1n }] } } }), /items\[0\]\.requested is a short JSON value/);
-  const cycle = record({ validation: { "150.0.7871.114": entry } });
-  cycle.validation["150.0.7871.114"].graphics.self = cycle.validation["150.0.7871.114"].graphics;
+  refused(record({ validation: { "155.0.8059.84": { ...entry, items: [{ ...item, requested: 1n }] } } }), /items\[0\]\.requested is a short JSON value/);
+  const cycle = record({ validation: { "155.0.8059.84": entry } });
+  cycle.validation["155.0.8059.84"].graphics.self = cycle.validation["155.0.8059.84"].graphics;
   refused(cycle, /\.graphics is a JSON object\.$/);
 
   refused(record({ history: [{ revision: 1, at: "2026-10-20T10:00:00Z", change: ["../x"], by: "person" }] }), /^history\[0\]\.change\[0\] is a field/);

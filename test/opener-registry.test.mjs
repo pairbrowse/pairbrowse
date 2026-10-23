@@ -38,7 +38,7 @@ test("record names are bundle ids, never paths (the browser's IsRecordName)", ()
 test("a build's bundle id: its manifest's bundleId, else by channel, else the release id", () => {
   assert.equal(bundleIdOf({ product: "PairBrowse", bundleId: DEV_BUNDLE_ID, channel: "dev" }), DEV_BUNDLE_ID);
   assert.equal(bundleIdOf({ product: "PairBrowse", channel: "dev" }), DEV_BUNDLE_ID);
-  assert.equal(bundleIdOf({ product: "PairBrowse", version: "150.0.0.1" }), RELEASE_BUNDLE_ID);
+  assert.equal(bundleIdOf({ product: "PairBrowse", version: "155.0.0.1" }), RELEASE_BUNDLE_ID);
   assert.equal(bundleIdOf({ product: "PairBrowse", bundleId: "../x" }), RELEASE_BUNDLE_ID);
   assert.equal(bundleIdOf({ product: "Chromium" }), null);
   assert.equal(bundleIdOfApp(app("dev", { product: "PairBrowse", channel: "dev", bundleId: DEV_BUNDLE_ID })), DEV_BUNDLE_ID);
@@ -85,7 +85,7 @@ test("claim: owner-only and atomic; another running helper's record stays, a gon
 
 test("open.mjs's home: the record of the app that ran it, only when it names this script", async () => {
   const devExe = app("dev2", { product: "PairBrowse", channel: "dev", bundleId: DEV_BUNDLE_ID });
-  const relExe = app("rel", { product: "PairBrowse", version: "150.0.0.1" });
+  const relExe = app("rel", { product: "PairBrowse", version: "155.0.0.1" });
   const env = (exe, script = SCRIPT) => openerEnv({ parentExe: exe, script, account });
   assert.equal(env(devExe), null, "no record: opener.json's helper");
   await claimOpener(DEV_BUNDLE_ID, { dir, script: SCRIPT, home: work, instance: "work", answers: async () => false });

@@ -5,7 +5,7 @@
   "candidate": "auto",
   "mode": "persona",
   "args": [],
-  "version": "150.0.7871.114",
+  "version": "155.0.8059.84",
   "sandbox": {
     "on": true,
     "required": null,
@@ -108,7 +108,7 @@
       "compute": "2,4,6,8"
     },
     "navigator": {
-      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36",
       "platform": "MacIntel",
       "hardwareConcurrency": 16,
       "screen": [

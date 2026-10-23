@@ -24,7 +24,7 @@ after(() => rmSync(dir, { recursive: true, force: true }));
 let n = 0;
 const T0 = Date.parse("2026-10-21T10:00:00Z");
 const newStore = () => createProfileStore({ dir: join(dir, `store-${++n}`), now: () => T0 });
-const BUILD = "150.0.7871.114";
+const BUILD = "155.0.8059.84";
 const PACK = "4451781446317d6ebf675afa0d75258d826fb1f5ddf06f292a20bfc24e65f793";
 const NATIVE = { browserKind: "pairbrowse", build: BUILD, pack: PACK };
 const OPEN = { browserKind: "pairbrowse-open" };
@@ -53,7 +53,7 @@ test("the first start binds the folder to its profile; the launch's parts, evide
   assert.equal(readBinding(name).profileId, berlin.id, "the assignment bound the folder (it exists)");
   // D10: the engine it first ran on and this launch's items, as evidence: no revision, no history.
   const kept = store.get(berlin.id);
-  assert.deepEqual(kept.engine, { major: "150", build: BUILD });
+  assert.deepEqual(kept.engine, { major: "155", build: BUILD });
   assert.equal(kept.revision, 1);
   assert.deepEqual(kept.history, []);
   assert.equal(kept.validation[BUILD].status, "unverified");
@@ -124,7 +124,7 @@ test("other major refuses, other build unverified, requireValidatedProfiles refu
   const { profiles } = parts(store);
   profiles.forLaunch(name, NATIVE);
   // Another major: refused, naming both, nothing recorded.
-  assert.throws(() => profiles.forLaunch(name, { ...NATIVE, build: "151.0.7900.10" }), (e) => e.message === `Session "${name}" doesn't start: browser profile "berlin" (${berlin.id}) was made on engine 150 (build ${BUILD}), and this browser is engine 151 (build 151.0.7900.10): re-validate the profile on this build (Check on the Sessions page, or ${cliCommand(`validate ${berlin.id}`)}) or migrate it to another profile; nothing was started.`);
+  assert.throws(() => profiles.forLaunch(name, { ...NATIVE, build: "151.0.7900.10" }), (e) => e.message === `Session "${name}" doesn't start: browser profile "berlin" (${berlin.id}) was made on engine 155 (build ${BUILD}), and this browser is engine 151 (build 151.0.7900.10): re-validate the profile on this build (Check on the Sessions page, or ${cliCommand(`validate ${berlin.id}`)}) or migrate it to another profile; nothing was started.`);
   assert.equal(store.get(berlin.id).validation["151.0.7900.10"], undefined);
   // The refusal names the command line by its full path, runnable from any folder.
   assert.ok(CLI.startsWith("/") || /^[A-Za-z]:\\/.test(CLI), CLI);
@@ -140,7 +140,7 @@ test("other major refuses, other build unverified, requireValidatedProfiles refu
   assert.deepEqual(store.get(def.id).engine, { major: "151", build: "151.0.7900.10" });
   assert.deepEqual(store.get(def.id).history.at(-1), { revision: store.get(def.id).revision, at: new Date(T0).toISOString(), change: ["engine"], by: "config" });
   assert.equal(store.get(def.id).validation["151.0.7900.10"].status, "unverified");
-  assert.ok(ownLines.some((l) => /browser profile "default" .* was made on engine 150 \(build 150\.0\.7871\.114\); its settings are config\.json's, so it is held to engine 151 \(build 151\.0\.7900\.10\) now, unverified/.test(l)), ownLines.join("\n"));
+  assert.ok(ownLines.some((l) => /browser profile "default" .* was made on engine 155 \(build 155\.0\.8059\.84\); its settings are config\.json's, so it is held to engine 151 \(build 151\.0\.7900\.10\) now, unverified/.test(l)), ownLines.join("\n"));
   // Under requireValidatedProfiles it is refused there (unverified), and never re-pinned.
   const plain2 = session("sp-engine-default-strict");
   assert.throws(() => parts(store, { requireValidatedProfiles: true }).profiles.forLaunch(plain2, { ...NATIVE, build: "152.0.8000.1" }), /is unverified on build 152\.0\.8000\.1, and requireValidatedProfiles is on/);
@@ -151,10 +151,10 @@ test("other major refuses, other build unverified, requireValidatedProfiles refu
   assert.equal(store.get(def.id).history.at(-1).by, "person");
   assert.equal(own.forLaunch(plain, { ...NATIVE, build: "152.0.8000.1" }).status, "unverified");
   // Another build of the same major: unverified, the pin unchanged.
-  const other = profiles.forLaunch(name, { ...NATIVE, build: "150.0.7871.200" });
+  const other = profiles.forLaunch(name, { ...NATIVE, build: "155.0.8059.200" });
   assert.equal(other.status, "unverified");
-  assert.deepEqual(store.get(berlin.id).engine, { major: "150", build: BUILD });
-  assert.equal(store.get(berlin.id).validation["150.0.7871.200"].status, "unverified");
+  assert.deepEqual(store.get(berlin.id).engine, { major: "155", build: BUILD });
+  assert.equal(store.get(berlin.id).validation["155.0.8059.200"].status, "unverified");
   // Measured evidence (Phase E) for the pinned build: validated, and never written over by a launch.
   rewrite(store, berlin.id, (r) => { r.validation[BUILD] = measuredEntry({ pack: PACK }); });
   assert.equal(profiles.forLaunch(name, NATIVE).status, "validated");
@@ -162,11 +162,11 @@ test("other major refuses, other build unverified, requireValidatedProfiles refu
   const strict = parts(store, { requireValidatedProfiles: true }).profiles;
   assert.equal(strict.forLaunch(name, NATIVE).status, "validated");
   assert.deepEqual(strict.statusParts(), [`Profile: berlin (rev 1, validated on ${BUILD})`]);
-  assert.throws(() => strict.forLaunch(name, { ...NATIVE, build: "150.0.7871.200" }), (e) => e.message === `Session "${name}" doesn't start: browser profile "berlin" (${berlin.id}) is unverified on build 150.0.7871.200, and requireValidatedProfiles is on in config.json: validate the profile on it first; nothing was started.`);
+  assert.throws(() => strict.forLaunch(name, { ...NATIVE, build: "155.0.8059.200" }), (e) => e.message === `Session "${name}" doesn't start: browser profile "berlin" (${berlin.id}) is unverified on build 155.0.8059.200, and requireValidatedProfiles is on in config.json: validate the profile on it first; nothing was started.`);
   // An error among its checks refuses too.
   const bad = { field: "screen", rule: "screen.display", class: "C", status: "mismatch", requested: null, measured: null, severity: "error", reason: "not this screen" };
   rewrite(store, berlin.id, (r) => { r.validation[BUILD].items = [bad]; });
-  assert.throws(() => strict.forLaunch(name, NATIVE), /has an error in its checks on build 150\.0\.7871\.114 \(screen\), and requireValidatedProfiles is on/);
+  assert.throws(() => strict.forLaunch(name, NATIVE), /has an error in its checks on build 155\.0\.8059\.84 \(screen\), and requireValidatedProfiles is on/);
   // A failed measurement stays failed; off, it still launches (as failed).
   rewrite(store, berlin.id, (r) => { r.validation[BUILD] = measuredEntry({ status: "failed", pack: PACK, items: [bad] }); });
   assert.equal(profiles.forLaunch(name, NATIVE).status, "failed");
@@ -198,7 +198,7 @@ test("coherence (E13): the profile's screen and window kept as warning items, it
   rewrite(store, wide.id, (r) => { r.validation[BUILD] = measuredEntry({ status: "failed", pack: PACK, items: [soft] }); });
   assert.equal(profiles.forLaunch(name, NATIVE).status, "failed");
   assert.deepEqual(profiles.coherence().map((i) => i.id), ["screen.believable", "gpu.software-as-hardware"]);
-  assert.throws(() => parts(store, { requireValidatedProfiles: true }).profiles.forLaunch(name, NATIVE), /isn't validated|is failed on build 150\.0\.7871\.114/);
+  assert.throws(() => parts(store, { requireValidatedProfiles: true }).profiles.forLaunch(name, NATIVE), /isn't validated|is failed on build 155\.0\.8059\.84/);
   // Evidence of another pack counts for nothing: only the screen's item is open.
   assert.deepEqual(profiles.forLaunch(name, { ...NATIVE, pack: "c".repeat(64) }) && profiles.coherence().map((i) => i.id), ["screen.believable"]);
   profiles.release();

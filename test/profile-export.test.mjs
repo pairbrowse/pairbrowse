@@ -30,12 +30,12 @@ test("round trip keeps typed fields with a new id and empty validation", () => {
   const original = store.create({ name: "berlin", locale: RECORD.locale, screen: RECORD.screen, window: RECORD.window, display: RECORD.display,
     graphics: { backend: "software", require: { webgl: 2, webgpu: false, platforms: ["linux"] } }, adBlocker: true });
   // Some evidence a launch would add: never exported.
-  const measured = { ...original, engine: RECORD.engine, validation: { "150.0.7871.114": measuredEntry({ at: AT }) } };
+  const measured = { ...original, engine: RECORD.engine, validation: { "155.0.8059.84": measuredEntry({ at: AT }) } };
   const { file, text, sha256 } = exportProfile(measured, { at: AT, version: "0.16.12" });
   assert.deepEqual(Object.keys(file), ["format", "formatVersion", "exported", "profile", "provenance", "license", "sha256"]);
   assert.equal(file.format, "pairbrowse-profile");
   assert.equal(file.formatVersion, 1);
-  assert.deepEqual(file.exported, { at: AT, pairbrowseVersion: "0.16.12", engineBuild: "150.0.7871.114" });
+  assert.deepEqual(file.exported, { at: AT, pairbrowseVersion: "0.16.12", engineBuild: "155.0.8059.84" });
   assert.equal(sha256, exportSha256(JSON.parse(text)));
   for (const k of ["id", "validation", "history", "engine", "revision", "status", "kind", "created"]) assert.ok(!(k in file.profile), `${k} left out`);
   const back = importInto(store, text, { file: "berlin.json", at: AT, name: "berlin-copy" }).profile;

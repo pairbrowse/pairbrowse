@@ -175,7 +175,7 @@ test("graphics step past its time: the probe is stopped, its browser closed and 
   const sandbox = { on: true, reason: "live" };
   const { launch, seen } = probeBrowser({ hang: true });
   const measured = [], logged = [];
-  const line = await graphicsCheck({ launch, build: "150.0.0.1", platform: "linux", sandbox, scratch, log: (l) => logged.push(l), onMeasured: (m) => measured.push(m), timeoutMs: 300, stepMs: 60_000, launchMs: 5000, stopMs: 5000 });
+  const line = await graphicsCheck({ launch, build: "155.0.0.1", platform: "linux", sandbox, scratch, log: (l) => logged.push(l), onMeasured: (m) => measured.push(m), timeoutMs: 300, stepMs: 60_000, launchMs: 5000, stopMs: 5000 });
   assert.equal(line, "graphics: unverified (not measured: it took longer than 0.3 s)");
   assert.deepEqual(measured, [], "no measurement kept");
   assert.equal(seen.starts, 1, "no second start after the stop");
@@ -195,7 +195,7 @@ test("graphics step whose probe fails: an unverified line naming why, no measure
   const scratch = mkdtempSync(join(home, "probe-scratch-"));
   const { launch, seen } = probeBrowser({ refuse: true });
   const measured = [];
-  const line = await graphicsCheck({ launch, build: "150.0.0.1", platform: "linux", sandbox: { on: true }, scratch, onMeasured: (m) => measured.push(m), timeoutMs: 5000, stepMs: 1000, launchMs: 1000 });
+  const line = await graphicsCheck({ launch, build: "155.0.0.1", platform: "linux", sandbox: { on: true }, scratch, onMeasured: (m) => measured.push(m), timeoutMs: 5000, stepMs: 1000, launchMs: 1000 });
   assert.equal(line, "graphics: unverified (not measured: net::ERR_CONNECTION_REFUSED)");
   assert.deepEqual(measured, []);
   assert.equal(seen.open, 0);

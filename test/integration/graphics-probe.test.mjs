@@ -18,7 +18,7 @@ import { runtimeKey } from "../../scripts/native/graphics.mjs";
 import { nativeExe } from "../helpers/daemon.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
-const BUILD = "150.0.7871.114";
+const BUILD = "155.0.8059.84";
 const PACK = "a".repeat(64);
 
 test("the probe measures a real browser in every part, twice started, and leaves nothing", { skip: !runtime && "set PAIRBROWSE_TEST_RUNTIME", timeout: 180_000 }, async () => {

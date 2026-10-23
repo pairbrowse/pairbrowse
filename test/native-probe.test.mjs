@@ -17,7 +17,7 @@ import { parseSystemInfo } from "../scripts/native/backend.mjs";
 import { validate } from "../scripts/native/validate.mjs";
 
 const fixture = (name) => JSON.parse(readFileSync(new URL(`./fixtures/${name}.json`, import.meta.url), "utf8"));
-const BUILD = "150.0.7871.114";
+const BUILD = "155.0.8059.84";
 const PACK = "a".repeat(64);
 const AT = new Date("2026-10-21T10:00:00Z");
 const made = [];

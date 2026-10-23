@@ -88,8 +88,8 @@ export const PROFILE_SCHEMA = {
   created: iso(),
   // The engine this profile was validated on (D10); null for one never launched on the native build.
   engine: { type: "object", nullable: true, fields: {
-    major: { type: "string", pattern: MAJOR, hint: 'a major version like "150"' },
-    build: { type: "string", pattern: BUILD, hint: 'a build like "150.0.7871.114"' },
+    major: { type: "string", pattern: MAJOR, hint: 'a major version like "155"' },
+    build: { type: "string", pattern: BUILD, hint: 'a build like "155.0.8059.84"' },
   } },
   browser: { type: "object", fields: { kind: { values: BROWSER_KINDS } } },
   locale: { type: "object", fields: {
@@ -293,7 +293,7 @@ function checkValue(key, spec, v, out, starKey) {
   if (plainObject(v)) {
     if (spec.entries) {
       for (const [k, x] of Object.entries(v)) {
-        if (!spec.entries.key.test(k)) { out.push(`${key} has an entry whose key isn't ${expected({ hint: 'a build like "150.0.7871.114"' })}`); continue; }
+        if (!spec.entries.key.test(k)) { out.push(`${key} has an entry whose key isn't ${expected({ hint: 'a build like "155.0.8059.84"' })}`); continue; }
         checkValue(`${key}["${k}"]`, spec.entries.value, x, out, `${starKey}.*`);
       }
     } else if (spec.fields) checkObject(key, spec.fields, v, out, starKey, spec.open);

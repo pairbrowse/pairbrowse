@@ -30,7 +30,7 @@ const linux = process.platform === "linux";
 const SKIP = !runtime ? "set PAIRBROWSE_TEST_RUNTIME"
   : linux && !process.env.DISPLAY ? "Linux under xvfb-run (DISPLAY set) only"
   : !["linux", "darwin"].includes(process.platform) ? "Linux and macOS only" : false;
-const BUILD = "150.0.7871.114";
+const BUILD = "155.0.8059.84";
 const PACK = "b".repeat(64);
 // No render node: no GPU this browser could use, so it can only render in software.
 const gpuLess = () => !existsSync("/dev/dri") || !readdirSync("/dev/dri").some((n) => n.startsWith("renderD"));

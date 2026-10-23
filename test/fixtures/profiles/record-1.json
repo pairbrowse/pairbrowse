@@ -1,7 +1,7 @@
 {
   "schema": 1, "id": "p-3f9c0a1e7b2d4c58", "name": "berlin-desktop", "kind": "store",
   "revision": 4, "status": "active", "created": "2026-10-20T10:00:00Z",
-  "engine": { "major": "150", "build": "150.0.7871.114" },
+  "engine": { "major": "155", "build": "155.0.8059.84" },
   "browser": { "kind": "pairbrowse" },
   "locale": { "languages": ["de-DE", "de", "en"], "timezone": "Europe/Berlin", "source": "set" },
   "screen": { "width": 1920, "height": 1080, "availWidth": 1920, "availHeight": 1050, "colorDepth": 24, "devicePixelRatio": 1 },

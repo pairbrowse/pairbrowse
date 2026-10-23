@@ -16,7 +16,7 @@ const { downloadPinned } = await import("../scripts/util.mjs");
 const sha256 = (data) => createHash("sha256").update(data).digest("hex");
 
 // A stand-in engine pack as engine/build.mjs packs it: engine/{engine.mjs, collector.js, engine.json}.
-function fakePack(version = "150.0.0.1") {
+function fakePack(version = "155.0.0.1") {
   const dir = mkdtempSync(join(tmpdir(), "pb-pack-src-"));
   const engine = join(dir, "engine");
   mkdirSync(engine);
@@ -45,23 +45,23 @@ test("an engine pack installs only when its archive and files match their pins",
 });
 
 test("a changed engine file isn't loaded", async () => {
-  const pack = fakePack("150.0.0.2");
+  const pack = fakePack("155.0.0.2");
   await installEngine(pack.archive, { sha256: pack.sha, pins: pack.pins });
   writeFileSync(join(engineDir(), "collector.js"), "globalThis.collectFingerprint = async () => ({ changed: true });\n");
   await assert.rejects(loadEngine(engineDir(), pack.pins), /collector\.js doesn't match its pinned SHA-256/);
 });
 
 test("installing a new engine pack replaces the old one", async () => {
-  const first = fakePack("150.0.0.3");
+  const first = fakePack("155.0.0.3");
   await installEngine(first.archive, { sha256: first.sha, pins: first.pins });
-  const second = fakePack("150.0.0.4");
+  const second = fakePack("155.0.0.4");
   await installEngine(second.archive, { sha256: second.sha, pins: second.pins });
-  assert.equal((await loadEngine(engineDir(), second.pins)).version, "150.0.0.4");
+  assert.equal((await loadEngine(engineDir(), second.pins)).version, "155.0.0.4");
   assert.deepEqual(readdirSync(home).filter((n) => n.startsWith(".engine-")), [], "no staging left behind");
 });
 
 test("on start, the pinned engine pack is downloaded from the release once, then reused", async () => {
-  const pack = fakePack("150.0.0.5");
+  const pack = fakePack("155.0.0.5");
   let requests = 0;
   const server = createServer((req, res) => {
     requests++;

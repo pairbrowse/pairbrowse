@@ -94,17 +94,17 @@ test("a Linux install writes the desktop entry after its checks; a failed write 
   const home = temp("pb-desk-inst-");
   const logs = [];
   const opts = { check: async () => ["fake check"], register: true, layout, dataHome: home, config: { browser: "pairbrowse" }, log: (m) => logs.push(m) };
-  assert.equal(await installNative(fakeLinuxArchive("150.0.2.1"), opts), d.exec);
+  assert.equal(await installNative(fakeLinuxArchive("155.0.2.1"), opts), d.exec);
   const entry = readFileSync(join(home, "applications", `${desktopId(d.dir)}.desktop`), "utf8");
   assert.ok(entry.includes(`Exec="${d.exec}" %U`));
   // No entry while the check fails: the build never committed.
   rmSync(join(home, "applications"), { recursive: true, force: true });
-  await assert.rejects(installNative(fakeLinuxArchive("150.0.2.2"), { ...opts, check: async () => { throw new Error("no side panel"); } }), /no side panel/);
+  await assert.rejects(installNative(fakeLinuxArchive("155.0.2.2"), { ...opts, check: async () => { throw new Error("no side panel"); } }), /no side panel/);
   assert.ok(!existsSync(join(home, "applications")));
   // A data home that can't be written: logged, the install still succeeds.
   const blocked = join(temp("pb-desk-blk-"), "file");
   writeFileSync(blocked, "");
-  assert.equal(await installNative(fakeLinuxArchive("150.0.2.3"), { ...opts, dataHome: blocked }), d.exec);
+  assert.equal(await installNative(fakeLinuxArchive("155.0.2.3"), { ...opts, dataHome: blocked }), d.exec);
   assert.match(logs.join("\n"), /couldn't install the desktop entry/);
   rmSync(d.app, { recursive: true, force: true });
   rmSync(d.previous, { recursive: true, force: true });

@@ -291,6 +291,7 @@ export const PUBLIC_WORDS = {
 };
 export function awaySwitch(btn, note, base) {
   let st = null;
+  let draws = 0; // how many times it was drawn: an answer older than a pushed config isn't drawn
   const say = (text, kind = "") => { note.textContent = text; note.dataset.kind = kind; };
   // The public link's line, under the switch's own.
   const pubText = el("span");
@@ -298,6 +299,7 @@ export function awaySwitch(btn, note, base) {
   const pub = el("small", { className: "away-offer", hidden: true }, pubText, " ", pubBtn);
   note.after(pub);
   function draw(away) {
+    draws++;
     st = away && typeof away === "object" && typeof away.on === "boolean" ? away : null;
     const on = !!st && (st.server === true || st.on);
     btn.setAttribute("aria-checked", String(on));
@@ -309,11 +311,15 @@ export function awaySwitch(btn, note, base) {
     pubBtn.textContent = pubOn ? PUBLIC_WORDS.turnOff : PUBLIC_WORDS.turnOn;
     pubBtn.disabled = false;
   }
-  // One setting posted; the answer's away drawn, or the error said.
+  // One setting posted; the answer's away drawn, or the error said. A config event drawn while the
+  // post was on its way is the helper's newer word (it pushes one after every change): the answer
+  // then draws nothing over it.
   async function post(body, was) {
+    const before = draws;
     const r = await postJson(base() + "config", body).then(async (x) => ({ ok: x.ok, body: await x.json().catch(() => null) }), () => null);
-    if (r?.ok && r.body?.away) return draw(r.body.away);
-    draw(was);
+    const newer = draws !== before;
+    if (r?.ok && r.body?.away) return newer ? undefined : draw(r.body.away);
+    if (!newer) draw(was);
     say(r?.body?.error ? String(r.body.error) : UNREACHABLE_RETRY, "error");
   }
   btn.addEventListener("click", async (ev) => {

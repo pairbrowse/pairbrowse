@@ -274,7 +274,9 @@ test("foreign locks are never touched", async () => {
     if ("uid" in setup) m.deps.uid = setup.uid;
     assert.deepEqual(await reapOwn(NAME, m.deps), { ended: false, cleared: false }, why);
     assert.deepEqual(m.kills, [], why);
-    assert.deepEqual(m.removed.filter((p) => p.startsWith("/tmp/")), [], why);
+    // The X lock files and sockets only: the record and cookie under paths.run (itself under /tmp on
+    // Linux, where the test home lives) may go.
+    assert.deepEqual(m.removed.filter((p) => p.startsWith("/tmp/.X")), [], why);
   }
   // No record: nothing at all is touched.
   const none = fakeReap({ files: lockFiles });

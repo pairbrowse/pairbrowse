@@ -236,7 +236,8 @@ export function createTurnGate({ grants = null, sessionName, idOf, getContext, c
     await watch();
   }
 
-  // A grant ended: its stream hears why and closes; the picture is free to follow again.
+  // A grant ended: its stream hears why and closes; the picture is free to follow again, for
+  // whoever still watches (with nobody watching, the stream's close stops the picture: stopIfIdle).
   const stopEnd = grants ? grants.onEnd((v, reason) => {
     batches.delete(v.id);
     filled.delete(v.id);
@@ -249,7 +250,7 @@ export function createTurnGate({ grants = null, sessionName, idOf, getContext, c
       if (!res.destroyed) { res.write(sse("turn-ended", { reason })); res.end(); }
       any = true;
     }
-    if (any) { onChanged(); cast.follow().catch(() => {}); }
+    if (any) { onChanged(); if (viewers.size) cast.follow().catch(() => {}); }
   }) : () => {};
   // pairbrowse_invite revoke_all calls every link off, hand-offs too.
   const stopRevokeAll = grants && invites?.onRevokeAll ? invites.onRevokeAll(() => grants.endWhere(() => true, "revoked")) : () => {};

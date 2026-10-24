@@ -416,6 +416,9 @@ test("after Done the picture goes back to the agent's tab although its address n
   try {
     const t = await s.taken(s.pages[0]);
     const turn = await readStream(s.port, `/${t.viewKey}/events`);
+    // The owner watches the live view: the picture they see is the one that follows. (With nobody
+    // watching, the turn stream's close stops the picture altogether.)
+    const owner = await readStream(s.port, `/${s.key}/events`);
     const tabsNow = async () => JSON.parse((await request(s.port, "GET", `/${s.key}/state.json`)).text).tabs;
     const shownUrl = async () => (await tabsNow()).find((x) => x.shown)?.url;
     assert.ok(await until(async () => (await shownUrl()) === "https://shop.example/pay"));
@@ -425,6 +428,7 @@ test("after Done the picture goes back to the agent's tab although its address n
     assert.equal((await request(s.port, "POST", `/${t.viewKey}/turn-done`, { body: {} })).status, 200);
     assert.ok(await until(() => turn.ended()));
     assert.ok(await until(async () => (await shownUrl()) === "https://other.example/"), "the picture follows the agent again");
+    owner.close();
   } finally { s.view.close(); }
 });
 

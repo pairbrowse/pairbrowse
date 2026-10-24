@@ -507,7 +507,7 @@ user's file, readable by others), the section says why and refuses a username or
   "Pace: everyday (sign-in form).", with "moves stayed fast" when the moves couldn't change pace in
   time). A browser profile can't set it (a helper-wide setting). `fontStandIns` (true or false,
   default `true`, as the ordinary-browser measurement settled; Linux and the native build only
-(the open build reads the computer's own font configuration), and only once the
+  (the open build reads the computer's own font configuration), and only once the
   font setup of [Running PairBrowse on a server](server.md#fonts) has run, which gives the browser
   PairBrowse's own font configuration, `~/.pairbrowse/fonts.conf`, written again at each start):
   `true` points each Windows name, where the real font isn't there, at its own open stand-in (Segoe

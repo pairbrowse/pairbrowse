@@ -10,17 +10,17 @@
 // the Pro repo's builds print (macOS: scripts/package.py, Linux/Windows: scripts/linuxwin.py, the
 // engine pack: engine/build.mjs). baseUrl: the public GitHub release they're published in (file
 // name appended). A platform whose sha256 is null has no build yet.
-// The -7 macOS and -5 Linux builds carry the engine tail 960 (the canvas bridge removed), 961
-// (WebGPU follows the identity in use) and 962 (proxy credentials from an owner-only file, SOCKS5
-// username/password); the -5 engine pack goes with them.
 // 155.0.8059.84: the engine on the newest base, its fingerprint series carried by PairBrowse with
-// the same behaviour; the engine pack restarts its revisions. Publication pending: the builds'
-// SHA-256s are filled in as each local build is packaged (null: no build yet).
+// the same behaviour, and the engine tail 960 to 975 (the canvas bridge removed, WebGPU following
+// the identity in use, proxy credentials from an owner-only file with SOCKS5, the graphics and
+// voice identity, system colours, WebGL timing, IndexedDB on SQLite, the WebRTC mDNS responder on
+// macOS, the select anchor in child frames); the engine pack restarts its revisions. No Windows
+// build yet.
 export const NATIVE = {
   version: "155.0.8059.84",
-  arm64: { file: "pairbrowse-155.0.8059.84-macos-arm64.zip", sha256: null },
-  x64: { file: "pairbrowse-155.0.8059.84-macos-x86_64.zip", sha256: null },
-  linux: { file: "pairbrowse-155.0.8059.84-linux-x64.tar.xz", sha256: null },
+  arm64: { file: "pairbrowse-155.0.8059.84-macos-arm64.zip", sha256: "f0b6510a3778e4120acfaee1a6a17e51cc699c381663dc70d46d4abc7a1509e3" },
+  x64: { file: "pairbrowse-155.0.8059.84-macos-x86_64.zip", sha256: "090cedf0ddaa4d6d805a77d8431552d9f688aff65878b731e0df5c20205a8793" },
+  linux: { file: "pairbrowse-155.0.8059.84-linux-x64.tar.xz", sha256: "68f8b97a1ce339f45451c78ea5baa7dbfff7bfccd716688b749a6104869cf4d9" },
   windows: { file: "pairbrowse-155.0.8059.84-windows-x64.zip", sha256: null },
   engine: {
     file: "pairbrowse-engine-155.0.8059.84.tgz",

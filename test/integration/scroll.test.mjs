@@ -1,5 +1,5 @@
-// Fast mode's scroll step: the page glides down with the agent's cursor on it, and the agent's
-// wheel never counts as a person scrolling. Needs PAIRBROWSE_TEST_RUNTIME.
+// Fast mode's scroll step: the page scrolls down in a finger's flicks with the agent's cursor on
+// it, and the agent's wheel never counts as a person scrolling. Needs PAIRBROWSE_TEST_RUNTIME.
 import "../helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { ensureHud } from "../helpers/live.mjs";
 import { hudScript } from "../../scripts/browser.mjs";
 import { runSteps, preflight } from "../../scripts/runner.mjs";
+import { wheelNotch } from "../../scripts/wheel.mjs";
 
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 
@@ -30,9 +31,9 @@ test("scroll step: smooth, with the agent's cursor, never taken for a person", {
       activity: (t) => said.push(t),
       cursor: async (el, act) => { const b = await el.boundingBox(); await page.evaluate(([n, t, c]) => window[n](t, c, "cursor"), [name, token, JSON.stringify({ x: b.x, y: b.y, act })]); },
     };
-    // The measure of this machine right now: fast mode's scroll (the same wheel, no glide), there
-    // and back. The glide adds about 170 ms of easing to it; under load (the suite runs many
-    // browsers at once) every turn of the wheel takes longer, for both.
+    // The measure of this machine right now: fast mode's scroll (the same wheel, no finger's
+    // pauses), there and back; under load (the suite runs many browsers at once) every turn of the
+    // wheel takes longer, for both.
     const b0 = Date.now();
     await runSteps(page, [{ scroll: 100 }, { scroll: -100 }], hooks);
     const plain = (Date.now() - b0) / 2;
@@ -42,7 +43,13 @@ test("scroll step: smooth, with the agent's cursor, never taken for a person", {
     const r = await runSteps(page, [{ scroll: "down" }], { ...hooks, smooth: true });
     const took = Date.now() - started;
     t.diagnostic(`a screen glides by in ${took} ms (a plain scroll: ${plain} ms)`);
-    assert.ok(took < Math.min(3000, Math.max(450, 3 * plain + 200)), `a screen glides by quickly (${took} ms; a plain scroll: ${plain} ms)`);
+    // Smooth turns the wheel in whole notches with a finger's pauses (wheel.mjs wheelFlicks): at
+    // most a 350 ms pause after each burst of two or more notches and 85 ms inside one. Never
+    // slower than that plan's longest, plus the machine's own time for the wheel.
+    const notches = Math.max(1, Math.round((await page.evaluate(() => innerHeight)) * 0.8 / wheelNotch()));
+    const bursts = Math.ceil(notches / 2);
+    const plan = (bursts - 1) * 350 + (notches - bursts) * 85;
+    assert.ok(took < plan + 3 * plain + 200, `a screen glides by no slower than a finger's flicks (${took} ms; plan at most ${plan} ms; a plain scroll: ${plain} ms)`);
     assert.ok(r.ok !== false, JSON.stringify(r));
     const after = await page.evaluate(() => scrollY);
     assert.ok(after > 400 && after < 700, `about a screen down (${after})`);

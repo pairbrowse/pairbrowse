@@ -62,7 +62,9 @@ test("scroll step: smooth, with the agent's cursor, never taken for a person", {
     const smooth = await runSteps(page, [{ scroll: -200 }], { ...hooks, smooth: true, cursor: async (el, act) => { during = page._pairbrowseHumanized; await hooks.cursor(el, act); } });
     assert.ok(smooth.ok !== false, JSON.stringify(smooth));
     assert.equal(during, true, "a single scroll keeps human-like input");
-    assert.ok(Math.abs(await page.evaluate(() => scrollY) - (after - 200)) <= 2, "200 px back up");
+    // 200 px in whole notches of this platform (wheel.mjs): 5 of 40 px on macOS, 2 of 120 px on Linux.
+    const back = Math.max(1, Math.round(200 / wheelNotch())) * wheelNotch();
+    assert.ok(Math.abs(await page.evaluate(() => scrollY) - (after - back)) <= 2, `200 px back up, as whole notches (${back} px)`);
     // Fast mode: human-like input off for the run, back on after.
     await runSteps(page, [{ scroll: 100 }], { ...hooks, cursor: async (el, act) => { during = page._pairbrowseHumanized; await hooks.cursor(el, act); } });
     assert.equal(during, false, "fast mode skips it");

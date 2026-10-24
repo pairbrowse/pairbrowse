@@ -85,9 +85,10 @@ test("no checked profile yields a switch outside the mapper's list, an engine ke
       assert.ok(typeof v === "string" || typeof v === "number", `${k} is a plain value`);
     }
     if (browserKind === "pairbrowse-open") assert.deepEqual(out.engineKeys, {}, "the open build applies switches only");
-    // prefs: only the native build's color scheme, the profile's own (a saved card is off here).
+    // prefs: only the native build's color scheme and the profile's saved card (asked for on either
+    // build; the launch honors it only with a real key store), each the profile's own.
     const scheme = raw.display.colorScheme;
-    assert.deepEqual(out.prefs, browserKind === "pairbrowse" && scheme ? { colorScheme: scheme } : {});
+    assert.deepEqual(out.prefs, { ...(browserKind === "pairbrowse" && scheme ? { colorScheme: scheme } : {}), ...(raw.payments.savedCard === true ? { savedCard: true } : {}) });
     assert.ok(out.results.every((r) => r.severity !== "error"));
   }));
   assert.ok(launched > RUNS / 50, `some generated profiles launch (${launched})`);

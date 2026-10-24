@@ -5,14 +5,7 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
-## Unreleased
-
-- The native browser moves to engine 155 (155.0.8059.84): the newest base, with PairBrowse's
-  fingerprint patch series carried over with the same behaviour and its tail patches, and a new
-  engine pack (`pairbrowse-engine-155.0.8059.84.tgz`). The builds' pins are filled in as each one
-  is packaged; a platform whose pin is still null has no 155 build yet.
-
-## 0.17.0 (2026-10-22)
+## 0.17.0 (2026-10-25)
 
 PairBrowse is a plugin for Claude Code and Codex: the agent fills in forms, signs up for services
 and clicks through websites in a visible browser window on your computer, while you watch every
@@ -20,39 +13,147 @@ step and take over the parts only a person can do. This release is **server mode
 now run on a Linux server nobody sits at, with each session on its own browser profile and its own
 proxy, honest graphics checks, and the steps only you can do sent to your phone. The new
 [Running on a server](docs/server.md) guide leads with which computer to pick (one with a graphics
-card first) and [Browser profiles](docs/profiles.md) explains profiles. It needs the matching
-PairBrowse browser builds (macOS -7, Linux -5, engine pack -5), which carry the engine changes
-below: the plugin pins them and installs them on first use.
+card first) and [Browser profiles](docs/profiles.md) explains profiles. It comes with a new
+PairBrowse browser, release `browser-155.0.8059.84` (macOS Apple Silicon, macOS Intel and Linux x64,
+with engine pack `pairbrowse-engine-155.0.8059.84.tgz`), which carries the browser changes below:
+the plugin pins it and installs it on first use. There is no Windows build yet; on Windows
+PairBrowse keeps running as an extension.
 
 **New**
 
 - **Run PairBrowse on a server:** set `"server": { "keepAlive": true }` and start the helper from
   a service (a systemd unit is in [Running on a server](docs/server.md)): the browser starts with
   the helper on PairBrowse's own virtual screen, comes back by itself after a crash with its
-  session and tabs, keeps its sandbox on with no way off, and runs only the native PairBrowse
-  browser. Every step handed to you goes to your phone through the channels you set up
-  (Telegram, Discord, Slack, a webhook or ntfy), as one message with a link that takes that one
-  tab over on the phone; the public link is off by default and the guide says what it exposes.
+  session, tabs and agents' tabs, keeps its sandbox on with no way off, and runs only the native
+  PairBrowse browser (server mode refuses to start without it). On a server's UTC clock that
+  nothing overrides, the helper log says so and how to set the time zone your traffic leaves from.
+- **Steps only you can do, on your phone:** when the browser runs on a server, or on your desktop
+  while the new **Away** switch is on (side panel Tools tab, Settings, the live view's Profile
+  panel), every step handed to you (a sign-in, a CAPTCHA, a code, a payment) goes to the channels
+  you set up (Telegram, Discord, Slack, a webhook or ntfy) as one message with a link that takes
+  that one tab over on the phone: touch, zoom, a type box, an open dropdown's options listed, input
+  never lost or doubled, the link single-use and ended on time. A public link that works from any
+  network is off by default; the guide says what it exposes. The step still shows in the window
+  too, and whichever you use first does it.
+- **Handoff page: link your phone from Settings:** the browser's Settings (and a Handoff row in the
+  left sidebar) has a Handoff page that links Telegram or Discord for you: paste your bot's token,
+  send the one-time code the page shows to the bot in a private chat, and that chat is linked, with
+  Send a test and Unlink. Choose what goes to your phone (approvals, sign-in and CAPTCHA checks,
+  final submits, finished fast-mode runs), and optionally answer approval cards from that chat
+  (Approve and Deny buttons on Telegram, typed on Discord; off by default, only you in that chat).
+  The token is checked, saved only in PairBrowse's private secrets file and never shown again.
 - **Browser profiles:** each session's browser starts on a profile (languages, time zone, screen,
-  window, dark scheme, reduced motion, graphics request, persona seed, ad blocker, saved card),
-  made, imported, exported, checked, assigned and retired by you on the sessions page or with
-  `node scripts/profiles/cli.mjs`; agents can only list profiles and pick one for a new session.
-  Sessions keep their cookies, storage, logins and history apart whatever profile they share.
+  window, dark scheme, reduced motion, graphics request, persona seed, ad blocker, a saved card that
+  only you can use in the browser's own autofill), made, imported, exported, checked, assigned and
+  retired by you on the sessions page or with `node scripts/profiles/cli.mjs`; agents can only list
+  profiles and pick one for a new session. Sessions keep their cookies, storage, logins and history
+  apart whatever profile they share.
 - **Graphics measured, never assumed:** the first start of a profile on a build measures the
   browser's graphics once in a throwaway browser of its own (the backend from the browser process
   itself, WebGL, WebGPU, the canvas, fonts, the screen, the sandbox) and keeps the verdict with the
   profile: "validated", "consistent" (a computer without a graphics card, below), "failed" naming
   what disagrees, or "unverified". `pairbrowse_status` says which; a report never carries your GPU.
-- **Proxies with a username and password, SOCKS5 included:** on a native PairBrowse browser build that reads them (the builds this release pins; the build says so, and PairBrowse checks before starting), a session on an HTTP, HTTPS or SOCKS5 proxy that needs a username and password starts. PairBrowse writes them to a private file only this account can read, names it to the browser for that one start and deletes it once the browser is up; the browser answers only that proxy's own password question with them (never a website's) and, on SOCKS5, signs in the standard way (username/password authentication). They never appear on the browser's command line, in a log or in its network log. The Settings test and the start check reach a SOCKS5 proxy with a username and password the same way. PairBrowse as an extension still can't take them: such a session says so and doesn't start.
-- **Set up proxies in Settings:** Settings has a Network section (also in the Profile panel of your own live view link) where you add, edit, test and remove a proxy (HTTP, HTTPS or SOCKS5, with an optional username and password) and choose which sessions use it, or the default for all of them. The username and password are saved only in PairBrowse's private passwords file on this computer and never shown again: the page says "saved" or "not set". **Test** shows the address and country your traffic would leave from, whether it really leaves through the proxy, and a warning when your browser's time zone or languages don't fit that country. Agents and people who join your session can't open or change any of it. A proxy that needs a username and password can be saved and tested, and starts sessions on a native PairBrowse browser build that takes them from its own private file (see below).
+- **A proxy for each session:** a session mapped to a proxy in `config.json`'s `network` block
+  starts its browser through that proxy, with your computer's own addresses always going around it.
+  In strict mode (the default) the browser looks up no site names itself and its pages see the
+  proxy's exit as their only WebRTC address. A session whose proxy can't be used doesn't start and
+  says why; it never connects directly instead. While the browser runs, PairBrowse checks the
+  proxy's exit address again every `recheckMinutes` (10 by default): if it changed, or the proxy
+  stopped answering, agents are paused until you resume them and you are told (also on your phone
+  when the browser runs on a server or you are Away); `onEgressChange` `"notify"` only tells you,
+  and `"ignore"` lets a rotating proxy's address change pass.
+- **Proxies with a username and password, SOCKS5 included:** on the native PairBrowse browser, a
+  session on an HTTP, HTTPS or SOCKS5 proxy that needs a username and password starts. PairBrowse
+  writes them to a private file only this account can read, names it to the browser for that one
+  start and deletes it once the browser is up; the browser answers only that proxy's own password
+  question with them (never a website's). They never appear on the browser's command line, in a log
+  or in its network log. PairBrowse as an extension can't take them: such a session says so and
+  doesn't start.
+- **Proxies page:** the browser's Settings has a Proxies page (also a row in the left sidebar, and
+  the Network section of your own live view's Profile panel) where you add, edit, test and remove a
+  proxy and choose which sessions use it. The list says which sessions use each proxy and when one
+  last did, **Use** makes one the default, and a removed proxy goes to **Recently removed**, to add
+  again with its fields filled in (its password typed again) or to forget. **Test** shows the
+  address and country your traffic would leave from, whether it really leaves through the proxy,
+  and a warning when the browser's time zone or languages don't fit that country. The username and
+  password are kept only in PairBrowse's private secrets file and never shown again. Agents and
+  people who join your session can't open or change any of it.
+- **Windows fonts on a Linux server:** `node scripts/native/fontsetup.mjs install` sets up the fonts
+  a server needs, once: Microsoft's core fonts for the web through the distribution's own package,
+  only after you accept their licence (typed, or recorded with `server.acceptMsCoreFontsEula`),
+  colour emoji, CJK, and one open look-alike font per Windows family (Selawik for Segoe UI, Carlito
+  for Calibri, Arimo for Arial and more), each from its publisher and checked by SHA-256. Pages then
+  find those Windows font names as on a Windows computer. `check` lists each Windows font as
+  present, standing in or missing, as do Settings and diagnostics.
 
 **Changed**
 
-- **Graphics on Linux follow the computer:** the native PairBrowse browser on Linux now tells web pages about the graphics it really uses when the computer has a graphics card: pages see the real renderer's name and limits, no fingerprint noise is added over those real pixels, and on PairBrowse's virtual screen the screen size pages read is that screen's. On a server without a graphics card (software rendering, which websites treat as a bot before any CAPTCHA appears) the browser instead shows pages one ordinary desktop graphics identity it already carries, an Intel UHD Graphics 770 in WebGL and, wherever a WebGPU adapter is available, the same identity in WebGPU (the pinned browser builds make WebGPU follow it; a server without a graphics card usually has no adapter), with canvas noise on unless `pairbrowse.graphicsNoise` is `false`. PairBrowse itself stays honest about it: the helper log, `pairbrowse_status`, the install check and a diagnostics report say "software rendering, shown as Intel UHD Graphics 770", and a browser profile checked there reads "consistent" rather than "validated". For the fewest blocks, run PairBrowse on a computer with a graphics card (see `docs/server.md`). `gpuVendor` and `gpuRenderer` in config.json are not used on Linux any more and are deprecated everywhere: the log says so, and they go in the next release. A new setting, `pairbrowse.graphics` (`"auto"`, `"software"` or `"gpu"`), chooses the graphics backend; `"software"` uses the browser's own software renderer on Linux and is refused on a Mac rather than half applied. `--disable-gpu` in `browserArgs` still works as before but no longer counts as a software choice for a browser profile.
-- **Card details are yours to type, always:** an agent can no longer type, fill, paste or choose a payment card's number, security code or expiry date, in any session, app or permission mode, test cards on your own checkout included. The agent fills the rest of the checkout (the name on the card, the billing address) and then hands the step to you: you type the card in the PairBrowse window and press Pay yourself. A card number is also never kept among remembered details. If you used to let an agent fill test cards on localhost, type them yourself now, or let the agent hand you that step.
-- **Agents wait for you properly during a hand-off:** when an agent hands you a step (a sign-in, a CAPTCHA, a code, a payment), it leaves that tab alone until you are done, then looks at the page before going on instead of trusting "Done". If a step sent to your phone isn't finished in time, the agent stops and tells you where it is rather than trying again or working around it. Agents' built-in instructions say all this, so they hand over card steps before PairBrowse has to refuse them.
-- **A proxy saved in a browser persona now stops the launch instead of being used:** if a saved native profile (`pairbrowse.profile`) or the persona kept with a session names a proxy, the browser no longer starts with it and says to move it to `network.proxies` in `config.json`, where each session's proxy now lives. It is never silently dropped, which would send that session's traffic out directly. A proxy's username and password are also never passed to the browser as a launch option or on its command line.
-- **A browser session can use its own proxy:** a session mapped to a proxy in `config.json`'s `network` block now starts its browser through that proxy, with your computer's own addresses always going around it. In strict mode (the default) the browser looks up no site names itself and sends no WebRTC traffic outside the proxy. A session whose proxy can't be used doesn't start and says why; it never connects directly instead. Proxies that need a username and password start sessions on a native PairBrowse browser build that takes them safely (below); PairBrowse as an extension refuses them by name. While the browser runs, PairBrowse checks the proxy's exit address again every `recheckMinutes` (10 by default): if it changed, or the proxy stopped answering, agents are paused until you resume them and you are told (also on your hand-off channels when the browser runs on a server or you are Away); `onEgressChange` `"notify"` only tells you, and `"ignore"` lets a rotating proxy's address change pass.
+- **Graphics follow the computer:** on a Mac and on Linux with a graphics card, pages see this
+  computer's own graphics, with no fingerprint noise over its real pixels; on a Mac pages also see
+  the Mac's whole font list, as an everyday browser shows it. On a Linux computer without a graphics
+  card (software rendering, which websites treat as a bot before any CAPTCHA appears) the browser
+  shows pages one ordinary desktop it carries: a Windows 11 computer with an NVIDIA GeForce RTX 3060,
+  in WebGL and WebGPU, with Windows speech voices, keyboard layout and system colours, and the
+  virtual screen less a Windows taskbar. Canvas noise is off there unless `pairbrowse.graphicsNoise`
+  is `true`, so sessions on one such computer share its canvas reading. PairBrowse itself stays
+  honest about it: the helper log, `pairbrowse_status`, the install check and a diagnostics report
+  say "software rendering, shown as Windows 11 with NVIDIA GeForce RTX 3060", and a profile checked
+  there reads "consistent" rather than "validated". For the fewest blocks, run PairBrowse on a
+  computer with a graphics card (see `docs/server.md`). A new setting, `pairbrowse.graphics`
+  (`"auto"`, `"software"` or `"gpu"`), chooses the graphics backend. `gpuVendor` and `gpuRenderer`
+  in config.json are no longer used on Linux and are deprecated everywhere; they go in a later
+  release.
+- **Typing and pointer moves at a person's pace where sites check:** in the native browser,
+  typing, clicks, scrolls and pointer moves stay fast on ordinary pages and switch to an everyday
+  person's pace (about 150 ms between keys, hand-like moves at the profile's own speed) on a page
+  with a verification widget or a sign-in, sign-up or payment form, for every stroke on that page.
+  Each result says which pace it took. `pairbrowse.inputPace` (`"adaptive"`, `"fast"` or `"human"`)
+  changes it. Scrolling turns the wheel in whole notches, as a real mouse does.
+- **Each browser profile is its own visitor:** a profile's persona grows from a random seed drawn
+  at its first start and kept with it, so two new profiles on one server, or on two servers set up
+  alike, no longer look like the same visitor, while one profile stays the same across restarts.
+- **WebRTC like an everyday browser:** a session without a proxy now shows sites WebRTC as an
+  everyday browser does (your local address hidden behind a random name, your public address as
+  sites normally see it) instead of no address at all, on Linux and macOS; a proxied session shows
+  only the proxy's exit.
+- **Card details are yours to type, always:** an agent can no longer type, fill, paste or choose a
+  payment card's number, security code or expiry date, in any session, app or permission mode, test
+  cards on your own checkout included. The agent fills the rest of the checkout (the name on the
+  card, the billing address) and then hands the step to you: you type the card in the PairBrowse
+  window and press Pay yourself. A card number is also never kept among remembered details. If you
+  used to let an agent fill test cards on localhost, type them yourself now.
+- **Agents wait for you properly during a hand-off:** when an agent hands you a step, it leaves
+  that tab alone until you are done, then looks at the page before going on instead of trusting
+  "Done". If a step sent to your phone isn't finished in time, the agent stops and tells you where
+  it is rather than trying again or working around it.
+- **A proxy saved in a browser persona stops the launch instead of being used:** if a saved native
+  profile (`pairbrowse.profile`) or the persona kept with a session names a proxy, the browser no
+  longer starts with it and says to move it to `network.proxies` in `config.json`. It is never
+  silently dropped, which would send that session's traffic out directly.
+- **Local or Live in the left sidebar:** the dot that says whether your session is shared moved
+  from the top right into the foot of the left sidebar: grey "Local" while only you are here, green
+  "Live" once the session is shared or someone watches, "Reconnecting" while a stream comes back.
+- **Share stands out:** the Share button in the tab row is the window's one blue button, centred in
+  the row.
+- **Lighter helper:** the phishing list is downloaded in its own process and kept on disk, so the
+  helper uses noticeably less memory.
+
+**Fixed**
+
+- **Dark pages stay dark:** the browser's own Settings, History and Downloads, and sites with a dark
+  mode, showed light in every session, because the browser driver answered every page's colour
+  scheme with its own default. Your browser's and profile's scheme, reduced motion and contrast
+  settings now apply, and PairBrowse's own pages in the browser's Settings stay dark with it.
+- **Dropdowns in frames open:** a dropdown inside a frame that sits further down the page than the
+  window is tall never opened in the browser; it does now. The menus in Settings open right under
+  their field.
+- **Live view tab icons:** the live view no longer fetches site icons itself (that request went
+  around a session's proxy when the proxy needs a password); it shows only icons the page already carries, and a tab whose icon
+  can't be read no longer breaks the tab list.
+- **Typing in your remembered details:** when one detail finished saving while you typed in
+  another, the focus jumped back to the first one mid-word; it stays where you type now.
+- **After a session switch:** an agent whose tab went with a session switch gets a tab of its own in
+  the new session.
 
 ## 0.16.12 (2026-10-20)
 

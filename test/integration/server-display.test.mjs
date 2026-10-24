@@ -12,6 +12,7 @@ import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { session } from "../helpers/live.mjs";
 import { SERVER_NEEDS_NATIVE } from "../../scripts/browser/choice.mjs";
+import { runsEmulated } from "../../scripts/native/probe.mjs";
 import { sleep, text, until } from "../helpers/util.mjs";
 import { SCREEN, browserPid, canRunXvfb, commandLine, logCount, logText, pidAlive, sandboxOf, screenRecord, serverHome, signalHelper, startServerHelper, startSite } from "../helpers/server.mjs";
 
@@ -66,7 +67,8 @@ test("starts headed on its own virtual screen; window matches virtualScreen 1280
     const box = sandboxOf(pid);
     assert.equal(box.noSandboxSwitch, false, "no --no-sandbox");
     assert.ok(box.renderers > 0 && box.namespaced === box.renderers, `every renderer in its own namespaces: ${JSON.stringify(box)}`);
-    if (process.arch === "x64") assert.equal(box.seccomp, box.renderers, "and the seccomp filter");
+    // The seccomp filter where the kernel runs the browser's own instructions (not under x64 emulation).
+    if (process.arch === "x64" && !runsEmulated()) assert.equal(box.seccomp, box.renderers, "and the seccomp filter");
     const status = text(await a.tool("pairbrowse_status", { kind: "claude", text: "Checking" }));
     assert.match(status, new RegExp(`virtual screen ${rec.display} ${SCREEN.width}x${SCREEN.height}`));
     assert.doesNotMatch(status, /sandbox is off|sandbox stays on/i, "no sandbox warning");

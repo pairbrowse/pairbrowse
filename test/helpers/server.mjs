@@ -114,17 +114,24 @@ export function descendants(pid) {
 }
 
 // The browser's sandbox as the kernel shows it: its command line has no --no-sandbox, and every
-// process its sandboxed zygote started (the renderers: forked from the zygote, they keep its
-// command line; the zygote's own --no-zygote-sandbox twin, for utility processes, doesn't count)
-// runs in a PID namespace of its own (NSpid names two pids or more: the namespace layer of the
-// sandbox) and, where the kernel runs the browser's own instructions, under a seccomp filter
-// (Seccomp 2). { browser, noSandboxSwitch, renderers, namespaced, seccomp } (the last two: how many).
+// renderer its sandboxed zygote started runs in a PID namespace of its own (NSpid names two pids
+// or more: the namespace layer of the sandbox) and, where the kernel runs the browser's own
+// instructions, under a seccomp filter (Seccomp 2). Renderers are forked from the zygote and keep
+// its command line; the zygote's own --no-zygote-sandbox twin, for utility processes, doesn't
+// count. Under the namespace sandbox the browser's zygote child is only the new namespace's init
+// (its innermost pid 1), which forks the zygote proper: that one is a zygote, not a renderer (it
+// takes no seccomp filter of its own), and the renderers are its children.
+// { browser, noSandboxSwitch, renderers, namespaced, seccomp } (the last two: how many).
 export function sandboxOf(pid) {
   const cmd = (read(`/proc/${pid}/cmdline`) || "").split("\0");
   const tree = descendants(pid);
-  const zygotes = new Set(tree.filter((p) => /--type=zygote/.test(p.cmd) && !/--no-zygote-sandbox/.test(p.cmd)).map((p) => p.pid));
+  const statusOf = new Map(tree.map((p) => [p.pid, read(`/proc/${p.pid}/status`) || ""]));
+  const nspids = (p) => (/^NSpid:\s*(.*)$/m.exec(statusOf.get(p.pid) || "")?.[1].trim().split(/\s+/) || []);
+  const sandboxed = tree.filter((p) => /--type=zygote/.test(p.cmd) && !/--no-zygote-sandbox/.test(p.cmd));
+  const inits = new Set(sandboxed.filter((p) => p.ppid === pid && nspids(p).length >= 2 && nspids(p).at(-1) === "1").map((p) => p.pid));
+  const zygotes = new Set(sandboxed.filter((p) => (p.ppid === pid && !inits.has(p.pid)) || inits.has(p.ppid)).map((p) => p.pid));
   const renderers = tree.filter((p) => zygotes.has(p.ppid) || /--type=renderer/.test(p.cmd));
-  const status = renderers.map((p) => read(`/proc/${p.pid}/status`) || "");
+  const status = renderers.map((p) => statusOf.get(p.pid));
   return {
     browser: pid,
     noSandboxSwitch: cmd.some((a) => /^--no-sandbox(=|$)/i.test(a)),

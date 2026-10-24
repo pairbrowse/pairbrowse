@@ -95,7 +95,9 @@ const signal = (pid, sig) => {
 // the record too, unless our Xvfb outlived SIGKILL (stuck in the kernel): then it stays for the next
 // start to try again. deps: injectable files, processes and clock for tests. Returns { ended, cleared }.
 export async function reapOwn(name, deps = {}) {
-  const { log = () => {}, read = readText, alive = pidAlive, kill = signal, owner = ownerOf, remove = removeFile, wait = sleep, uid = process.getuid?.() } = deps;
+  const { log = () => {}, read = readText, alive = pidAlive, kill = signal, owner = ownerOf, remove = removeFile, wait = sleep } = deps;
+  // A uid given as undefined is a system without one (not POSIX), never this process's.
+  const uid = "uid" in deps ? deps.uid : process.getuid?.();
   const file = recordPath(name), auth = join(paths.run, name);
   const out = { ended: false, cleared: false };
   let stuck = false;

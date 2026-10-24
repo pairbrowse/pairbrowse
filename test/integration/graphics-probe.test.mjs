@@ -1,6 +1,7 @@
 // The graphics probe's page side in a real browser (spec server-mode E4; native/probe.mjs): the
 // open build (the native build with PAIRBROWSE_TEST_EXECUTABLE, helpers/daemon.mjs nativeExe),
-// started twice on one throwaway folder as probeLaunch starts a probe browser, answers every part
+// started twice on one throwaway folder as probeLaunch starts a probe browser (three times on a
+// Linux host without a GPU, as on CI: the software backend read, then measured under its identity), answers every part
 // on a local page (WebGL and WebGL2 strings and limits, WebGPU or why not, the canvas scenes on two
 // origins and across the two starts, fonts against a control list, screen, media, locale, user
 // agent), the browser process names its backend, and the record is the one measuredRecord keeps
@@ -21,18 +22,23 @@ const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const BUILD = "155.0.8059.84";
 const PACK = "a".repeat(64);
 
-test("the probe measures a real browser in every part, twice started, and leaves nothing", { skip: !runtime && "set PAIRBROWSE_TEST_RUNTIME", timeout: 180_000 }, async () => {
+test("the probe measures a real browser in every part, twice started (three times without a GPU on Linux), and leaves nothing", { skip: !runtime && "set PAIRBROWSE_TEST_RUNTIME", timeout: 180_000 }, async () => {
   const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
   const directory = mkdtempSync(join(tmpdir(), "pb-probe-"));
   const starts = [];
   const sandbox = { on: true, reason: null, refused: null, blocked: null, required: null };
   try {
     const measured = await probeLaunch({
-      launch: (dir) => { starts.push(dir); return chromium.launchPersistentContext(dir, { headless: true, ...(nativeExe ? { executablePath: nativeExe } : {}) }); },
+      launch: (dir, { measured: known } = {}) => { starts.push({ dir, known }); return chromium.launchPersistentContext(dir, { headless: true, ...(nativeExe ? { executablePath: nativeExe } : {}) }); },
       directory, build: BUILD, pack: PACK, display: "native", sandbox, stepMs: 20_000, launchMs: 60_000,
     });
-    assert.equal(starts.length, 2, "started twice");
-    assert.equal(starts[0], starts[1], "on one folder");
+    // A software backend on Linux (decision 10): the first start reads it, the browser is started
+    // again with that read, then once more for the canvas across launches. Otherwise twice.
+    const software = process.platform === "linux" && starts.length > 1 && starts[1].known?.kind === "software";
+    assert.equal(starts.length, software ? 3 : 2, `started ${software ? "three times (no GPU)" : "twice"}`);
+    assert.equal(starts[0].known, null, "the first start knows no backend yet");
+    if (software) assert.ok(starts.slice(1).every((s) => s.known?.kind === "software"), "each later start is handed the software read");
+    assert.ok(starts.every((s) => s.dir === starts[0].dir), "on one folder");
     assert.deepEqual(readdirSync(directory), [], "its folder removed");
     const platform = process.platform === "darwin" ? "macos" : "linux";
     assert.equal(measured.runtime.platform, platform);

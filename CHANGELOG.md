@@ -5,6 +5,26 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.17.1 (2026-10-25)
+
+PairBrowse is a plugin for Claude Code and Codex: the agent fills in forms, signs up for services
+and clicks through websites in a visible browser window on your computer, while you watch every
+step and take over the parts only a person can do. This is a small fix release for 0.17.0. The
+PairBrowse browser stays at `browser-155.0.8059.84`; nothing new to download.
+
+**Fixed**
+
+- **The Away switch keeps your newest choice:** turning Away on or off in the side panel could flip
+  back a moment later when the helper's answer to an earlier click arrived after your latest one.
+  The switch now always shows the setting you chose last.
+- **The live picture stops when nobody watches:** when a step handed to you (on your phone or in
+  the window) ended, PairBrowse started the live picture of the agent's tab again even when nobody
+  was watching it, capturing the screen for no one. It now goes back to the agent's tab only for
+  someone still watching.
+- **Tests on every platform:** the test suite now passes on Linux as well as macOS (the scroll
+  wheel's step and a server's graphics start differ there), and the cleanup of PairBrowse's own
+  leftover virtual-screen files is tested as on a system without user ids.
+
 ## 0.17.0 (2026-10-25)
 
 PairBrowse is a plugin for Claude Code and Codex: the agent fills in forms, signs up for services

@@ -94,6 +94,7 @@ function sizeImage() {
   img.style.height = Math.floor(frame.h * scale) + "px";
 }
 const fit = () => {
+  autoSide();
   document.documentElement.style.setProperty("--fit-h", Math.max(120, stage.clientHeight) + "px");
   sizeImage();
   clearTimeout(fitTimer);
@@ -114,14 +115,26 @@ fitBtn.addEventListener("click", () => {
 // skips each event's redraw and is drawn from the last payloads when shown again.
 const VIEW_KEY = "pb-view";
 const SECTIONS = ["tabs", "agents", "guests", "session"];
+// With no choice of the viewer's own stored, the column follows the window: a rail under
+// NARROW_PX (the Claude desktop app's Browser pane, a phone), where an open column would leave the
+// page a slit, open from there up. Read at start and on the stage's resize path (fit), never polled.
+const NARROW_PX = 720;
 const view = { sidebar: "open", sections: { tabs: true, agents: true, guests: true, session: true } };
+let viewChosen = false;
 try {
   const v = JSON.parse(localStorage.getItem("pb-view") || "null");
-  if (["open", "rail", "hidden"].includes(v?.sidebar)) view.sidebar = v.sidebar;
+  if (["open", "rail", "hidden"].includes(v?.sidebar)) { view.sidebar = v.sidebar; viewChosen = true; }
   for (const s of SECTIONS) if (typeof v?.sections?.[s] === "boolean") view.sections[s] = v.sections[s];
 } catch {}
+const sideFor = () => (innerWidth < NARROW_PX ? "rail" : "open");
+if (!viewChosen) view.sidebar = sideFor();
 let lastShown = view.sidebar === "hidden" ? "open" : view.sidebar; // what the column button brings back
-const saveView = () => { try { localStorage.setItem(VIEW_KEY, JSON.stringify(view)); } catch {} };
+const saveView = () => { viewChosen = true; try { localStorage.setItem(VIEW_KEY, JSON.stringify(view)); } catch {} };
+function autoSide() {
+  if (viewChosen || view.sidebar === sideFor()) return;
+  view.sidebar = lastShown = sideFor();
+  applyView();
+}
 
 // The event stream (frames and state). Closed while this page has been out of sight for a few
 // seconds (a hidden pane, a background tab: nobody sees the frames, and with no viewer left the

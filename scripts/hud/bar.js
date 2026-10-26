@@ -101,8 +101,9 @@
       .ab{display:flex;flex-direction:column;gap:10px;min-width:0;font:500 13px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;color:#A2B2C6}
       .ab .ah{display:flex;align-items:center;gap:10px;min-width:0;padding-right:22px}
       .ab .ai{flex:none;display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:__PB_AGENT_COLOR__;color:#0B1421;font:700 13px/1 system-ui,-apple-system,"Segoe UI",sans-serif}
-      .ab .aw{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-      .ab .aw b{color:#F1F5FA;font-weight:600}
+      .ab .aw{display:flex;align-items:baseline;gap:4px;min-width:0;white-space:nowrap}
+      .ab .aw b{min-width:0;overflow:hidden;text-overflow:ellipsis;color:#F1F5FA;font-weight:600}
+      .ab .aw .vb{flex:none}
       .ab .ac{margin-bottom:-6px;font-size:12px;color:#A2B2C6}
       .ab .ag{padding:8px 10px;border:1px solid #293B50;border-radius:8px;color:#F1F5FA;font:600 13px/1.35 system-ui,-apple-system,"Segoe UI",sans-serif;overflow-wrap:anywhere}
       .ab .ar{color:#A2B2C6;overflow-wrap:anywhere}
@@ -121,7 +122,7 @@
       .ab .ax{position:absolute;right:8px;top:18px;box-sizing:border-box;width:24px;height:24px;display:flex;align-items:center;justify-content:center;color:#8699B1;font:500 15px/1 system-ui;cursor:pointer}
       .ab .ax:hover{color:#F1F5FA}
       @media (prefers-reduced-motion:reduce){.bar,.bar *{animation:none!important;transition:none!important}}
-    </style><div class="bar" aria-hidden="true"><span class="who"><i class="dot"></i><span></span><span class="rec" hidden><i></i>REC</span><span class="sbx" hidden>The browser's sandbox is off: websites are less isolated from this computer</span></span><ol></ol><button class="pz" tabindex="-1" hidden></button><div class="jq" hidden><div class="jb"><div class="hd"><i class="av"></i><span class="t"><b></b> wants to join · <span class="r"></span><span class="h"></span></span></div><span class="m" hidden></span><div class="act"><button class="ok" tabindex="-1">Allow</button><button class="no" tabindex="-1">Deny</button></div><b class="x" title="Dismiss (it stays in the side panel)">×</b></div><div class="ab" hidden><div class="ah"><i class="ai"></i><span class="aw"><b></b><span class="av"> wants to click</span></span></div><span class="ac">Described by the agent as</span><div class="ag"></div><div class="ar"></div><div class="aact"><button class="aok" tabindex="-1">Allow</button><button class="ano" tabindex="-1">Deny</button><button class="atm" tabindex="-1">Ask in the terminal</button></div><span class="am" hidden></span><span class="an" hidden></span><b class="ax" title="Hide here (the terminal still asks)">×</b></div></div></div>`);
+    </style><div class="bar" aria-hidden="true"><span class="who"><i class="dot"></i><span></span><span class="rec" hidden><i></i>REC</span><span class="sbx" hidden>The browser's sandbox is off: websites are less isolated from this computer</span></span><ol></ol><button class="pz" tabindex="-1" hidden></button><div class="jq" hidden><div class="jb"><div class="hd"><i class="av"></i><span class="t"><b></b> wants to join · <span class="r"></span><span class="h"></span></span></div><span class="m" hidden></span><div class="act"><button class="ok" tabindex="-1">Allow</button><button class="no" tabindex="-1">Deny</button></div><b class="x" title="Dismiss (it stays in the side panel)">×</b></div><div class="ab" hidden><div class="ah"><i class="ai"></i><span class="aw"><b></b><span class="vb">wants to click</span></span></div><span class="ac">Described by the agent as</span><div class="ag"></div><div class="ar"></div><div class="aact"><button class="aok" tabindex="-1">Allow</button><button class="ano" tabindex="-1">Deny</button><button class="atm" tabindex="-1">Ask in the terminal</button></div><span class="am" hidden></span><span class="an" hidden></span><b class="ax" title="Hide here (the terminal still asks)">×</b></div></div></div>`);
     bar = shadow.querySelector(".bar");
     joinWire(shadow); // a new bar: a join request it shows is drawn anew
     apWire(shadow); // and an approval
@@ -173,7 +174,7 @@
     const note = docked && !!(barWaiting || barReconnecting || barRecording || barSandboxOff || barPause);
     bar.classList.toggle("note", note);
     bar.classList.toggle("reconly", note && !barWaiting && !barReconnecting && !barPause);
-    if (barPause) bar.querySelector(".who span").innerHTML = html(`Paused by <b>${esc(barPause.by)}</b>${barCanPause && !docked ? " \u00b7" : ""}`);
+    if (barPause) bar.querySelector(".who span").innerHTML = html(`Paused by <b>${esc(barPause.by)}</b>`);
     else if (barReconnecting) bar.querySelector(".who span").innerHTML = html(`Reconnecting to <b>${esc(barReconnecting)}</b>…`);
     else bar.querySelector(".who span").innerHTML = html(barWaiting ? `<b>${esc(who)}</b> is waiting… ${barPerson ? `${esc(barPerson)} is using this tab` : "you're using the browser"}` : `<b>${esc(who)}</b> ${driving ? "is driving" : "is idle"}`);
     // Docked: no steps and no Pause (the docks' own), so nothing more is drawn or re-checked.

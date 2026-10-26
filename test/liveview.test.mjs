@@ -472,10 +472,13 @@ test("the workspace column draws only what is seen; the Timeline reads the log o
     await still.goto(view.url);
     assert.equal(await still.evaluate(() => getComputedStyle(document.querySelector("#side")).transitionDuration), "0.001s");
     await calm.close();
-    // Narrow: the open column lies over the toolbar; Escape inside it folds it to the rail.
+    // Narrow: with nothing stored the column starts as the rail; opened, it lies over the toolbar,
+    // and Escape inside it folds it to the rail.
     const narrow = await browser.newContext({ viewport: { width: 420, height: 720 } });
     const small = await narrow.newPage();
     await small.goto(view.url);
+    await small.waitForSelector('#side[data-state="rail"]');
+    await small.click("#side-collapse");
     await small.waitForSelector('#side[data-state="open"]');
     await small.focus("#side-h-tabs");
     await small.keyboard.press("Escape");
@@ -487,6 +490,123 @@ test("the workspace column draws only what is seen; the Timeline reads the log o
     guestStream.close();
     await browser.close();
     view.close();
+  }
+});
+
+test("a narrow pane keeps the page: the column starts as the rail, every toolbar button in view, the stage at least 60 percent", { skip: !runtime }, async () => {
+  const { ctx, pages } = fakeTabs(2);
+  const view = await startLiveView({ getContext: async () => ctx, currentUrl: async () => pages[0].url(), invites: createInvites() });
+  const { chromium } = patchright(runtime);
+  const browser = await chromium.launch();
+  const errors = [];
+  const measure = (page) => page.evaluate(() => {
+    const stage = document.getElementById("stage").getBoundingClientRect();
+    const side = document.getElementById("side");
+    const buttons = [...document.querySelectorAll(".toolbar > button")].filter((b) => getComputedStyle(b).display !== "none")
+      .map((b) => { const r = b.getBoundingClientRect(); return { id: b.id, left: r.left, right: r.right, top: r.top, bottom: r.bottom, w: r.width }; });
+    return { width: innerWidth, height: innerHeight, stage: stage.width, overlays: getComputedStyle(side).position === "absolute", state: side.dataset.state, buttons };
+  });
+  try {
+    // The Claude desktop app's Browser pane: 440 x 760, nothing stored yet.
+    const context = await browser.newContext({ viewport: { width: 440, height: 760 } });
+    const page = await context.newPage();
+    page.on("pageerror", (e) => errors.push(e.message));
+    await page.goto(view.url);
+    await page.waitForFunction(() => document.querySelectorAll("#tabs .tab").length === 2);
+    let m = await measure(page);
+    assert.equal(m.state, "rail", "no stored choice and a narrow window: the rail");
+    assert.ok(m.stage >= 0.6 * m.width, `the stage keeps ${m.stage} of ${m.width} px`);
+    for (const id of ["side-btn", "back", "reload", "overview-btn", "profile-btn", "share-btn", "timeline-btn", "fit"]) {
+      const b = m.buttons.find((x) => x.id === id);
+      assert.ok(b, `${id} shows`);
+      assert.ok(b.left >= 0 && b.right <= m.width && b.top >= 0 && b.bottom <= m.height && b.w >= 27, `${id} is whole and in view: ${JSON.stringify(b)}`);
+    }
+    for (let i = 1; i < m.buttons.length; i++) assert.ok(m.buttons[i].left >= m.buttons[i - 1].right - 0.5, `${m.buttons[i].id} doesn't overlap ${m.buttons[i - 1].id}`);
+    // Opened at this width: it lies over the page rather than squeezing the stage.
+    await page.click("#side-collapse");
+    await page.waitForSelector('#side[data-state="open"]');
+    m = await measure(page);
+    assert.ok(m.overlays || m.stage >= 0.6 * m.width, `open: ${m.stage} of ${m.width} px, overlay ${m.overlays}`);
+    // Ctrl/Cmd+B still hides and brings it back, and the choice is stored.
+    await page.click(".side > header h2");
+    await page.keyboard.press("Control+b");
+    assert.equal(await page.getAttribute("#side", "data-state"), "hidden");
+    assert.equal(JSON.parse(await page.evaluate(() => localStorage.getItem("pb-view"))).sidebar, "hidden");
+    await context.close();
+    // Just above the overlay width and below 720: the rail first; opened, the stage keeps 60 percent.
+    const mid = await browser.newContext({ viewport: { width: 700, height: 760 } });
+    const midPage = await mid.newPage();
+    midPage.on("pageerror", (e) => errors.push(e.message));
+    await midPage.goto(view.url);
+    await midPage.waitForSelector('#side[data-state="rail"]');
+    await midPage.click("#side-collapse");
+    await midPage.waitForSelector('#side[data-state="open"]');
+    await midPage.waitForTimeout(300); // the column's width transition
+    m = await measure(midPage);
+    assert.ok(m.overlays || m.stage >= 0.6 * m.width, `open at 700: ${m.stage} of ${m.width} px`);
+    await mid.close();
+    // A wide window with nothing stored: open, as before.
+    const wide = await browser.newContext({ viewport: { width: 1100, height: 720 } });
+    const widePage = await wide.newPage();
+    await widePage.goto(view.url);
+    await widePage.waitForSelector('#side[data-state="open"]');
+    await wide.close();
+    assert.deepEqual(errors, []);
+  } finally {
+    await browser.close();
+    view.close();
+  }
+});
+
+test("with the overlay up, the skeleton's own words hide: never two texts on top of each other", { skip: !runtime }, async () => {
+  const view = await startLiveView({ getContext: async () => ({ pages: () => [] }), currentUrl: async () => "about:blank", invites: createInvites() });
+  const { chromium } = patchright(runtime);
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 1000, height: 700 } });
+    await page.goto(view.url);
+    await page.waitForSelector("#skeleton p");
+    const seen = () => page.evaluate(() => ({
+      skeleton: getComputedStyle(document.querySelector("#skeleton p")).visibility,
+      overlay: getComputedStyle(document.querySelector(".overlay")).display,
+      text: document.querySelector("#skeleton p").textContent,
+    }));
+    await page.waitForFunction(() => document.body.dataset.s === "live");
+    let s = await seen();
+    assert.equal(s.overlay, "none");
+    assert.equal(s.skeleton, "visible", "no overlay: the skeleton says what it waits for");
+    assert.match(s.text, /PairBrowse/);
+    // The helper goes away: the stream drops, the overlay says so, the skeleton's words hide.
+    view.close();
+    await page.waitForFunction(() => document.body.dataset.s === "reconnecting" || document.body.dataset.s === "closed");
+    s = await seen();
+    assert.equal(s.overlay, "grid");
+    assert.equal(s.skeleton, "hidden");
+    for (const st of ["closed", "reconnecting"]) {
+      await page.evaluate((v) => { document.body.dataset.s = v; }, st);
+      assert.equal((await seen()).skeleton, "hidden", st);
+    }
+  } finally {
+    await browser.close();
+    view.close();
+  }
+});
+
+test("the live view's files spell the product PairBrowse wherever a person reads it", async () => {
+  const { ASSET_FILES } = await import("../scripts/liveview/http.mjs");
+  const files = [...new Set(["liveview.html", "liveview-redeem.html", ...Object.values(ASSET_FILES)])].filter((f) => !f.endsWith(".css"));
+  // A lowercase name as a word (not an id, an address, a scheme, a file or a package).
+  const lower = /(?<![\w./@:-])pairbrowse(?![\w/@:-]|\.\w)/;
+  const shown = (text, html) => {
+    if (html) return [...text.matchAll(/>([^<]+)</g), ...text.matchAll(/\s(?:title|aria-label|placeholder|alt|content)="([^"]*)"/g)].map((m) => m[1]);
+    const code = text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`\\])\/\/.*$/gm, "$1");
+    // Words in quotes: a string with a space in it is something a person reads.
+    return [...code.matchAll(/(["'`])((?:\\.|(?!\1)[^\\\n])*)\1/g)].map((m) => m[2]).filter((s) => /\s/.test(s));
+  };
+  assert.ok(lower.test(" from pairbrowse<"), "the check finds the old skeleton line");
+  for (const f of files) {
+    const text = readFileSync(new URL(`../scripts/${f}`, import.meta.url), "utf8");
+    for (const s of shown(text, f.endsWith(".html"))) assert.doesNotMatch(s, lower, `${f}: "${s.trim().slice(0, 80)}"`);
   }
 });
 

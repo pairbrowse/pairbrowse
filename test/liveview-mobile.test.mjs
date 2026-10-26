@@ -175,6 +175,25 @@ test("landing page and Take over fit the screen with no horizontal scroll", { sk
   assert.deepEqual(s.errors, []);
 });
 
+test("the picture sits right under the header, fit to the width, the type box at the bottom; zoomed in it stays panned where it was", { skip: !runtime, timeout: 60_000 }, async (t) => {
+  const s = await phone(t);
+  await s.takeOver();
+  const boxes = () => s.page.evaluate(() => {
+    const r = (sel) => { const b = document.querySelector(sel).getBoundingClientRect(); return { top: b.top, bottom: b.bottom, left: b.left, right: b.right, w: b.width }; };
+    return { bar: r("#turnbar"), stage: r("#stage"), pic: r("#screen"), keys: r("#type-box"), vw: innerWidth, vh: innerHeight };
+  });
+  let b = await boxes();
+  assert.ok(Math.abs(b.pic.top - b.bar.bottom) <= 3, `the picture starts right under the header: ${b.pic.top} vs ${b.bar.bottom}`);
+  assert.ok(Math.abs(b.pic.w - b.stage.w) <= 2, `fit to the width: ${b.pic.w} of ${b.stage.w}`);
+  assert.ok(b.keys.bottom <= b.vh + 0.5 && b.keys.top > b.stage.bottom - 1, "the type box stays at the bottom");
+  // Zoomed in (still shorter than the page area): it stays at the top; panning is as before.
+  await s.page.tap("#zoom-in");
+  await until(async () => (await boxes()).pic.w > b.stage.w * 1.4);
+  b = await boxes();
+  assert.ok(b.pic.top <= b.stage.top + 3, `zoomed in, it starts at the top: ${b.pic.top} vs ${b.stage.top}`);
+  assert.deepEqual(s.errors, []);
+});
+
 test("tap posts mouse press and release; drag posts wheel; a hold stays pressed; zoom keeps a click on the same page point", { skip: !runtime, timeout: 60_000 }, async (t) => {
   const s = await phone(t);
   await s.takeOver();

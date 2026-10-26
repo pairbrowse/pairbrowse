@@ -34,6 +34,29 @@ browser live from wherever they are.
   someone watching. An agent asks you before making a watch link, gives it only to you, and is
   stopped if it tries to type one into a web page.
 
+**Fixed**
+
+- **The approval card names the agent clearly:** when an agent asks you to allow a final click
+  (pay, send, submit), the card in the page drew what it wants on top of the agent's name. It now
+  reads "Claude wants to click" on one line, and a long name is shortened instead.
+- **No stray dot after "Paused by":** the bottom bar of a paused page read "Paused by Sam ·" with
+  nothing after the dot. It now reads "Paused by Sam".
+- **No outline left behind when the page changes size:** when the live view fit the page to its
+  pane, or the window was resized, the colored outline around the field the agent was typing in
+  and the agent's pointer stayed where the field used to be. They now go away at once and come
+  back around the field on the agent's next action.
+- **The live view in a narrow pane:** in a pane narrower than 720 px (like the Claude desktop app's
+  Browser pane) the workspace column now starts folded to a strip of icons, so the page keeps most
+  of the width, and the address bar shrinks first so every button stays in reach. A choice you
+  made yourself (open, folded or hidden) is kept as before.
+- **One message at a time on the live view:** when the connection dropped or a watch link ended
+  before the first picture arrived, "Waiting for the first frame" showed through that message, two
+  texts on top of each other. Only the message shows now, and the product's name is spelled
+  PairBrowse there.
+- **The step handed to your phone starts at the top:** the picture of the page you take over now
+  sits right under the header, fit to the screen's width, as on a watch link, instead of in the
+  middle with an empty band above it.
+
 ## 0.17.1 (2026-10-25)
 
 PairBrowse is a plugin for Claude Code and Codex: the agent fills in forms, signs up for services

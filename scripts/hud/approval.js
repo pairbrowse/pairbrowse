@@ -41,7 +41,7 @@
     ai.style.background = a.color;
     ai.textContent = (a.who.trim().charAt(0) || "A").toUpperCase();
     jq.querySelector(".aw b").textContent = a.who;
-    jq.querySelector(".aw .av").textContent = ` ${a.verb}`;
+    jq.querySelector(".aw .vb").textContent = a.verb;
     jq.querySelector(".ag").textContent = a.target;
     // Codex and other apps have no prompt of their own: the third button hands the step over.
     jq.querySelector(".atm").textContent = a.terminal ? "Ask in the terminal" : "I'll do it myself";

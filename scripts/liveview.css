@@ -217,6 +217,9 @@ svg { flex: none; display: block; }
 body[data-turn="true"] .stage { box-shadow: inset 0 0 0 2px var(--accent); }
 .overlay { position: absolute; inset: 0; display: none; place-items: center; background: color-mix(in srgb, var(--bg) 82%, transparent); }
 body[data-s="reconnecting"] .overlay, body[data-s="closed"] .overlay { display: grid; }
+/* The overlay says what happens (reconnecting, ended): the skeleton under it keeps its sheen but not
+   its own words, never two texts on top of each other. */
+body[data-s="reconnecting"] .skeleton p, body[data-s="closed"] .skeleton p { visibility: hidden; }
 .overlay div { text-align: center; color: var(--ink); }
 .overlay strong { display: block; font-size: 15px; margin-bottom: 4px; }
 .overlay span { color: var(--ink-2); }
@@ -242,6 +245,9 @@ body[data-s="reconnecting"] .overlay, body[data-s="closed"] .overlay { display: 
 @media (max-width: 640px) { .people, .who-filter { display: none; } }
 @media (max-width: 560px) {
   .where, .driver, #forward { display: none; }
+  /* The address gives way first, so every button stays in reach (the Claude app's Browser pane). */
+  .toolbar { gap: 2px; padding: 5px 6px; }
+  .url { min-width: 48px; padding: 0 8px; gap: 6px; margin: 0; }
   .tab { flex-basis: 140px; }
   .activity li:nth-child(n+2) { display: none; }
 }
@@ -444,7 +450,9 @@ body[data-role="turn"] { grid-template-columns: minmax(0, 1fr); grid-template-ro
 body[data-role="turn"] .side, body[data-role="turn"] .strip, body[data-role="turn"] .toolbar, body[data-role="turn"] #turn,
 body[data-role="turn"] .joins, body[data-role="turn"] .activity, body[data-role="turn"] #hint { display: none; }
 body[data-role="turn"] .window { grid-column: 1; grid-row: 1; border-left: 0; }
-body[data-role="turn"] .stage { touch-action: none; box-shadow: none; }
+/* The picture fit to the width at the top of the page area, right under the header, as a watch link
+   lays it out (liveview-zoom.js keeps it there zoomed in while it is shorter than the area). */
+body[data-role="turn"] .stage { touch-action: none; box-shadow: none; align-items: flex-start; }
 body[data-role="turn"] .frame { transform-origin: 0 0; }
 .turnbar { display: grid; gap: 6px; padding: 8px 12px; background: var(--elevated); color: var(--ink); border-bottom: 1px solid var(--edge); }
 .turn-row { display: flex; align-items: center; gap: 8px; min-width: 0; }

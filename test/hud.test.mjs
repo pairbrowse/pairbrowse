@@ -1195,3 +1195,139 @@ test("a move with no distance is nobody's new move: the pointer keeps its time",
   }
 });
 
+
+// The page script's shadow roots are closed; these tests open them, in the world the script runs
+// in, before it starts (ensureHud), to measure what it draws.
+const openTheShadows = () => { const a = Element.prototype.attachShadow; Element.prototype.attachShadow = function (i) { return a.call(this, { ...i, mode: "open" }); }; };
+
+test("the approval card's title: the agent's name, then what it wants, never one over the other; a long name gives way first", { skip: !runtime, timeout: 60_000 }, async () => {
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
+  const hud = (await import("../scripts/browser.mjs")).hudScript();
+  const source = hud.source.replaceAll(hud.name, "__pbtest").replaceAll(hud.token, "tok");
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 1100, height: 720 } });
+    await page.route("http://pairbrowse.test/", (route) => route.fulfill({ contentType: "text/html", body: "<h1>Create your workspace</h1>" }));
+    await page.goto("http://pairbrowse.test/");
+    await page.evaluate(openTheShadows);
+    await ensureHud(page, source, "__pbtest");
+    const header = () => page.evaluate((tag) => {
+      const ab = document.querySelector(tag).shadowRoot.querySelector(".ab");
+      const box = (el) => { const r = el.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, w: r.width }; };
+      const name = ab.querySelector(".aw b"), verb = ab.querySelector(".aw > span");
+      return { name: box(name), verb: box(verb), line: box(ab.querySelector(".aw")), x: box(ab.querySelector(".ax")), nameText: name.textContent, verbText: verb.textContent, cut: name.scrollWidth > name.clientWidth };
+    }, hud.tags.bar);
+    const ask = (id, who, verb) => page.evaluate(([v]) => window.__pbtest("tok", v, "approval"), [{ id, who, color: "#E9763F", target: "Continue", reason: '"Continue" submits the form: a final action (submit)', terminal: true, verb }]);
+    const apart = (h) => {
+      assert.ok(h.name.w > 0 && h.verb.w > 0, JSON.stringify(h));
+      assert.ok(h.verb.left >= h.name.right + 2, `the verb starts after the name with a gap: ${JSON.stringify(h)}`);
+      const meet = h.name.left < h.verb.right && h.verb.left < h.name.right && h.name.top < h.verb.bottom && h.verb.top < h.name.bottom;
+      assert.equal(meet, false, "the two never intersect");
+      assert.ok(Math.abs(h.name.top - h.verb.top) < 4, "on one line");
+      assert.ok(h.verb.right <= h.x.left, "clear of the close button");
+    };
+    assert.equal(await ask(`ap-${"1".repeat(32)}`, "Claude", "wants to click"), true);
+    await page.waitForTimeout(100);
+    let h = await header();
+    assert.equal(h.nameText, "Claude");
+    assert.equal(h.verbText, "wants to click");
+    apart(h);
+    assert.equal(h.cut, false);
+    // A name too long for the line: it ends in an ellipsis, and the verb stays whole after it.
+    assert.equal(await page.evaluate((v) => window.__pbtest("tok", v, "approval-off"), `ap-${"1".repeat(32)}`), true);
+    assert.equal(await ask(`ap-${"2".repeat(32)}`, "Alexandra Konstantinopoulou-Vanderberg (Claude Code)", "wants to open"), true);
+    await page.waitForTimeout(100);
+    h = await header();
+    assert.equal(h.verbText, "wants to open");
+    apart(h);
+    assert.equal(h.cut, true, "the name is cut");
+    assert.ok(h.verb.right <= h.line.right + 0.5, "the verb is whole inside the line");
+  } finally {
+    await browser.close();
+  }
+});
+
+test("a paused bar says who paused it and stops there: no separator with nothing after it", { skip: !runtime, timeout: 60_000 }, async () => {
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
+  const hud = (await import("../scripts/browser.mjs")).hudScript();
+  const source = hud.source.replaceAll(hud.name, "__pbtest").replaceAll(hud.token, "tok");
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 1100, height: 720 } });
+    await page.route("http://pairbrowse.test/", (route) => route.fulfill({ contentType: "text/html", body: "<h1>Shop</h1>" }));
+    await page.goto("http://pairbrowse.test/");
+    await page.evaluate(openTheShadows);
+    await ensureHud(page, source, "__pbtest");
+    const whoLine = () => page.evaluate((tag) => document.querySelector(tag).shadowRoot.querySelector(".who span").textContent, hud.tags.bar);
+    const send = (v) => page.evaluate((v) => window.__pbtest("tok", JSON.stringify(v), "bar"), v);
+    const items = [{ t: Date.now(), text: "Filled **Workspace name**", who: "Claude Code" }];
+    for (const canPause of [true, false]) {
+      await send({ items, waiting: false, person: "", pause: { by: "Sam" }, canPause });
+      assert.equal(await whoLine(), "Paused by Sam", `canPause ${canPause}`);
+    }
+    await send({ items: [], pause: { by: "Sam" }, canPause: true });
+    assert.equal(await whoLine(), "Paused by Sam", "with no steps either");
+    await page.evaluate((v) => window.__pbtest("tok", v, "docked"), JSON.stringify({ on: true }));
+    assert.equal(await whoLine(), "Paused by Sam", "docked");
+  } finally {
+    await browser.close();
+  }
+});
+
+test("a new viewport size takes the agent's cursor and outline down; its next cursor draws them where the field is now", { skip: !runtime, timeout: 60_000 }, async () => {
+  const { chromium } = createRequire(join(runtime, "package.json"))("patchright");
+  const hud = (await import("../scripts/browser.mjs")).hudScript();
+  const source = hud.source.replaceAll(hud.name, "__pbtest").replaceAll(hud.token, "tok");
+  const browser = await chromium.launch();
+  try {
+    for (const reducedMotion of ["no-preference", "reduce"]) {
+      const context = await browser.newContext({ viewport: { width: 1280, height: 720 }, reducedMotion });
+      try {
+        const page = await context.newPage();
+        // A form that reflows with the width, like a real one: the field is half the page wide.
+        await page.route("http://pairbrowse.test/", (route) => route.fulfill({ contentType: "text/html", body: `<body style="margin:0"><input id="i" style="position:absolute;left:25%;top:200px;width:50%;height:40px;box-sizing:border-box"></body>` }));
+        await page.goto("http://pairbrowse.test/");
+        await page.evaluate(openTheShadows);
+        await ensureHud(page, source, "__pbtest");
+        const send = (kind, v) => page.evaluate(([v, k]) => window.__pbtest("tok", typeof v === "string" ? v : JSON.stringify(v), k), [v, kind]);
+        const drawn = () => page.evaluate((tag) => {
+          for (const el of document.querySelectorAll(tag)) {
+            const f = el.shadowRoot?.querySelector(".f");
+            if (!f) continue;
+            const r = f.getBoundingClientRect();
+            return { outline: f.classList.contains("on"), cursor: el.shadowRoot.querySelector(".c").classList.contains("on"), x: r.x, w: r.width };
+          }
+          return null;
+        }, hud.tags.cursor);
+        const field = async () => page.locator("#i").boundingBox();
+        const declare = async () => { const b = await field(); return send("cursor", { x: b.x + b.width / 2, y: b.y + b.height / 2, act: "type", who: "Claude", color: "#e9763f", w: 40, bw: b.width, bh: b.height }); };
+        await declare();
+        let d = await drawn();
+        assert.ok(d.outline && d.cursor, `${reducedMotion}: drawn: ${JSON.stringify(d)}`);
+        assert.ok(Math.abs(d.x - 320) <= 1 && Math.abs(d.w - 640) <= 1, JSON.stringify(d));
+        // The live view fits the page to its pane: the field moves and shrinks under them.
+        await page.setViewportSize({ width: 700, height: 720 });
+        await page.waitForFunction((tag) => { const r = document.querySelector(tag)?.shadowRoot; return r && !r.querySelector(".f").classList.contains("on") && !r.querySelector(".c").classList.contains("on"); }, hud.tags.cursor, { timeout: 2000 });
+        d = await drawn();
+        assert.equal(d.outline, false, "the outline is down");
+        assert.equal(d.cursor, false, "the cursor is down");
+        const told = await page.evaluate(() => window.__pbtest("tok", "", "pointer"));
+        assert.equal(told.agent, null, "joiners stop showing it at the old place too");
+        // The agent's next cursor draws both again around the field where it is now.
+        await declare();
+        d = await drawn();
+        const b = await field();
+        assert.ok(d.outline && d.cursor, `drawn again: ${JSON.stringify(d)}`);
+        assert.ok(Math.abs(d.x - b.x) <= 1 && Math.abs(d.w - b.width) <= 1, `around the field now: ${JSON.stringify(d)} ${JSON.stringify(b)}`);
+        // A declared press (no cursor of its own) is taken down the same way.
+        await send("press", [{ x: b.x, y: b.y, w: b.width, h: b.height }]);
+        await page.setViewportSize({ width: 900, height: 720 });
+        await page.waitForFunction((tag) => !document.querySelector(tag).shadowRoot.querySelector(".f").classList.contains("on"), hud.tags.cursor, { timeout: 2000 });
+      } finally {
+        await context.close();
+      }
+    }
+  } finally {
+    await browser.close();
+  }
+});

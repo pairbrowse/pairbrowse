@@ -242,8 +242,9 @@ export function startTurn({ base, img, stage, on, frame, reopen, end }) {
     return count;
   };
 
-  // Zoom: the picture scaled on this device only, 1x to 4x, panned with two fingers (liveview-zoom.js).
-  const zoomer = createZoom({ stage, box, min: ZOOM_MIN, max: ZOOM_MAX, onLevel: (z) => { level.textContent = `${Math.round(z * 10) / 10}x`; } });
+  // Zoom: the picture scaled on this device only, 1x to 4x, panned with two fingers (liveview-zoom.js);
+  // a picture shorter than the page area stays at its top, right under the header (liveview.css).
+  const zoomer = createZoom({ stage, box, min: ZOOM_MIN, max: ZOOM_MAX, top: true, onLevel: (z) => { level.textContent = `${Math.round(z * 10) / 10}x`; } });
   const zoom = zoomer.state, zoomAt = zoomer.at, middle = zoomer.middle;
   zoomIn.addEventListener("click", () => zoomAt(zoom.z * ZOOM_STEP, ...middle()));
   zoomOut.addEventListener("click", () => zoomAt(zoom.z / ZOOM_STEP, ...middle()));

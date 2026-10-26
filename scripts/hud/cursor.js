@@ -20,6 +20,18 @@
     placeCursor({ x: e.clientX, y: e.clientY });
     if (pressAct === "click") ring();
   }, opts);
+  // A new viewport size (the window resized, the live view fitting the page to its pane) moves
+  // and resizes the page's fields under the cursor and the outline, which only know the box they
+  // were sent: both go, like cursor-off, and the agent's next cursor, press or targets draws them
+  // again where the field is then. Fired only on a real change; nothing runs meanwhile.
+  addEventListener("resize", () => {
+    if (!cur?.classList.contains("on") && !outline) return;
+    clearTimeout(curTimer);
+    cancelAnimationFrame(curFrame);
+    agentPtr = null; // joiners stop showing it at the old place too
+    cur?.classList.remove("on");
+    hideOutline();
+  }, { passive: true });
   // who, color: the agent's name on a tag in its color (people see whose cursor it is).
   // w: the target's smaller side (a small target takes a little longer to reach).
   // A name on a tag: at most 40 characters, cut between words.

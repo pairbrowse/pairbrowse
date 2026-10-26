@@ -867,6 +867,8 @@ both({ fixtures: { ...fixtures, handoff: HO, config: { ...fixtures.config, away:
   await page.click("#ho-telegram-link");
   await posted(helper, page, "the link", "handoff", { op: "link", app: "telegram", token: TOKEN });
   await until("pending", () => document.getElementById("ho-telegram").dataset.state === "pending");
+  // The handoff event can draw the code before the link's own answer says where to send it.
+  await until("the link's answer", () => document.querySelector("#ho-telegram .ho-msg").textContent !== "");
   const pending = await inPage(() => ({ code: document.getElementById("ho-telegram-code").textContent, pill: document.querySelector("#ho-telegram .ho-pill").textContent,
     line: document.querySelector("#ho-telegram .ho-line").textContent, left: document.getElementById("ho-telegram-left").textContent, msg: document.querySelector("#ho-telegram .ho-msg").textContent }));
   assert.equal(pending.code, "PB-K7Q2XM");

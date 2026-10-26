@@ -204,7 +204,7 @@ test("a watch link on the public address: its page, files and WebSocket stream a
     // Another site's page can't open the stream.
     await assert.rejects(socket(s.port, w.key, { origin: "https://evil.example" }), (e) => e.status === 403);
     // An unknown or near key: 404 alike.
-    for (const k of ["ab".repeat(32), w.key.slice(0, 63) + "0"]) assert.equal((await request(s.port, "GET", `/${k}/`)).status, 404);
+    for (const k of ["ab".repeat(32), w.key.slice(0, 63) + (w.key.endsWith("0") ? "1" : "0")]) assert.equal((await request(s.port, "GET", `/${k}/`)).status, 404);
     assert.equal(s.input().length, 0, "nothing reached a tab");
   } finally { s.view.close(); }
 });

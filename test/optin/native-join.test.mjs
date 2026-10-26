@@ -17,7 +17,7 @@ import { homedir } from "node:os";
 import { createInterface } from "node:readline";
 import { testBase, attachDaemon } from "../helpers/live.mjs";
 import { declaresOwnPages, nativeManifest } from "../../scripts/native-engine.mjs";
-import { sleep, text } from "../helpers/util.mjs";
+import { sleep, text, throughMeasuring } from "../helpers/util.mjs";
 import { spawnDaemon } from "../helpers/daemon.mjs";
 const runtime = process.env.PAIRBROWSE_TEST_RUNTIME;
 const engine = process.env.PAIRBROWSE_TEST_ENGINE;
@@ -79,7 +79,8 @@ async function run({ nativeHost, nativeJoiner }) {
     const call = rpc(sock);
     await call("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "claude-code", version: "1" } });
     sock.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
-    return (name, args = {}, ms) => call("tools/call", { name, arguments: args }, ms).then(text);
+    // A fresh build measures its graphics first and answers "retry" meanwhile; ask again, as an agent would.
+    return (name, args = {}, ms) => throughMeasuring(() => call("tools/call", { name, arguments: args }, ms)).then(text);
   };
   const hostHome = home("nh-", "Bob", nativeHost), joinHome = home("nj-", "Alice", nativeJoiner);
   const nativeHome = nativeHost ? hostHome : joinHome;

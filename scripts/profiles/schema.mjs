@@ -244,7 +244,8 @@ export function mostRestrictive(licenses) {
 
 // JSON with every object's keys sorted: the same value always gives the same text (the
 // config-backed profile's hash, an export's SHA-256). Recursive: callers bound the depth first.
-export const canonicalJson = (v) => (Array.isArray(v) ? `[${v.map(canonicalJson).join(",")}]`
+// Array.from, not map: an array carrying its own "constructor" key never picks what map builds.
+export const canonicalJson = (v) => (Array.isArray(v) ? `[${Array.from(v, (x) => canonicalJson(x)).join(",")}]`
   : plainObject(v) ? `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canonicalJson(v[k])}`).join(",")}}`
     : JSON.stringify(v ?? null));
 

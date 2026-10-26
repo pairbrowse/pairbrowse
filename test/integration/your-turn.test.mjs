@@ -216,7 +216,8 @@ test("full path with a loopback webhook: status, link, GET, Take over, click and
     assert.equal(turn.kind, "login");
     assert.equal(turn.host, "shop.pbtest.example");
     assert.ok(Date.parse(turn.expiresAt) > Date.now() + 10 * 60_000, "the default 15 minutes");
-    assert.doesNotMatch(JSON.stringify(turn), /hunter2|Ada|password/i, "never the agent's text");
+    // (The link's random hex key aside: "ada" turns up in one of about 70.)
+    assert.doesNotMatch(JSON.stringify({ ...turn, link: null }), /hunter2|Ada|password/i, "never the agent's text");
     assert.match(turn.link, /^http:\/\/127\.0\.0\.1:\d+\/[0-9a-f]{64}\/$/);
 
     // The agent keeps out of the tab: its hands and navigation are refused, reading is not.

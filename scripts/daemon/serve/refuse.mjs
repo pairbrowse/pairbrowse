@@ -68,6 +68,7 @@ export function tabRefusal(name, args = {}, { here = null, pages = [], personTab
   return null;
 }
 
+export const SHARE_LINK_RULE = "That is one of this session's watch or live view links: give it to the user to send themselves, never type it into a page or put it in an address.";
 export function createRefusals(conn, api) {
   const { cap, clickApprovals, context, handOff, inUse, log, popups, secretNames, secrets, serverPage, serverUrl, yourTurn = null } = api;
   const { approvedArgs, approvedWhere, recentRisk, refNames, remote, risks } = conn;
@@ -106,6 +107,9 @@ export function createRefusals(conn, api) {
     // permission mode (bypass included) and no app without hooks reaches them.
     const off = toolRefused(name);
     if (off) return off;
+    // A watch link or a live view link of this session never goes into a page (typed, filled,
+    // in an address): giving it out is the user's own act.
+    if ((name.startsWith("browser_") || name === "pairbrowse_run") && api.sharing?.linkIn?.(JSON.stringify(args ?? {}))) return SHARE_LINK_RULE;
     if (remote) {
       if (!name.startsWith("browser_") && !REMOTE_TOOLS.has(name)) return `${name} isn't available to a joiner's agent. Use the browser_ tools, which work in the host's tabs.`;
       if (secretNamesIn(name, args, secretNames()).length) return "The host's saved passwords stay with the host. Ask the host to sign in, or use your own details.";

@@ -3,7 +3,7 @@
 import { RECORD_READY_MS } from "./capture.mjs";
 import { ownTitle } from "./tablabels.mjs";
 import { startLiveView, createInvites, liveViewHostsFrom, inviteBaseFrom } from "../liveview.mjs";
-import { roleOf } from "../liveview/invites.mjs";
+import { roleOf, WATCH_MAX_HOURS } from "../liveview/invites.mjs";
 import { createApprovals, encodeJoinCode, cleanName } from "../sharing/join.mjs";
 import { savedName, saveParticipantName, paths } from "../paths.mjs";
 import { readJson, writeJsonAtomic, within } from "../util.mjs";
@@ -16,6 +16,10 @@ import { createTunnelPool } from "./tunnel-pool.mjs";
 
 // How long a hand-off link waits for its public address (step 21b) before going out on the private route.
 export const HANDOFF_TUNNEL_MS = 45_000;
+// A watch link said again in the linked chat (/watch, hand-off messages) while it has this long left;
+// past it, a new one is made.
+export const CHAT_WATCH_REUSE_MS = 15 * 60_000;
+const SWEEP_MS = 5000; // watch links' expiry, checked while one is open (their stream ends with it)
 const formatTime = (t) => new Date(t).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
 
 // host: the host's name. view: what a new live view starts with ({ getContext, currentUrl,
@@ -39,13 +43,33 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
   for (const p of inviteProblems) log(p);
 
   // The sharing tunnels (daemon/tunnel-pool.mjs): tun.pool, tun.wanted, tun.guestPortWanted and its functions.
-  const tun = createTunnelPool({ config, log, hostNote, save: () => save(), startHandoff });
+  // The public tunnel dropped by itself (it isn't brought back: a new Quick Tunnel is a new
+  // address): the watch links on it can't work any more, so they end, and the user hears it.
+  const tun = createTunnelPool({ config, log, hostNote, save: () => save(), startHandoff, onPublicLost: () => {
+    const n = invites.revokeShare("watch");
+    if (!n) return;
+    log(`watch links: the public address dropped; ${n} watch link(s) ended`);
+    notify("The watch links stopped: their connection dropped. Make a new one in the side panel if people should keep watching.");
+    hostNote("The watch links stopped because their connection dropped; nobody can watch through them now. Make a new one if the user wants (pairbrowse_invite create, share \"watch\").");
+  } });
 
   // Dev servers shared with joiners (devshare.mjs): each with its own tunnel, ended with the
   // last join code, revoke_all, or the helper.
   const devShare = createDevShare({ log, onStopped: (port) => hostNote(`Sharing localhost:${port} lost its connection and couldn't get it back; joiners can't open it any more. Share it again with pairbrowse_invite share_port.`) });
 
-  invites.onEnd(() => { if (!invites.list().some((i) => i.share === "code")) { tun.releaseTunnel(); devShare.stopAll(); } save(); });
+  invites.onEnd(() => {
+    if (!invites.list().some((i) => i.share === "code")) { tun.releaseTunnel(); devShare.stopAll(); }
+    // The last watch link ended (stopped, revoked, expired): the public tunnel goes, unless a
+    // hand-off still needs it.
+    if (!watchOpen()) stopHandoffSoon();
+    save();
+  });
+  // Watch links (share "watch"): view only, for whoever holds the link, on the public address.
+  const watchOpen = () => invites.list().some((i) => i.share === "watch");
+  // Their expiry is checked every few seconds while one is open, live view or not, so an expired
+  // link's pages go dark and the tunnel stops on time.
+  const sweepTimer = setInterval(() => { if (watchOpen()) invites.sweep(); }, SWEEP_MS);
+  sweepTimer.unref?.();
   approvals.onChange(() => save());
   invites.onRole(() => save());
   // The user's answers in the side panel, the live view or the page's prompt: the host's agent
@@ -130,6 +154,8 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
       sessionOps: view.sessionOps || null, outlines: view.outlines || null, tools: view.tools || null, capture: view.capture || null, covers: view.covers || null,
       onPagesKey: view.onPagesKey || (() => {}), onPersonInput: view.onPersonInput || (() => {}), activityLog: view.activityLog || null,
       grants: view.grants || null, publicHost: () => tun.handoffHost(), publicShared: () => tun.handoffShared(),
+      // Hand-offs on the public address only while its link is on (a tunnel kept for watch links never carries them).
+      grantsPublic: () => config.handoff?.publicLink === true,
     });
     await restoring;
     // Keep the sharing tunnel's port when the live view restarts with the browser.
@@ -181,16 +207,21 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
   let handoffStop = null;
   function stopHandoffSoon() {
     clearTimeout(handoffStop);
-    handoffStop = setTimeout(() => { handoffStop = null; if (!view.grants?.open().length) tun.stopHandoff(); }, handoffStopMs);
+    handoffStop = setTimeout(() => { handoffStop = null; if (!publicNeeded()) tun.stopHandoff(); }, handoffStopMs);
     handoffStop.unref?.();
   }
-  view.grants?.onEnd?.(() => { if (!view.grants.open().length) stopHandoffSoon(); });
+  // The public tunnel is needed while a hand-off (on the public link) or a watch link is open.
+  const publicNeeded = () => (config.handoff?.publicLink === true && view.grants?.open().length > 0) || watchOpen();
+  view.grants?.onEnd?.(() => { if (!publicNeeded()) stopHandoffSoon(); });
   // The public link turned off (Settings: "Stop the public link", config.handoff.publicLink false):
   // its tunnel stops now, open hand-offs or not, so the public address is gone at once; an open
   // hand-off stays doable in the window (and on the private route), and its reminder carries the
   // private link.
+  // A watch link open keeps the address up for itself: the grants are no longer served on it then
+  // (grantsPublic), so hand-offs go on the private route alone, as with the address gone.
   function publicLinkChanged() {
     if (config.handoff?.publicLink === true) return;
+    if (watchOpen()) { log("hand-off link: the public link was turned off; hand-offs leave its address (a watch link keeps it up)"); return; }
     clearTimeout(handoffStop); handoffStop = null;
     if (tun.handoffHost()) log("hand-off link: the public link was turned off; its address stops now");
     tun.stopHandoff();
@@ -223,7 +254,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
       const live = tun.pool.find((t) => tun.alive(t, tun.guestPortWanted || t.port));
       const keys = new Map(invites.savedCodes().map((i) => [i.id, i.key])); // list() leaves keys out
       const codeOf = (i) => (i.share === "code" && live && keys.has(i.id) ? `\n  code: ${encodeJoinCode({ url: live.url, key: keys.get(i.id), role: i.role, mode: i.mode, label: codeLabel() })}` : "");
-      const lines = invites.list().map((i) => `- ${i.id}: ${i.label}, ${ROLE_WORDS[roleOf(i)]}, ${i.share === "code" ? (i.mode === "shared" ? "join code (shared browser)" : "join code (follow)") : "link"}, until ${formatTime(i.expiresAt)}` + codeOf(i) +
+      const lines = invites.list().map((i) => `- ${i.id}: ${i.label}, ${ROLE_WORDS[roleOf(i)]}, ${i.share === "code" ? (i.mode === "shared" ? "join code (shared browser)" : "join code (follow)") : i.share === "watch" ? `watch link (anyone who has it), ${liveView?.watching?.(i.id) || 0} watching now` : "link"}, until ${formatTime(i.expiresAt)}` + codeOf(i) +
         asking.filter((r) => r.inviteId === i.id).map((r) => `\n  - request ${r.id}: ${r.name}${r.app ? ` (${r.app})` : ""}, ${r.state === "pending" ? "waiting for the user's OK" : r.state === "approved" ? "let in" : r.state === "removed" ? "removed" : "turned away"}`).join(""));
       const dev = devShare.list().map((d) => `- dev server localhost:${d.port}, shared with joiners at ${d.url}`);
       // The user's own tunnel: said once, in plain words (the default relay needs no mention).
@@ -249,9 +280,11 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
     if (action === "revoke") {
       return invites.revoke(args.id) ? { text: `Revoked ${args.id}. Anyone using it lost the session at once.` } : fail(`No invite ${args.id}. Use list to see them.`);
     }
+    // revoke_all also ends every watch link (their pages go dark; the public tunnel stops with the
+    // last of them, unless a hand-off still needs it).
     // Every invite ends, and so does the sharing tunnel, at once (not kept idle for a next code as
     // when the last code ends by itself): nothing of this computer stays reachable from outside.
-    if (action === "revoke_all") { tun.stopTunnel(); const n = invites.revokeAll(); devShare.stopAll(); save(); return { text: `Revoked ${n} invite(s). No code works any more, the sharing connection is closed and no dev server is shared.` }; }
+    if (action === "revoke_all") { tun.stopTunnel(); const n = invites.revokeAll(); devShare.stopAll(); save(); return { text: `Revoked ${n} invite(s). No code works any more, nor any watch link; the sharing connection is closed and no dev server is shared.` }; }
     if (action === "share_port") return sharePort(args, who);
     if (action === "unshare_port") {
       if (args.port === undefined) { const n = devShare.list().length; devShare.stopAll(); refreshDev().catch(() => {}); return { text: n ? `Stopped sharing ${n} dev server(s).` : "No dev server is shared." }; }
@@ -270,6 +303,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
   // _who: who asks (the tool's app or "the side panel"; nothing it says depends on it yet).
   async function createInvite(args, _who) {
     const fail = (text) => ({ text, error: true });
+    if (args.share === "watch") return createWatch(args);
     // Your name, as joiners see it (in the join code): asked once, then remembered.
     if (!cleanName(args.name, "") && !savedName(config)) return { ...fail("Not yet: ask the user what name the people they invite should see (their first name, say), then call create again with name. It's remembered for next time."), needName: true };
     if (cleanName(args.name, "") && !savedName(config)) { try { saveParticipantName(config, cleanName(args.name)); } catch {} }
@@ -340,11 +374,58 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
     return { text, invite: { id, label, role: roleOf(invite), share, mode, expiresAt }, ...(code ? { code } : { link }), rights: rights + approves, hint: lines[2] || "" };
   }
 
+  // A watch link (share "watch"): view only, for whoever holds it, from any browser on any
+  // computer or phone, through the public tunnel (started now if it isn't up, at most
+  // HANDOFF_TUNNEL_MS; it stops with the last watch link and hand-off). Returns as createInvite.
+  async function createWatch(args) {
+    const fail = (text) => ({ text, error: true });
+    if (tun.tunnelProblem) return fail(`The watch link couldn't start: ${tun.tunnelProblem}. Nothing was shared.`);
+    let invite;
+    try { invite = invites.create({ role: "watch", share: "watch", label: args.label, hours: args.hours }); } catch (e) { return fail(e.message); }
+    let live, t = null, why = "";
+    try {
+      live = await ensureLiveView();
+      clearTimeout(handoffStop); handoffStop = null;
+      t = await within(HANDOFF_TUNNEL_MS, tun.ensureHandoff(live.guestPort));
+    } catch (e) { why = e?.message || String(e); }
+    // Revoked or expired while the address started: nothing is said or served.
+    if (!invites.get(invite.id)) return fail("The watch link was stopped before its address was up. Nothing was shared.");
+    if (!t?.url) {
+      invites.revoke(invite.id);
+      log(`watch link: the public address didn't start (${why || "timed out"})`);
+      return fail(`The watch link couldn't start: its public address didn't come up${why ? ` (${why})` : ""}. Nothing was shared; try again in a moment.`);
+    }
+    const link = `${t.url}/${invite.key}/`;
+    const via = tun.own ? tun.via() : "a free relay (no account, no uptime guarantee)";
+    const rights = "Anyone who has the link can watch this browser live from any browser, on a phone or a computer: the page, the tabs and what agents do. They never click or type, and card and password fields are covered.";
+    const hint = `It works until ${formatTime(invite.expiresAt)} or until you stop it (Stop in the side panel, or pairbrowse_invite revoke ${invite.id}); it goes through ${via}.`;
+    const text = [`Watch link ${invite.id} (${invite.label}, view only), until ${formatTime(invite.expiresAt)}. ${rights}`, `Link: ${link}`, hint,
+      "Give the link to the user to send; never paste it into a web page. Nobody is asked before watching: whoever has it can watch."].join("\n");
+    log(`watch link ${invite.id} made, until ${formatTime(invite.expiresAt)}`);
+    return { text, invite: { id: invite.id, label: invite.label, role: "watch", share: "watch", mode: "", expiresAt: invite.expiresAt }, link, rights, hint, base: t.url };
+  }
+
+  // A watch link for the linked chat (/watch in Telegram or Discord, and hand-off messages with
+  // handoff.watchInMessages): the one made for it last while it has CHAT_WATCH_REUSE_MS left, else
+  // a new one for an hour. Returns { link, expiresAt } or { error }.
+  let chatWatch = null; // { id, base }
+  async function chatWatchLink() {
+    const i = chatWatch && invites.get(chatWatch.id);
+    const key = i ? invites.watchKey(i.id) : null;
+    if (i && key && i.expiresAt - Date.now() > CHAT_WATCH_REUSE_MS && tun.handoffHost()) return { link: `${chatWatch.base}/${key}/`, expiresAt: i.expiresAt };
+    const r = await createWatch({ label: "Watch link (chat)" });
+    if (r.error) return { error: r.text };
+    chatWatch = { id: r.invite.id, base: r.base };
+    return { link: r.link, expiresAt: r.invite.expiresAt };
+  }
+
   // The Share card's choices: a join code (shared browser, can drive; with role "approve", can
-  // also answer approval cards) or a watch link. The click in the owner's own panel is the OK a
-  // drive or approve invite needs. Nothing of the answer is logged.
+  // also answer approval cards) or a watch link (share "watch"; "link" from an older page means
+  // the same). The click in the owner's own panel is the OK a drive or approve invite needs.
+  // Nothing of the answer is logged.
   async function inviteFromPanel(body = {}) {
-    const choice = body.share === "link" ? { share: "link", role: "watch" } : body.share === "code" ? { share: "code", role: body.role === "approve" ? "approve" : "drive", mode: "shared" } : null;
+    const hours = Number(body.hours) > 0 ? Math.min(Number(body.hours), WATCH_MAX_HOURS) : undefined;
+    const choice = body.share === "link" || body.share === "watch" ? { share: "watch", role: "watch", ...(hours ? { hours } : {}) } : body.share === "code" ? { share: "code", role: body.role === "approve" ? "approve" : "drive", mode: "shared" } : null;
     if (!choice) return { error: "Choose a join code or a watch link." };
     const r = await createInvite({ action: "create", ...choice, ...(typeof body.name === "string" && body.name ? { name: body.name } : {}) }, "the side panel");
     if (r.error) return { error: r.text, ...(r.needName ? { needName: true } : {}) };
@@ -443,16 +524,19 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
   }
 
   // On shutdown: the join tunnel and every shared dev server.
-  const stopAll = () => { tun.stopTunnel(); tun.stopHandoff(); devShare.stopAll(); clearInterval(devTimer); };
+  const stopAll = () => { tun.stopTunnel(); tun.stopHandoff(); devShare.stopAll(); clearInterval(devTimer); clearInterval(sweepTimer); };
   // The helper is going away but sharing isn't over (a restart): codes, yeses and tunnels stay
   // for its next run. Dev servers' tunnels end (sharing one again is a click). A tunnel kept only
   // in case of a new code (no code out: releaseTunnel) ends now, keeper and all: the idle keep is
   // for a running helper, never for processes left behind one.
-  const suspend = () => { if (!tun.wanted) tun.stopTunnel(); tun.stopHandoff(); save(); devShare.stopAll(); clearInterval(devTimer); };
+  const suspend = () => { if (!tun.wanted) tun.stopTunnel(); tun.stopHandoff(); save(); devShare.stopAll(); clearInterval(devTimer); clearInterval(sweepTimer); };
   // The host ended it (closed the browser window): every code, yes and tunnel, and the saved state.
   const endAll = () => { invites.revokeAll(); stopAll(); rmSync(stateFile, { force: true }); };
   // Whether hand-off links have a private route of their own (inviteBaseUrl on a liveViewHosts
   // name): without one the Away switch offers the public link (step 21b).
   const privateRoute = () => !!inviteBase;
-  return { approvals, liveView: () => liveView, ensureLiveView, closeLiveView, liveViewCommand, handoffLink, publicLinkChanged, privateRoute, handoffHost: () => tun.handoffHost(), inviteCommand, stopTunnel: stopAll, suspend, endAll, devPanel };
+  // Whether text holds a live link's key (a watch link, a live view link): agents never type one
+  // into a page (daemon/serve/refuse.mjs).
+  const linkIn = (text) => invites.keyIn(text);
+  return { approvals, liveView: () => liveView, ensureLiveView, closeLiveView, liveViewCommand, handoffLink, publicLinkChanged, privateRoute, handoffHost: () => tun.handoffHost(), inviteCommand, stopTunnel: stopAll, suspend, endAll, devPanel, chatWatchLink, linkIn, watchOpen };
 }

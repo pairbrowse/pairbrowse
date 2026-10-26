@@ -9,7 +9,7 @@
 import { $, el, rich, clock, ago, whose, agentWords, ownAgentLine, activityHead, joinBanners, profilePanel, devPanel, hostPanel, isColor, inkOn, splitLabel, initialOf, avatar, shareCard, checklistView, doneTotal, checkState, askDock, helperConnection, servedByBrowser, reportOffer, syncList, enter, busy, revealed, NO_AGENT } from "../common.js";
 import { toolsPanel } from "./tools.js";
 import { createPictures } from "./pictures.js";
-import { settingsLink } from "./settings-link.js";
+import { settingsLink } from "./settings-link.js"; import { watchLinks } from "../watch.js";
 import { AGENT_COLOR } from "../vocab.js";
 import { DRIVING_MS } from "../limits.js";
 import { followHelper, postJson, UNREACHABLE } from "../helper.js";
@@ -312,6 +312,7 @@ if (pb) {
   } catch {}
 }
 
+const watch = watchLinks({ button: $("watch-copy"), list: $("watch-list"), msg: $("watch-msg"), field: $("watch-field"), row: $("watch-row"), base: () => base }); // Copy watch link, the open ones (ui/watch.js)
 // The agent card folds to one line.
 $("agent-fold").addEventListener("click", () => {
   const folded = $("agent").dataset.folded !== "true";
@@ -647,11 +648,11 @@ function drawPeople() {
 const connect = helperConnection({
   kind: pb ? "right" : "",
   onState: (s) => { if (s === "live") everLive = true; document.body.dataset.s = s; setDriver(); drawSessionCard(); },
-  onOpen: () => { profile.load(); checklistStale = true; scheduleChecklist(); if (document.body.dataset.tab === "pictures") pictures.show(); showOutline(); tools.stale(); },
+  onOpen: () => { watch.load(); profile.load(); checklistStale = true; scheduleChecklist(); if (document.body.dataset.tab === "pictures") pictures.show(); showOutline(); tools.stale(); },
 }, (stream, url, was) => {
   if (was) { pictures.forget(); forgetSessionTools(); tools.forget(); }
   base = url;
-  const on = stream.on;
+  const on = stream.on; on("invites", (x) => watch.draw(x?.items)); // the watch links open now
   on("status", (s) => {
     document.body.dataset.turn = String(s.kind === "you" && !!s.text);
     $("turn-text").textContent = s.text || "Your turn";

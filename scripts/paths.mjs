@@ -202,7 +202,9 @@ export const DEFAULT_CONFIG = {
   // credentials only in secrets.env under PAIRBROWSE_ names.
   // send: what goes to the phone (the Handoff page: approval cards, sign-ins and checks, payments
   // and final submits, finished runs); answer: approvals answered from a linked chat (off).
-  handoff: { enabled: false, away: false, publicLink: false, grantMinutes: 15, remindMinutes: 10, channels: [], send: { approvals: true, checks: true, submits: true, runs: false }, answer: false },
+  // watchCommand: /watch in the linked chat answers with a watch link (on); watchInMessages: hand-off
+  // messages carry a watch link (off).
+  handoff: { enabled: false, away: false, publicLink: false, grantMinutes: 15, remindMinutes: 10, channels: [], send: { approvals: true, checks: true, submits: true, runs: false }, answer: false, watchCommand: true, watchInMessages: false },
   // Per-session proxies (spec server-mode C4, net/config.mjs): { proxies: { <id>: { server, auth,
   // bypass, expectEgress, onEgressChange } }, default, sessions: { <session>: <id> | null }, strict,
   // checkUrl, recheckMinutes }, credentials only in secrets.env. null: every session direct.

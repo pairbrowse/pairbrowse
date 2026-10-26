@@ -37,6 +37,12 @@ export function decide(input, _config, review = latestReview(), now = Date.now()
   // plain watch link asks.
   // The approve role (made, or given to an invite later) also answers your approval cards.
   const approves = ti.role === "approve" ? " and answer your approval cards (pay, delete, send, submit, publish) in their own browser" : "";
+  // A watch link (share "watch") opens anywhere for whoever holds it, with no approval: the user
+  // says yes to each one an agent makes (the side panel's own button needs no prompt).
+  if (tool === "pairbrowse_invite" && ti.action === "create" && ti.share === "watch") {
+    const h = Number(ti.hours) > 0 ? Math.min(Number(ti.hours), 24) : 1;
+    return ask(`Makes a watch link: anyone who has it can watch your PairBrowse browser live from any browser for ${h === 1 ? "1 hour" : `${h} hours`} (view only; card and password fields covered; nobody is asked before watching). Give it only to people you want watching.`);
+  }
   if (tool === "pairbrowse_invite" && ti.action === "create" && ti.role !== "watch") {
     const who = String(ti.label || "someone").replace(/[\u0000-\u001f\u007f-\u009f]/g, "").slice(0, 40);
     return ask(`Creates an invite (a link or join code) that lets ${who} click and type in your logged-in PairBrowse browser${approves} (not your saved details or passwords) for ${Number(ti.hours) > 0 ? Math.min(Number(ti.hours), 168) : 24} hours. Share it only with someone you trust.`);
@@ -153,6 +159,7 @@ export function handoffAsk(tool, input, review = latestReview(), now = Date.now(
   const [verb, target] =
     name === "browser_navigate" || name === "browser_tabs" ? ["wants to open", short(input.url)]
       : name === "pairbrowse_session" ? ["wants to delete the session", short(input.name)]
+        : name === "pairbrowse_invite" && input.action === "create" && input.share === "watch" ? ["wants to make", "a watch link (view only, for whoever has it)"]
         : name === "pairbrowse_invite" && input.action === "create" ? ["wants to invite", `${short(input.label || "someone", 40)} (${input.role === "approve" ? "can drive and approve" : "can drive"})`]
           : name === "pairbrowse_invite" && input.action === "set_role" ? ["wants to let joiners approve", `Invite ${short(input.id, 20)}`]
             : name === "pairbrowse_invite" && input.action === "approve" ? ["wants to let in", `Join request ${short(input.id, 20)}`]

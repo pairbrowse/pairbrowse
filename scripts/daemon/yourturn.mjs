@@ -47,7 +47,7 @@ import { readJson, sleep, within, writeJsonAtomic } from "../util.mjs";
 import { handoffTimes } from "../config-schema.mjs";
 import { CHALLENGE_TURN } from "../popups.mjs";
 import { testMs } from "../testenv.mjs";
-import { ACTIONS, actionSentence, clock } from "./notify/message.mjs";
+import { ACTIONS, actionSentence, clock, watchForMessage } from "./notify/message.mjs";
 import { handoffKind } from "./toolstab.mjs";
 import { setupLines } from "../rules/coherence.mjs";
 
@@ -108,9 +108,11 @@ const entryOf = (e) => (e && typeof e === "object" && /^[0-9a-f]{8}$/.test(e.id)
 // input (presence actedAt), 0 for never: a step done in the window (watchWindow).
 // wants(action): whether this step's group goes to the phone (handoff.send checks or submits:
 // phonelink.mjs wantsAction); a step whose group is off stays in the window, as with hand-offs off.
+// watchLink(): a watch link for the message ({ link } or { error }: sharing.mjs chatWatchLink),
+// used only with handoff.watchInMessages (notify/index.mjs watchForMessage).
 export function createYourTurn({ config, grants, notifier, sends, handoffs, journal, saveTabs = async () => ({}), hostNote = () => {}, audit = null, hud, sessionName, linkFor = async () => null,
   agentBy = (p, color = "") => ({ label: "Agent", color }), log = () => {}, turnMs = () => testMs("TURN_MS", 0), timers = { set: setTimeout, clear: clearTimeout }, now = Date.now,
-  turnFile = () => null, keptAlive = () => false, successorOf = () => null, pagesNow = async () => [], actionsIn = () => "", compatibility = () => [], savedCard = () => false, personActedAt = () => 0, wants = () => true }) {
+  turnFile = () => null, keptAlive = () => false, successorOf = () => null, pagesNow = async () => [], actionsIn = () => "", compatibility = () => [], savedCard = () => false, personActedAt = () => 0, wants = () => true, watchLink = null }) {
   const turns = new Map(); // grant id -> { id, key, participant, page, action, host, session, expiresAt, sent, timer, reminded }
   // B16: grant id -> { entry (turn.json's), session, page, participant, waiting }: waiting, the
   // restart that ended it ("browser-restarted", "helper-stopped") while it may come back.
@@ -197,7 +199,9 @@ export function createYourTurn({ config, grants, notifier, sends, handoffs, jour
     const key = grants.redeemKey(t.id);
     const { link, privateOnly } = key ? await linkOf(key) : { link: null, privateOnly: false };
     if (!turns.has(t.id)) return;
-    const r = await send({ kind: "reminder", id: t.id, action: t.action, host: t.host, link, expiresAt: t.expiresAt, ...(privateOnly ? { privateOnly } : {}) });
+    const watch = await watchForMessage(config, watchLink);
+    if (!turns.has(t.id)) return;
+    const r = await send({ kind: "reminder", id: t.id, action: t.action, host: t.host, link, expiresAt: t.expiresAt, ...(privateOnly ? { privateOnly } : {}), ...(watch ? { watch } : {}) });
     audited("reminded", t, r, [...(key ? [] : ["already-opened"]), ...(key && (!link || r?.withheld?.length) ? ["no-link"] : [])]);
     log(`hand-off ${t.id}: reminder ${r?.sent?.length ? "sent" : "not sent"}`);
   }
@@ -236,8 +240,8 @@ export function createYourTurn({ config, grants, notifier, sends, handoffs, jour
     }
     // The link (a public one may take a while to start, step 21b) and the message, all inside the
     // result's wait: past REPORT_MS the result says the message is on its way.
-    const sending = linkOf(g.redeemKey).then(({ link, privateOnly }) => send({ kind: "turn", id: t.id, action, host: t.host, link, expiresAt: t.expiresAt,
-      ...(expiresAt ? { reason: "browser-restarted" } : {}), ...(privateOnly ? { privateOnly } : {}) }).then((r) => ({ r, link })));
+    const sending = Promise.all([linkOf(g.redeemKey), watchForMessage(config, watchLink)]).then(([{ link, privateOnly }, watch]) => send({ kind: "turn", id: t.id, action, host: t.host, link, expiresAt: t.expiresAt,
+      ...(expiresAt ? { reason: "browser-restarted" } : {}), ...(privateOnly ? { privateOnly } : {}), ...(watch ? { watch } : {}) }).then((r) => ({ r, link })));
     const recorded = sending.then(({ r, link }) => {
       t.sent = typesSent(r);
       if (kept.has(t.id)) { kept.get(t.id).entry.sent = [...t.sent]; persist(t.session); }

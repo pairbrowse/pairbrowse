@@ -5,7 +5,8 @@
 // expiresAt: when the link stops working (epoch ms); reason: why it ended (ended), or
 // "browser-restarted" on a turn that replaces a link lost to a restart (B16); privateOnly: true
 // when the public link (handoff.publicLink, step 21b) couldn't start and the link is the private
-// route's, so the text says it works only there. Any other field, or a
+// route's, so the text says it works only there; watch: a watch link (handoff.watchInMessages: view
+// only, for whoever has it), on turn and reminder messages, said on a line of its own. Any other field, or a
 // value outside its rule, refuses the whole message, so the agent's own words, a password, a code,
 // card data or page text can't reach a channel by mistake: the person reads the agent's words only
 // after taking over.
@@ -17,7 +18,8 @@
 //   approval        { kind, code, host, action, expiresAt, answer? }: a final click waits for an OK;
 //                   code: the 4-character code an answer names; action: the click's class
 //                   (rules/clicks.mjs) or "click"; answer: true when the linked chat may answer it
-//                   (the senders of a linked app then say how; the others say to answer in PairBrowse).
+//                   (the senders of a linked app then say how; the others say to answer in PairBrowse);
+//                   watch: a watch link, as on a turn.
 //   approval-ended  { kind, code, outcome }: allowed, denied or ended (answered nowhere, withdrawn, expired).
 //   run             { kind, host, outcome, steps }: a fast-mode run finished (done, stopped, failed).
 //   test            { kind }: Send a test.
@@ -28,7 +30,7 @@ export const APPROVAL_ACTIONS = ["pay", "delete", "publish", "send", "submit", "
 export const APPROVAL_OUTCOMES = ["allowed", "denied", "ended"];
 export const RUN_OUTCOMES = ["done", "stopped", "failed"];
 const HANDOFF_FIELDS = {
-  approval: new Set(["kind", "code", "host", "action", "expiresAt", "answer"]),
+  approval: new Set(["kind", "code", "host", "action", "expiresAt", "answer", "watch"]),
   "approval-ended": new Set(["kind", "code", "outcome"]),
   run: new Set(["kind", "host", "outcome", "steps"]),
   test: new Set(["kind"]),
@@ -62,7 +64,7 @@ const ENDINGS = {
   "browser-restarted": "the browser restarted. The step was stopped safely.",
   "helper-stopped": "PairBrowse stopped. The step was stopped safely.",
 };
-const FIELDS = new Set(["kind", "id", "action", "host", "link", "expiresAt", "reason", "privateOnly"]);
+const FIELDS = new Set(["kind", "id", "action", "host", "link", "expiresAt", "reason", "privateOnly", "watch"]);
 const NETWORK_FIELDS = new Set(["kind", "network", "change", "paused", "at"]);
 const ID = /^[0-9a-f]{8}$/;
 // A proxy's id as config.json's network names it (net/credentials.mjs NETWORK_ID).
@@ -78,6 +80,10 @@ const TIME_MAX = 8.64e15;
 
 // The step's sentence: "Sign in on example.com".
 export const actionSentence = (action, host) => (SENTENCES[action] || SENTENCES.other)(host);
+
+// A watch link as a message may carry it: an http(s) address of LINK_MAX at most, no spaces.
+const linkOk = (v) => { try { return typeof v === "string" && v.length <= LINK_MAX && !/\s/.test(v) && ["https:", "http:"].includes(new URL(v).protocol); } catch { return false; } };
+const watchProblem = (message) => (message.watch !== undefined && message.watch !== null && (!linkOk(message.watch) || message.kind === "ended") ? "watch is a watch link, on a turn, a reminder or an approval" : "");
 
 // Why message can't be sent ("" when it can), naming fields and rules only, never a value.
 export function messageProblem(message) {
@@ -102,7 +108,7 @@ export function messageProblem(message) {
   if (kind === "ended" ? !END_REASONS.includes(reason) : reason !== undefined && reason !== null && !(kind === "turn" && reason === "browser-restarted")) {
     return kind === "ended" ? "reason is why the hand-off ended" : "reason is only browser-restarted, on a turn";
   }
-  return "";
+  return watchProblem(message);
 }
 
 // A network message's own rule: its fields only, each in its rule.
@@ -128,6 +134,7 @@ function handoffProblem(message) {
     if (!APPROVAL_ACTIONS.includes(message.action)) return `action is one of ${APPROVAL_ACTIONS.join(", ")}`;
     if (!(Number.isInteger(message.expiresAt) && message.expiresAt > 0 && message.expiresAt <= TIME_MAX)) return "expiresAt is a time (epoch ms)";
     if (message.answer !== undefined && typeof message.answer !== "boolean") return "answer is true or false";
+    if (watchProblem(message)) return watchProblem(message);
   }
   if (kind === "approval-ended" && !APPROVAL_OUTCOMES.includes(message.outcome)) return "outcome is allowed, denied or ended";
   if (kind === "run") {
@@ -143,6 +150,17 @@ const RUN_WORDS = { done: "finished", stopped: "stopped", failed: "failed" };
 
 // "14:35 UTC": the person may be anywhere, the server's own zone means nothing to them.
 export const clock = (ms) => `${new Date(ms).toISOString().slice(11, 16)} UTC`;
+
+// A watch link for a hand-off message (handoff.watchInMessages, off by default): watchLink() (the
+// helper's chat watch link: sharing.mjs chatWatchLink) answers { link } or { error }; resolves the
+// link, or null when the setting is off or no link could be made (the message goes without it).
+export function watchForMessage(config, watchLink) {
+  if (config?.handoff?.watchInMessages !== true || typeof watchLink !== "function") return Promise.resolve(null);
+  return Promise.resolve().then(() => watchLink()).then((r) => (typeof r?.link === "string" ? r.link : null)).catch(() => null);
+}
+
+// The watch link's line (handoff.watchInMessages).
+export const watchLine = (watch) => `Watch live (view only): ${watch}`;
 
 // Said under a link that works only on the private route: the public one couldn't start (step 21b).
 export const PRIVATE_ONLY = "The public link couldn't start, so this link works only on your private route (your tailnet or an SSH tunnel to this computer); the step can also be done in the PairBrowse window.";
@@ -160,6 +178,7 @@ export function messageText(message, { withheld = false, reply = false } = {}) {
     if (message.answer === true && reply === "buttons") lines.push(`Tap Approve or Deny, or reply "approve ${message.code}" or "deny ${message.code}", before ${until}.`);
     else if (message.answer === true && reply === "typed") lines.push(`Reply "approve ${message.code}" or "deny ${message.code}" before ${until}.`);
     else lines.push(`Answer in PairBrowse before ${until}.`);
+    if (message.watch && !withheld) lines.push(watchLine(message.watch));
     return { title: APPROVAL_TITLE, text: lines.join("\n") };
   }
   if (kind === "approval-ended") return { title: "PairBrowse: approval ended", text: `Approval ${message.code} ${APPROVAL_ENDINGS[message.outcome] || APPROVAL_ENDINGS.ended}` };
@@ -180,5 +199,6 @@ export function messageText(message, { withheld = false, reply = false } = {}) {
   else if (link) { lines.push(`Take over before ${until}: ${link}`); if (message.privateOnly === true) lines.push(PRIVATE_ONLY); }
   else if (kind === "reminder") lines.push(`The link was opened already; the step stays open until ${until}.`);
   else lines.push(`Take over in PairBrowse's live view before ${until}.`);
+  if (message.watch && !withheld) lines.push(watchLine(message.watch));
   return { title: TITLE, text: lines.join("\n") };
 }

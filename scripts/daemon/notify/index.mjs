@@ -11,6 +11,8 @@
 import { within } from "../../util.mjs";
 import { checkChannel } from "./channel.mjs";
 import { messageProblem, messageText } from "./message.mjs";
+// What the Handoff page's part (phonelink.mjs) takes from the messages too.
+export { clock, watchForMessage } from "./message.mjs";
 import { httpsPost } from "./post.mjs";
 import webhook from "./webhook.mjs";
 import ntfy from "./ntfy.mjs";

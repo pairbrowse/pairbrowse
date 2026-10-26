@@ -44,7 +44,8 @@ export default {
         }
         const linked = !!message.link && !withheld;
         if (linked) headers["x-click"] = message.link;
-        const { title, text } = messageText(message, { withheld: withheld && !!message.link });
+        // A channel that withholds links withholds a watch link too.
+        const { title, text } = messageText(withheld ? { ...message, watch: undefined } : message, { withheld: withheld && !!message.link });
         headers["x-title"] = title;
         const r = await post(`${server}/${topic.value}`, text, { headers });
         return { ...r, link: linked };

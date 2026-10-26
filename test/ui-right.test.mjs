@@ -451,7 +451,9 @@ describe("session card", () => pageTest("right", opts({ session: { name: "Checko
   assert.ok(card.vh - card.bottom >= 0 && card.vh - card.bottom <= 12, `a raised card just above the bottom (its 8 px margin): ${card.vh - card.bottom}`);
   // Part H: in the browser the session card switches nothing (the strip's logo and the left dock's
   // Sessions row do) and End session, which only opened the picker, is gone: no Save, no buttons.
-  assert.deepEqual(await inPage(() => [...document.querySelectorAll("#session-card button")].filter((b) => b.checkVisibility()).map((b) => b.id)), [], "no Share, Save, Switch or fold without a helper route");
+  assert.deepEqual(await inPage(() => [...document.querySelectorAll("#session-card button")].filter((b) => b.checkVisibility() && !b.closest("#watch-row")).map((b) => b.id)), [], "no Share, Save, Switch or fold without a helper route");
+  // Copy watch link (ui/watch.js) is there in both builds once the helper answers invites.json.
+  await until("Copy watch link", () => document.getElementById("watch-copy").checkVisibility());
   assert.equal(await inPage(() => !!document.getElementById("end-confirm")), false);
   assert.equal(await inPage(visible, "#share-card"), false);
   // At the gutter on every side, its icon on the shared 20 px edge.

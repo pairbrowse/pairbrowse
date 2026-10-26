@@ -45,7 +45,7 @@ test("Telegram: a token is checked, a code shown, and only the code sent in a pr
     const code = r.handoff.telegram.code;
     assert.match(code, /^PB-[A-HJ-NP-Z2-9]{6}$/);
     assert.equal(r.text, `Send ${code} to @pb_test_bot in Telegram within 10 minutes.`);
-    assert.deepEqual(Object.keys(r.handoff).sort(), ["answer", "discord", "on", "ready", "send", "server", "telegram"]);
+    assert.deepEqual(Object.keys(r.handoff).sort(), ["answer", "discord", "on", "ready", "send", "server", "telegram", "watchCommand", "watchInMessages"]);
     assert.equal(r.handoff.telegram.state, "pending");
     assert.ok(r.handoff.telegram.expiresAt > Date.now() + LINK_MS - 5000);
     assert.equal(loadSecrets(h.secretsFile).values.PAIRBROWSE_HANDOFF_TELEGRAM_TOKEN, undefined, "nothing saved while the link waits");

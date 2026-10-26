@@ -10,13 +10,14 @@ import { roleOf } from "../invites.mjs";
 const INVITE_ID = /^[0-9a-f]{8}$/;
 // The invites as Settings lists them (GET invites.json, the invites event): never a key or a code.
 // role: "watch", "drive" or "approve" (roleOf); mode: a join code's ("shared" or "follow"), else "".
-export const inviteItems = (list) => list.map((i) => ({ id: i.id, role: roleOf(i), label: i.label, share: i.share, mode: i.share === "code" ? i.mode : "", expires: i.expiresAt }));
+// watching: a watch link's pages open now (watchingOf(id)), on watch links only.
+export const inviteItems = (list, watchingOf = () => 0) => list.map((i) => ({ id: i.id, role: roleOf(i), label: i.label, share: i.share, mode: i.share === "code" ? i.mode : "", expires: i.expiresAt, ...(i.share === "watch" ? { watching: watchingOf(i.id) } : {}) }));
 
 // approvals: who asked to join (createApprovals). clickApprovals: named final clicks, or null.
 // joiners, push, stopJoinerKey(key), collaborationChanged(): the live view's joiners. devPanel,
 // joinHost, profile, journal, makeInvite: the helper's parts, or null. invites: the invite store.
 // broadcast(event, data), log. onRecord(on), recordState(), tools, mask: recording.
-export function createOwnerRoutes({ approvals, clickApprovals, joiners, push, stopJoinerKey, collaborationChanged, log, devPanel, joinHost, profile, journal, invites, makeInvite, broadcast, onRecord, tools, mask, recordState }) {
+export function createOwnerRoutes({ approvals, clickApprovals, joiners, push, stopJoinerKey, collaborationChanged, log, devPanel, joinHost, profile, journal, invites, makeInvite, broadcast, onRecord, tools, mask, recordState, watchingOf = () => 0, invitesChanged = () => broadcast("invites", { items: inviteItems(invites.list(), watchingOf) }) }) {
   async function changeProfile({ req, res }) {
     const op = await readJsonBody(req, res, BODY_MAX.profile, { object: true });
     if (op === undefined) return;
@@ -96,6 +97,8 @@ export function createOwnerRoutes({ approvals, clickApprovals, joiners, push, st
     // this answer only: never broadcast, logged or kept in state.json.
     // { op: "revoke", id } (Settings' Invites, Revoke): that invite stops at once, as with
     // pairbrowse_invite revoke (anyone using it is out; a join code's tunnel goes with the last code).
+    // { op: "stop_watch" } (the side panel's and the Handoff page's Stop all): every watch link
+    // stops at once (their pages go dark; the public tunnel stops with the last of them).
     // { op: "role", id, role: "drive" | "approve" } (Settings' Invites): a shared browser code
     // switched between drive and approve, as with pairbrowse_invite set_role; the owner's click
     // is the OK approve needs. A joiner losing approve loses their cards at once (the role is
@@ -112,8 +115,14 @@ export function createOwnerRoutes({ approvals, clickApprovals, joiners, push, st
           try { i = invites.setRole(op.id, op.role); } catch (e) { return json(res, 409, { error: e.message }); }
           log(`invite ${op.id} set to ${roleOf(i)} from PairBrowse's settings`);
           json(res, 200, { ok: true, id: i.id, role: roleOf(i) });
-          broadcast("invites", { items: inviteItems(invites.list()) });
+          invitesChanged();
           return;
+        }
+        if (op.op === "stop_watch") {
+          if (Object.keys(op).some((k) => k !== "op")) return json(res, 409, { error: 'A stop of every watch link is { op: "stop_watch" }.' });
+          const n = invites.revokeShare("watch");
+          log(`${n} watch link(s) stopped from PairBrowse's side panel or settings`);
+          return json(res, 200, { ok: true, stopped: n });
         }
         if (op.op !== "revoke" || Object.keys(op).some((k) => k !== "op" && k !== "id")) return json(res, 409, { error: 'An invite change is { op: "revoke", id } or { op: "role", id, role }.' });
         if (typeof op.id !== "string" || !INVITE_ID.test(op.id)) return json(res, 409, { error: "id is an invite's id, as invites.json lists it." });
@@ -126,11 +135,11 @@ export function createOwnerRoutes({ approvals, clickApprovals, joiners, push, st
       const { share, role, name, label, hours } = op; // role: "approve" makes an approve code (the Share card's third choice)
       const r = await makeInvite({ share, role, name, label, hours });
       json(res, r?.error ? 409 : 200, r);
-      if (!r?.error) broadcast("invites", { items: inviteItems(invites.list()) });
+      if (!r?.error) invitesChanged();
     } },
     // The invites out now, for Settings (Sharing, Invites): id, role, label, link or code, when it
     // ends (epoch ms). Never a key, a code or a link.
-    { method: "GET", path: "invites.json", right: "invite", handler: ({ res }) => json(res, 200, { items: inviteItems(invites.list()) }) },
+    { method: "GET", path: "invites.json", right: "invite", handler: ({ res }) => json(res, 200, { items: inviteItems(invites.list(), watchingOf) }) },
     // Record (the side panel): the browser as a video, saved in Downloads. The owner only.
     { method: "POST", path: "record", right: "record", handler: async ({ req, res }) => {
       const v = await readJsonBody(req, res, BODY_MAX.approve, { object: true });

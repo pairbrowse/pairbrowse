@@ -19,6 +19,9 @@ step in whenever you like. Sites see an everyday browser, not an automated one.
 - **Built for working together.** Send a watch or drive code: a teammate sees the same tabs live,
   clicks and types with their own cursor, and their Claude or Codex can work in another tab of the
   same session. Pause every agent at once with one click.
+- **Watch live by link.** Copy a watch link in one click (or send `/watch` to your Telegram or
+  Discord bot): anyone you give it to watches the browser live from any browser or phone, view only,
+  with card and password fields covered, until it expires or you stop it.
 - **Stealth browser with a real fingerprint.** A hardened browser driven through
   [Patchright](https://www.npmjs.com/package/patchright) instead of stock Playwright: no
   automation flag, AutomationControlled off, no debugging port. On a Mac the fingerprint is

@@ -6,9 +6,10 @@ import { tunnelConfig } from "../tunnels/config.mjs";
 import { startOwnTunnel } from "../tunnels/start.mjs";
 import { testMs, testValue } from "../testenv.mjs";
 
-// startHandoff(port): starts the hand-off's own tunnel (tests pass a stand-in; by default as the
-// pool's: Quick Tunnel, the user's own, or the guest port itself under the test switch).
-export function createTunnelPool({ config, log, hostNote, save, startHandoff = null }) {
+// startHandoff(port): starts the public tunnel (hand-offs and watch links; tests pass a stand-in; by
+// default as the pool's: Quick Tunnel, the user's own, or the guest port itself under the test
+// switch). onPublicLost(): that tunnel ended by itself (not stopped here).
+export function createTunnelPool({ config, log, hostNote, save, startHandoff = null, onPublicLost = () => {} }) {
   // Quick Tunnels to the live view's guest port (which takes join code keys and nothing else),
   // while join codes are out: two at once. Codes carry the first's address; approved joiners learn
   // every address (sharing/join-client.mjs), so when one tunnel goes down their PairBrowse moves to the other
@@ -149,7 +150,7 @@ export function createTunnelPool({ config, log, hostNote, save, startHandoff = n
       t.port = port;
       if (gen !== handoffGen) { try { t.stop(); } catch {} throw new Error("the hand-off ended while its public address was starting"); }
       handoff = t;
-      if (t.child || t.adopted) onTunnelExit(t, () => { if (handoff === t) handoff = null; if (handoffUsing === t) handoffUsing = null; });
+      if (t.child || t.adopted) onTunnelExit(t, () => { const lost = handoff === t; if (handoff === t) handoff = null; if (handoffUsing === t) handoffUsing = null; if (lost) { log("public tunnel ended by itself"); try { onPublicLost(); } catch {} } });
       log(`hand-off tunnel up: ${t.host}`);
       return (handoffUsing = t);
     })().finally(() => { handoffStarting = null; });

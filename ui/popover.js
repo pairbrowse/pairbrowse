@@ -58,7 +58,8 @@ export function shareCard({ btn, card, base, onCopy = () => {}, dismissable = ()
     if (make.disabled) return;
     if (!base()) return say("Not connected to PairBrowse yet.", "error");
     const picked = radios().find((r) => r.checked)?.value;
-    const share = picked === "link" ? "link" : "code";
+    // A watch link: view only, opens in any browser for whoever has it (share "watch", an hour).
+    const share = picked === "link" ? "watch" : "code";
     // The third choice: a join code whose joiner may also answer approval cards (role approve).
     const role = picked === "approve" ? { role: "approve" } : {};
     const given = name.value.trim();

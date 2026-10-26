@@ -44,5 +44,8 @@ export function createGuestFrames({ covers = null, viewers, linkGuests, shownPag
   }
   // Called for each frame broadcast: guests get it covered, if any guest watches.
   const frame = (data, page) => { if ([...viewers].some((res) => linkGuests.has(res))) send(data, page); };
-  return { frame, coverFrame, coverImage };
+  // The pages watching through invite id now: its streams that show the picture (a watch link's
+  // count in the owner's pages; a link preview opens no stream, so it never counts).
+  const watching = (id) => [...viewers].filter((res) => linkGuests.get(res)?.id === id).length;
+  return { frame, coverFrame, coverImage, watching };
 }

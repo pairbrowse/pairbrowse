@@ -1,6 +1,7 @@
 // The Telegram Bot API calls the Handoff page uses (daemon/phonelink.mjs): getMe (the token works,
-// the bot's name), getUpdates (a long poll, only while a link waits or an approval the chat may
-// answer waits), sendMessage, answerCallbackQuery and editMessageReplyMarkup. Each is one bounded
+// the bot's name), getUpdates (a long poll, only while a link waits, an approval the chat may
+// answer waits or /watch is on), sendMessage, answerCallbackQuery, editMessageReplyMarkup and
+// setMyCommands (/watch in the bot's menu). Each is one bounded
 // request through notify/post.mjs httpsJson (its own agents, no proxy, no redirect, answer capped).
 // No result or error holds the token or an answer's text: only Telegram's status and our own words.
 import { httpsJson } from "../notify/post.mjs";
@@ -33,5 +34,7 @@ export function createTelegramApi({ base, request = httpsJson, pollSeconds = POL
     sendMessage: (token, chatId, text) => call(token, "sendMessage", { chat_id: chatId, text: String(text).slice(0, 4000), link_preview_options: { is_disabled: true } }),
     answerCallbackQuery: (token, id, text) => call(token, "answerCallbackQuery", { callback_query_id: id, text: String(text).slice(0, 200) }),
     removeKeyboard: (token, chatId, messageId) => call(token, "editMessageReplyMarkup", { chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } }),
+    // The bot's command menu (the menu button next to the chat's text box): /watch while it is on.
+    setCommands: (token, commands) => call(token, "setMyCommands", { commands, scope: { type: "all_private_chats" } }),
   };
 }

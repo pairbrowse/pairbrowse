@@ -1,6 +1,9 @@
 // Invite links: a link for someone else. "drive" (the default) sees the page, tabs and activity
 // and can click, type and switch tabs; "watch" (view-only, when asked for) only looks. Neither ever reaches the Profile panel (remembered details,
 // password names). Each has its own key, expires, and can be revoked; links live in memory only.
+// A watch link (share "watch") is a view-only link anyone who holds it may open from any browser,
+// through the public address (liveview/public-turn.mjs): role watch always, an hour by default and
+// a day at most, never on the owner's port, never kept across a restart of the helper.
 // "approve" (shared browser join codes only) is drive plus answering the host's approval cards in
 // the joiner's own browser: kept as role "drive" with approve: true, so every right a drive invite
 // has (and every check for one) stays as it is; roleOf names it. The host may switch a code
@@ -14,6 +17,10 @@ const HOST_NAME = /^(?=.{1,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([
 const LOOPBACK_NAMES = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
 const DEFAULT_HOURS = 24;
 const INVITE_MAX_HOURS = 24 * 7;
+export const WATCH_DEFAULT_HOURS = 1;
+export const WATCH_MAX_HOURS = 24;
+// The durations the side panel and the Handoff page offer for a watch link, in hours.
+export const WATCH_HOURS = Object.freeze([0.25, 1, 4, 24]);
 const HOUR_MS = 3_600_000;
 
 // config.liveViewHosts, checked: plain host names only (no ports, schemes, paths or wildcards).
@@ -74,21 +81,24 @@ export function createInvites({ now = () => Date.now(), mono = () => performance
   const allListeners = new Set(); // called when every invite is revoked at once (hand-offs end too)
   const publicView = ({ id, role, approve, label, share, mode, createdAt, expiresAt }) => ({ id, role, approve: approve === true, label, share, mode, createdAt, expiresAt });
   return {
-    // share: "link" (a live view link, reached through an SSH tunnel or liveViewHosts) or "code"
-    // (a join code: reached only through the sharing tunnel, and only after the host approves).
+    // share: "link" (a live view link, reached through an SSH tunnel or liveViewHosts), "code"
+    // (a join code: reached only through the sharing tunnel, and only after the host approves) or
+    // "watch" (a watch link: view only, through the public address, for whoever holds it).
     // mode (join codes): "shared" (the default: they work in this browser, seeing it live) or
     // "follow" (their own browser opens these tabs and follows them).
-    create({ role = "drive", label, hours, share = "link", mode = "shared" } = {}) {
+    create({ role, label, hours, share = "link", mode = "shared" } = {}) {
+      if (share !== "link" && share !== "code" && share !== "watch") throw new Error('share must be "link", "code" or "watch".');
+      role ??= share === "watch" ? "watch" : "drive";
       if (!ROLES.includes(role)) throw new Error('role must be "watch", "drive" or "approve".');
-      const h = hours === undefined || hours === null || hours === "" ? DEFAULT_HOURS : Number(hours);
+      if (share === "watch" && role !== "watch") throw new Error('A watch link (share "watch") is view only: role "watch".');
+      const h = hours === undefined || hours === null || hours === "" ? (share === "watch" ? WATCH_DEFAULT_HOURS : DEFAULT_HOURS) : Number(hours);
       if (!Number.isFinite(h) || h <= 0) throw new Error("hours must be a number above 0.");
       const createdAt = now();
       let id;
       do id = randomBytes(4).toString("hex"); while (all.has(id));
-      if (share !== "link" && share !== "code") throw new Error('share must be "link" or "code".');
       if (mode !== "shared" && mode !== "follow") throw new Error('mode must be "shared" or "follow".');
       if (role === "approve" && !mayApprove(share, mode)) throw new Error(APPROVE_ONLY);
-      const invite = { id, role: role === "approve" ? "drive" : role, approve: role === "approve", share, mode, label: inviteLabel(label), key: randomBytes(32).toString("hex"), createdAt, expiresAt: createdAt + Math.min(h, INVITE_MAX_HOURS) * HOUR_MS };
+      const invite = { id, role: role === "approve" ? "drive" : role, approve: role === "approve", share, mode, label: inviteLabel(label ?? (share === "watch" ? "Watch link" : undefined)), key: randomBytes(32).toString("hex"), createdAt, expiresAt: createdAt + Math.min(h, share === "watch" ? WATCH_MAX_HOURS : INVITE_MAX_HOURS) * HOUR_MS };
       all.set(id, invite);
       monoEnd.set(id, mono() + (invite.expiresAt - createdAt));
       return { ...invite };
@@ -118,6 +128,14 @@ export function createInvites({ now = () => Date.now(), mono = () => performance
       if (had) ended([String(id)]);
       return had;
     },
+    // Every invite of one kind (share), at once: "Stop all" for watch links. Returns how many.
+    revokeShare(share) {
+      sweep();
+      const ids = [...all.values()].filter((i) => i.share === share).map((i) => i.id);
+      for (const id of ids) all.delete(id);
+      ended(ids);
+      return ids.length;
+    },
     revokeAll() {
       const ids = [...all.keys()];
       all.clear();
@@ -133,6 +151,18 @@ export function createInvites({ now = () => Date.now(), mono = () => performance
       let found = null;
       for (const invite of all.values()) if (keyOk(given, invite.key)) found = invite;
       return found ? publicView(found) : null;
+    },
+    // A watch link's key, for the helper's own use (the link said again in the linked chat): never
+    // in a list, an event or a log. null for anything else.
+    watchKey(id) { sweep(); const i = all.get(String(id ?? "")); return i?.share === "watch" ? i.key : null; },
+    // Whether text holds the key of a link still valid (a live view link or a watch link): an agent
+    // typing one into a page is refused (daemon/serve/refuse.mjs). Join codes carry theirs encoded.
+    keyIn(text) {
+      const t = String(text ?? "");
+      if (t.length < 64) return false;
+      sweep();
+      for (const i of all.values()) if (i.share !== "code" && t.includes(i.key)) return true;
+      return false;
     },
     sweep,
     onEnd(fn) { listeners.add(fn); return () => listeners.delete(fn); },

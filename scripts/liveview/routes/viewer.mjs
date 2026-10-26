@@ -43,12 +43,16 @@ export function createViewerRoutes(lv) {
       lv.clickApprovals?.cover?.(); // an approval card in the page comes down at once
     } else lv.owners.add(res);
     if (invite) lv.collaborationChanged();
+    // A watch link's page opened or closed: the owner's count of who is watching.
+    const watchLink = invite?.share === "watch" && viewer;
+    if (watchLink) lv.invitesChanged();
     req.on("close", () => {
       lv.clients.delete(res);
       lv.viewers.delete(res);
       lv.owners.delete(res);
       lv.kinds.delete(res);
       if (lv.linkGuests.delete(res)) lv.collaborationChanged();
+      if (watchLink) lv.invitesChanged();
       lv.stopIfIdle();
     });
     if (viewer) await lv.follow();

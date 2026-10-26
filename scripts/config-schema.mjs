@@ -77,6 +77,9 @@ export const CONFIG_SCHEMA = {
       // The Handoff page (daemon/phonelink.mjs): what goes to the phone, and answering approvals from a linked chat.
       send: { type: "object", fields: { approvals: { type: "boolean" }, checks: { type: "boolean" }, submits: { type: "boolean" }, runs: { type: "boolean" } } },
       answer: { type: "boolean" },
+      // Watch links from the linked chat (/watch, on by default) and in hand-off messages (off by default).
+      watchCommand: { type: "boolean" },
+      watchInMessages: { type: "boolean" },
     },
   },
   // Per-session proxies (spec server-mode C4): any value is kept as written and checked by

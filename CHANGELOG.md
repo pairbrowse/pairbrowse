@@ -5,6 +5,35 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## Unreleased (draft)
+
+PairBrowse is a plugin for Claude Code and Codex: the agent fills in forms, signs up for services
+and clicks through websites in a visible browser window on your computer, while you watch every
+step and take over the parts only a person can do. This draft adds a way for anyone to watch that
+browser live from wherever they are.
+
+**New**
+
+- **Watch live by link:** press **Copy watch link** in the side panel and send the link to anyone.
+  It opens in any browser on any computer or phone, with nothing to install, and shows the browser
+  live: the page, the tabs and what agents do. It is view only: nothing a watcher clicks, taps or
+  types reaches your browser, and card and password fields are covered in what they see. A link
+  works for an hour by default (the Handoff page offers 15 minutes, 4 hours or 24 hours) and ends
+  sooner when you stop it.
+- **See who is watching, and stop it:** under the button, the side panel lists the open watch links
+  with how many people are watching each one and when it ends, with **Stop** for one and **Stop
+  all**. A stopped or expired link goes dark at once for everyone, and its page says it ended.
+- **From your phone:** with Telegram or Discord linked on the Handoff page, send `/watch` to your bot
+  and it answers with a watch link. A new setting there, off by default, adds a watch link to every
+  message sent to your phone.
+- **Made for phones:** the watch page fits a phone's screen; pinch or use + and - to zoom into the
+  picture and drag to look around.
+- **Safe by default:** each link has its own unguessable key that the helper checks and expires
+  itself. The link's relay (a free Cloudflare Quick Tunnel, or your own tunnel) runs only while a
+  watch link is open. Chat apps' link previews get the page without a picture and never count as
+  someone watching. An agent asks you before making a watch link, gives it only to you, and is
+  stopped if it tries to type one into a web page.
+
 ## 0.17.1 (2026-10-25)
 
 PairBrowse is a plugin for Claude Code and Codex: the agent fills in forms, signs up for services

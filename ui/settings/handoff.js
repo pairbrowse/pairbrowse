@@ -9,6 +9,7 @@
 // once a second while a code waits and the page shows; nothing is polled.
 import { el } from "../dom.js";
 import { postReply, UNREACHABLE } from "../helper.js";
+import { watchLinks } from "../watch.js";
 
 const SVG = "http://www.w3.org/2000/svg";
 const real = (fn) => (ev) => { if (ev.isTrusted) fn(ev); };
@@ -87,6 +88,7 @@ export function summaryOf(raw) {
   if (!telegram || !discord) return null;
   const send = raw.send && typeof raw.send === "object" ? raw.send : {};
   return { on: raw.on === true, server: raw.server === true, ready: raw.ready === true, answer: raw.answer === true,
+    watchCommand: raw.watchCommand !== false, watchInMessages: raw.watchInMessages === true,
     send: Object.fromEntries(SEND_KEYS.map((k) => [k, send[k] === true])), telegram, discord };
 }
 
@@ -299,7 +301,25 @@ export function handoffPanel({ $, base, live, shown = () => {}, missing = () => 
     for (const box of checks) { box.checked = !!state?.send[box.dataset.send]; box.disabled = !state || !live(); }
     answerBtn.setAttribute("aria-checked", String(!!state?.answer));
     answerBtn.disabled = !state || !live();
+    watchCmd.setAttribute("aria-checked", String(state ? state.watchCommand : true));
+    watchCmd.disabled = !state || !live();
+    watchIn.setAttribute("aria-checked", String(!!state?.watchInMessages));
+    watchIn.disabled = !state || !live();
+    $("ho-watch-copy").disabled = !live();
   }
+
+  // ---- watch links (ui/watch.js): Copy watch link, the open ones, /watch and the messages' link ----
+  const watchCmd = $("ho-watch-cmd"), watchIn = $("ho-watch-in");
+  for (const [btn, key] of [[watchCmd, "watchCommand"], [watchIn, "watchInMessages"]]) {
+    btn.addEventListener("click", real(() => {
+      if (!state || btn.disabled) return;
+      const on = btn.getAttribute("aria-checked") !== "true";
+      btn.setAttribute("aria-checked", String(on));
+      set({ [key]: on }, null);
+    }));
+  }
+  const watch = watchLinks({ button: $("ho-watch-copy"), list: $("ho-watch-list"), msg: $("ho-watch-msg"), field: $("ho-watch-field"), base: () => (live() ? base() : null),
+    hours: () => Number($("ho-watch-hours").value) || 1 });
 
   // ---- the summary ----
   const apps = $("ho-apps");
@@ -331,5 +351,5 @@ export function handoffPanel({ $, base, live, shown = () => {}, missing = () => 
     draw(r.body);
     return true;
   }
-  return { load, draw, drawAway, setLive };
+  return { load, draw, drawAway, setLive, drawWatch: (items) => watch.draw(items) };
 }

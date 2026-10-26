@@ -71,6 +71,7 @@ It's useful for:
 - testing your own site (localhost or a preview) and reporting what breaks
 - debugging in the browser with a teammate or an agent
 - remote pairing and QA, with watch or drive invites
+- a watch link anyone can open on a phone or a computer to follow the browser live, view only
 - any human-in-the-loop agent work in a real, logged-in browser
 
 ## How a run goes

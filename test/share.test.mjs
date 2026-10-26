@@ -45,12 +45,14 @@ test("the Share card makes invites through the same code as pairbrowse_invite cr
     assert.match(made.id, /^[0-9a-f]{8}$/);
     assert.match((await sharing.inviteCommand({ action: "list" })).text, new RegExp(`- ${made.id}: .*can drive, join code \\(shared browser\\)`), "the same store as the tool's");
 
+    // The card's watch link is a public one (share "watch"): on the public tunnel (the guest port
+    // itself under the test switch), for whoever holds it.
     const link = await makeInvite({ share: "link" });
     assert.equal(link.ok, true);
-    assert.deepEqual({ share: link.share, role: link.role }, { share: "link", role: "watch" });
-    assert.match(link.link, /^http:\/\/127\.0\.0\.1:1\/[0-9a-f]{64}\/$/);
+    assert.deepEqual({ share: link.share, role: link.role }, { share: "watch", role: "watch" });
+    assert.match(link.link, /^http:\/\/127\.0\.0\.1:2\/[0-9a-f]{64}\/$/);
     assert.equal(link.code, undefined);
-    assert.match(link.rights, /not click, type/);
+    assert.match(link.rights, /never click or type/);
 
     assert.equal((await makeInvite({ share: "drive" })).error, "Choose a join code or a watch link.");
     assert.equal((await makeInvite({ role: "drive" })).error, "Choose a join code or a watch link.", "only the card's two choices");

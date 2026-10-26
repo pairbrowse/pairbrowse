@@ -413,6 +413,31 @@ html[data-host="native"] .row3[hidden], html[data-host="native"] .row3.empty, ht
 .row3 button:hover { background-color: var(--hover); }
 .row3 .share-btn[aria-expanded="true"] { background-color: var(--hover); }
 
+/* Watch links (ui/watch.js): Copy watch link across the card, then the open ones, each with how many
+   watch, when it ends and Stop, and Stop all. */
+.watch-row[hidden] { display: none; }
+.watch-row { grid-column: 1 / -1; display: grid; gap: var(--sp-2); margin-top: var(--sp-2); }
+.watch-copy { display: inline-flex; align-items: center; justify-content: center; gap: var(--icon-gap); height: var(--ctl); padding: 0 var(--sp-2); border: 1px solid var(--edge-btn); border-radius: var(--r-2); background-color: var(--btn); color: var(--ink); font-size: var(--fs-3); font-weight: 500; white-space: nowrap; cursor: pointer; box-shadow: inset 0 1px 0 var(--edge-light); transition: background-color var(--t-hover); }
+.watch-copy:hover { background-color: var(--hover); }
+.watch-copy:focus-visible, .watch-list .mini:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.watch-copy svg { flex: none; }
+.watch-field[hidden] { display: none; }
+.watch-field { font-family: var(--mono); font-size: var(--fs-2); }
+.watch-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-1); }
+.watch-list[hidden] { display: none; }
+.watch-item { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; padding: var(--sp-1) var(--sp-2); border: 1px solid var(--panel-edge); border-radius: var(--r-2); background: var(--inset); }
+.watch-text { flex: 1; min-width: 0; display: grid; }
+.watch-text strong { font-size: var(--fs-3); font-weight: 500; color: var(--ink); }
+.watch-item[data-watching="0"] .watch-text strong { color: var(--ink-2); font-weight: 400; }
+.watch-text small { font-size: var(--fs-2); color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.watch-list .mini { flex: none; height: var(--ctl-sm); padding: 0 var(--sp-2); border: 1px solid var(--edge-btn); border-radius: var(--r-1); background: var(--btn); color: var(--ink); font-size: var(--fs-2); cursor: pointer; }
+.watch-list .mini:hover { background: var(--hover); }
+.watch-all { display: flex; justify-content: flex-end; }
+.watch-row > .msg { margin: 0; min-height: 0; font-size: var(--fs-2); color: var(--ink-2); }
+.watch-row > .msg[data-kind="error"] { color: var(--bad); }
+.watch-row > .msg[data-kind="ok"] { color: var(--ok); }
+.watch-row > .msg:empty { display: none; }
+
 /* Share (the side panel's): a card above the session card (not a modal): a join code or a watch
    link, made with a click, shown once with Copy. */
 .share-card { position: absolute; bottom: calc(100% + var(--sp-2)); left: 0; right: 0; z-index: 3; display: grid; gap: var(--sp-3); padding: var(--sp-3); border: 1px solid var(--edge); border-radius: var(--r-3); background-color: var(--elevated); background-image: var(--surface-grad); box-shadow: inset 0 1px 0 var(--edge-light), var(--shadow-raised); color: var(--ink); }

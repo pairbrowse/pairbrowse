@@ -40,8 +40,7 @@ import { createOwnerRoutes, inviteItems } from "./liveview/routes/owner.mjs";
 import { createViewerRoutes } from "./liveview/routes/viewer.mjs";
 import { createTurnRoutes } from "./liveview/routes/turn.mjs";
 import { createNetworkRoutes } from "./liveview/routes/network.mjs"; import { createHandoffRoutes } from "./liveview/routes/handoff.mjs";
-import { createTurnGate, TURN_ROLES } from "./liveview/grants.mjs";
-import { createPublicTurn } from "./liveview/public-turn.mjs";
+import { createTurnGate, TURN_ROLES } from "./liveview/grants.mjs"; import { createPublicTurn } from "./liveview/public-turn.mjs";
 import { NO_CAPTURE_SHARE, targetIdOf } from "./daemon/capture.mjs";
 import { STRICT_SHARE } from "./daemon/screenshare.mjs";
 import { createActivityLog } from "./daemon/activitylog.mjs";
@@ -127,8 +126,8 @@ const sharedDefaults = { readForm: async () => null, applyForm: async () => {}, 
 // passed its checks, but the pages' own reports (OWN_REPORTS) and the live view's input (replayed
 // into a tab, heard there through onHumanInput).
 // covers: card fields covered in what guests see (liveview/guest-frames.mjs), or null.
-// handoff: the Handoff page's part (daemon/phonelink.mjs: read(), op(given), onChange(fn): routes/handoff.mjs and the handoff event), or null. grants: hand-off grants (daemon/grants.mjs; their keys, landing page and stream: liveview/grants.mjs), or null. publicHost(): the hand-off tunnel's public name, or null; publicShared(): join codes use that name too (liveview/public-turn.mjs).
-export async function startLiveView({ grants = null, publicHost = () => null, publicShared = () => false, covers = null, activityLog = null, reporter = null, tools = null, onPagesKey = () => {}, onPersonInput = () => {}, sessionOps = null, outlines = null, mask = (t) => t, timeline = null, layoutDefaults = null, settings = null, extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
+// handoff: the Handoff page's part (daemon/phonelink.mjs: read(), op(given), onChange(fn): routes/handoff.mjs and the handoff event), or null. grants: hand-off grants (daemon/grants.mjs; their keys, landing page and stream: liveview/grants.mjs), or null. publicHost(): the public tunnel's name (hand-offs and watch links), or null; publicShared(): join codes use that name too; grantsPublic(): hand-off grants are served on it (the public hand-off link is on) (liveview/public-turn.mjs).
+export async function startLiveView({ grants = null, publicHost = () => null, publicShared = () => false, grantsPublic = () => true, covers = null, activityLog = null, reporter = null, tools = null, onPagesKey = () => {}, onPersonInput = () => {}, sessionOps = null, outlines = null, mask = (t) => t, timeline = null, layoutDefaults = null, settings = null, extraOrigins = [], getContext, currentUrl, log = () => {}, port: wantPort = 0, profile = null, onHumanInput = () => {}, hosts = [], inviteOrigin = null, invites = createInvites(),
   guestPort: wantGuestPort = 0, tunnelHost = () => null, approvals = createApprovals(), onJoinRequest = () => {}, tabMeta = () => ({}), secretDomains = () => [], onJoinerPerson = () => {}, onJoinerActivity = () => {}, shared: sharedGiven = {},
   onPause = () => ({}), pauseState = () => null, onRecord = async () => ({}), recordState = () => null, picker = null, devShare = null, devPanel = null, joinHost = null, relays = () => [], screens = null, remoteAgents = null, onReplay = () => () => {}, journal = null, makeInvite = null,
   clickApprovals = null, capture = null, handoff = null }) {
@@ -257,7 +256,7 @@ export async function startLiveView({ grants = null, publicHost = () => null, pu
   // The session as a guest sees it: without this helper's instance name (the owner's own label).
   const guestSession = () => { const { instance: _instance, ...rest } = sessionInfo; return rest; };
   const guestFrames = createGuestFrames({ covers, viewers, linkGuests, shownPage: () => cast.state.shown?.page, personTab });
-  const { coverFrame, coverImage } = guestFrames;
+  const { coverFrame, coverImage, watching: watchingOf } = guestFrames;
   const broadcast = (event, data) => {
     const msg = sse(event, data);
     if (event === "frame") guestFrames.frame(data, cast.state.lastFrameFrom);
@@ -265,8 +264,8 @@ export async function startLiveView({ grants = null, publicHost = () => null, pu
       if (event === "frame" && linkGuests.has(res) && !turnGate.frameTo(res)) continue; // toGuests, covered; a hand-off's own tabs as they are
       if (PAGES_ONLY.has(event) && !kinds.has(res)) continue;
       if (PAGE_EVENT_KIND.has(event) && kinds.get(res) !== PAGE_EVENT_KIND.get(event)) continue;
-      // A reader that stopped reading (a laptop asleep with the connection still open) would
-      // otherwise collect every frame in memory: frames wait for it, and one far behind is cut.
+      if (res.writableEnded || res.destroyed) continue; // ended already (the live view closing): its close is on its way
+      // A reader that stopped reading (a laptop asleep, its connection open) would collect every frame in memory: frames wait for it, one far behind is cut.
       if (res.writableLength > STALLED_BYTES) { res.destroy(); continue; }
       if (event === "frame" && res.writableLength > FRAME_SKIP_BYTES) continue;
       if (event === "frame" && linkGuests.has(res) && personTab(cast.state.lastFrameFrom)) continue; // a person's own tab: never to guests
@@ -275,6 +274,7 @@ export async function startLiveView({ grants = null, publicHost = () => null, pu
     if (event === "tabs") turnGate.changed().catch(() => {});
   };
   const collaborationChanged = () => { broadcast("collaboration", collaborationNow()); agentTabsChanged(); };
+  const invitesChanged = () => broadcast("invites", { items: inviteItems(invites.list(), watchingOf) }); // never a key; each watch link with how many watch it
   // The session as the owner's streams get it: with whether it can be renamed and saved now, and
   // when it was last saved (sessionOps). Guests and state.json get sessionInfo alone.
   const ownerSession = () => {
@@ -480,7 +480,7 @@ export async function startLiveView({ grants = null, publicHost = () => null, pu
   const stopApprovals = approvals.onChange(() => { broadcast("join", approvals.open()); approvalShare?.changed(); });
   // An invite switched between drive and approve: Settings hears it, the joiners get their cards
   // (or lose them) at once.
-  const stopRoles = invites.onRole ? invites.onRole(() => { approvalShare?.changed(); broadcast("invites", { items: inviteItems(invites.list()) }); }) : () => {};
+  const stopRoles = invites.onRole ? invites.onRole(() => { approvalShare?.changed(); invitesChanged(); }) : () => {};
   // A revoked or expired link stops at once, including a page already open with it.
   const stopEnded = invites.onEnd((ids) => {
     let changed = false;
@@ -501,7 +501,7 @@ export async function startLiveView({ grants = null, publicHost = () => null, pu
     }
     approvals.forget(ids);
     if (changed) collaborationChanged();
-    broadcast("invites", { items: inviteItems(invites.list()) });
+    invitesChanged();
   });
 
   // A person's clicks, typing and tab changes, from a viewer. who: their name for the others
@@ -563,13 +563,13 @@ export async function startLiveView({ grants = null, publicHost = () => null, pu
     get status() { return status; }, get sessionInfo() { return sessionInfo; }, get devState() { return devState; },
     get board() { return board; }, get driving() { return driving; },
     captureOk, collaborationChanged, stopIfIdle, follow, tabsInfo, forGuest, ownerSession, collaborationNow, layoutNow,
-    watchPages, agentTabs, pauseState, recordState, personTab, getContext, currentUrl, humanPost, onPause, coverFrame, coverImage,
+    watchPages, agentTabs, pauseState, recordState, personTab, getContext, currentUrl, humanPost, onPause, coverFrame, coverImage, invitesChanged,
     get turn() { return turnGate; },
   };
   const ROUTES = [
     ...createViewerRoutes(lv),
     ...createTurnRoutes(turnGate),
-    ...createOwnerRoutes({ approvals, clickApprovals, joiners, push, stopJoinerKey, collaborationChanged, log, devPanel, joinHost, profile, journal, invites, makeInvite, broadcast, onRecord, tools, mask, recordState }),
+    ...createOwnerRoutes({ approvals, clickApprovals, joiners, push, stopJoinerKey, collaborationChanged, log, devPanel, joinHost, profile, journal, invites, makeInvite, broadcast, onRecord, tools, mask, recordState, watchingOf, invitesChanged }),
     ...createSessionRoutes({ picker, sessionOps, broadcast, ownerSession, linkGuests, layouts, joinersNow, recordState, clickApprovals }),
     ...createProfileRoutes({ profiles: sessionOps?.profiles || null }), // browser profiles, the person's (sessions page)
     ...createNetworkRoutes({ network: settings?.network || null, broadcast }), ...createHandoffRoutes({ handoff, broadcast }),
@@ -586,10 +586,10 @@ export async function startLiveView({ grants = null, publicHost = () => null, pu
     const mine = keyOk(given, key);
     const byPages = !mine && keyOk(given, pagesKey);
     const ownerKey = mine || byPages;
-    // Join code keys work only through the sharing tunnel's port (joiner-server.mjs), after approval.
+    // Join codes work only on the sharing tunnel's port (joiner-server.mjs), after approval; watch links only on the public address.
     const matched = ownerKey ? null : invites.match(given);
     // Hand-off grant keys last (liveview/grants.mjs): the guest a redeem or view key acts as.
-    const invite = (matched?.share === "code" ? null : matched) || (ownerKey || matched ? null : turnGate.match(given));
+    const invite = (matched?.share === "code" || matched?.share === "watch" ? null : matched) || (ownerKey || matched ? null : turnGate.match(given));
     const role = ownerKey ? (hostOk(req.headers.host) ? "owner" : null) : invite?.role || null;
     if (!role) return plain(res, 404);
     if (turnGate.refusedOrigin(invite, req)) return plain(res, 403);
@@ -637,7 +637,7 @@ export async function startLiveView({ grants = null, publicHost = () => null, pu
     push.changed();
   }
   const joinerServer = createJoinerServer({
-    key, invites, approvals, joiners, tunnelHost, onJoinRequest, log, publicTurn: createPublicTurn({ gate: turnGate, routes: ROUTES, publicHost, publicShared, log }), // a hand-off link's public address: its routes alone
+    key, invites, approvals, joiners, tunnelHost, onJoinRequest, log, publicTurn: createPublicTurn({ gate: turnGate, routes: ROUTES, invites, publicHost, publicShared, grantsPublic, log }), // the public address: a hand-off's routes and watch links' alone
     live: { tabsFor, applyTabs, screen, agent: agentRelay.remoteAgent, file: agentRelay.remoteFile,
       stopScreens: stopJoiner, openStream: (j, conn) => { watchPages(); return push.open(j, conn).then(() => { agentRelay.resend(joinerKey(j)); approvalShare?.opened(j); }).catch((e) => log("push", e?.message || e)); },
       approval: (body, j) => (approvalShare ? approvalShare.answer(body, j) : { code: 404, body: { error: "Unknown request." } }), pointersFor: (body, j) => push.fromJoiner(body, j), say: (body, j) => shared.onJoinerSay(body, j, joinerKey(j)), changed: () => { collaborationChanged(); push.changed(); } },
@@ -776,8 +776,8 @@ export async function startLiveView({ grants = null, publicHost = () => null, pu
       driving = !!on;
       if (clickApprovals?.pending().length) broadcast("driving", { on: driving });
     },
-    // People watching through an invite link right now (an approval card isn't drawn in the page then).
-    guestViewers: () => linkGuests.size,
+    // People watching through an invite link right now (an approval card isn't drawn in the page then); through watch link id.
+    guestViewers: () => linkGuests.size, watching: (id) => watchingOf(id),
     // Joiners with the approve role in a shared browser session now: they can answer an approval.
     approveJoiners: () => approvalShare?.approvers() || 0,
     // Anyone in a shared browser session now: they see "Waiting for <host> to approve" while the terminal asks.

@@ -13,6 +13,14 @@
 // scope, and the view key's one stream with its reconnects. A request with an Origin other than
 // the public address's own is refused and audited, as on the owner's port.
 //
+// Watch links (share "watch", liveview/invites.mjs) are served there too: their page and its files
+// and their one stream (role watch: covered pictures, the tabs and activity, never input), as long
+// as the link is valid; nothing else. Their stream needs the page's script: a link preview (a chat
+// app's unfurler, a HEAD or a GET without script) gets the page and nothing more, and a request
+// that names itself a preview bot (previewBot) is refused the stream outright, so it never counts
+// as a viewer. Grants are served there only while the public hand-off link is on (grantsPublic):
+// a tunnel kept up for a watch link never carries a hand-off made for the private route.
+//
 // The stream goes over a WebSocket there: a Cloudflare Quick Tunnel doesn't carry server-sent
 // events (its documented limit), WebSockets pass at once. The viewer page served here says so
 // (data-stream="ws"; liveview-turn.js socketEvents reads it), and the events route runs unchanged
@@ -28,7 +36,14 @@ import { TURN_ROLES } from "./grants.mjs";
 export const PUBLIC_ROUTES = {
   redeem: new Set(["GET ", "GET assets", "POST redeem"]),
   turn: new Set(["GET ", "GET assets", "GET events", "GET thumb.jpg", "GET state.json", "POST input", "POST turn", "POST turn-done", "POST turn-options", "POST turn-pick", "POST turn-fill-card"]),
+  watch: new Set(["GET ", "GET assets", "GET events"]),
 };
+
+// A link preview's fetcher, by the name it gives itself (chat apps' unfurlers, social cards, search
+// crawlers, plain HTTP clients). It may have the page, never the stream. Script-free fetchers never
+// open the stream anyway (the page opens it from its script); this keeps out the ones that run it.
+const BOTS = /(?:twitter|telegram|discord|slack|linkedin|pinterest|reddit|apple|google|bing|yandex|duckduck|petal|semrush|ahrefs|mj12|seznam|qwant|bsky|bluesky)bot|baiduspider|slack-imgproxy|facebookexternalhit|facebookcatalog|meta-externalagent|^whatsapp\/|skypeuripreview|vkshare|iframely|embedly|mastodon\/|pleroma|misskey|synapse|headless|^curl\/|^wget\/|python-requests|python-urllib|go-http-client|okhttp|node-fetch|undici|axios\/|^java\//i;
+export const previewBot = (req) => req.method === "HEAD" || BOTS.test(String(req.headers?.["user-agent"] || "")) || !req.headers?.["user-agent"];
 export const PING_MS = 20_000;
 export const DEAD_MS = 60_000;
 
@@ -37,17 +52,19 @@ export const DEAD_MS = 60_000;
 export const publicCsp = (host) => VIEWER_CSP.replace("connect-src 'self'", `connect-src 'self' wss://${host}`);
 
 // gate: the live view's grant gate (liveview/grants.mjs). routes: the owner's port's route table
-// (only the PUBLIC_ROUTES among it are reached). publicHost(): the hand-off tunnel's public host
-// name now, or null while none is up (then nothing is served here: a grant key on the guest port
-// is 404, as before). publicShared(): that name is the join codes' too. log(...): daemon.log.
-export function createPublicTurn({ gate, routes, publicHost = () => null, publicShared = () => false, log = () => {}, pingMs = PING_MS, deadMs = DEAD_MS }) {
+// (only the PUBLIC_ROUTES among it are reached). publicHost(): the public tunnel's host name now,
+// or null while none is up (then nothing is served here: a grant key on the guest port is 404, as
+// before). publicShared(): that name is the join codes' too. invites: the invite store (watch
+// links), or null. grantsPublic(): whether grants are served here (the public hand-off link is on).
+// log(...): daemon.log.
+export function createPublicTurn({ gate, routes, invites = null, publicHost = () => null, publicShared = () => false, grantsPublic = () => true, log = () => {}, pingMs = PING_MS, deadMs = DEAD_MS }) {
   const hostOf = (h) => String(h || "").toLowerCase().replace(/:443$/, "");
   // Whether the request came through the hand-off tunnel's name (or loopback, which cloudflared may
   // pass): { pub, named } with the public host, or null. named: a request no grant's key names is
   // 404 here (false on loopback and on a name join codes share: the join server's then).
   function reach(req) {
     const pub = publicHost();
-    if (!pub || !gate.on) return null;
+    if (!pub || (!gate.on && !invites)) return null;
     const h = hostOf(req.headers.host);
     if (h === pub.toLowerCase()) return { pub, named: !publicShared() };
     return LOOPBACK.test(h) ? { pub, named: false } : null;
@@ -56,8 +73,10 @@ export function createPublicTurn({ gate, routes, publicHost = () => null, public
   // this address serves; null when the key is no live grant's.
   function grantOf(req) {
     const { key, route, rest } = pathParts(req);
-    const guest = gate.match(key);
-    if (!guest || !TURN_ROLES.has(guest.role)) return null;
+    const grant = gate.on && grantsPublic() ? gate.match(key) : null;
+    const watch = grant ? null : invites?.match(key);
+    const guest = grant && TURN_ROLES.has(grant.role) ? grant : watch?.share === "watch" ? watch : null;
+    if (!guest) return null;
     const allowed = PUBLIC_ROUTES[guest.role].has(`${req.method} ${route}`) && roleMay(guest.role, routes.find((r) => r.method === req.method && r.path === route)?.right);
     return { guest, route, rest, allowed };
   }
@@ -66,6 +85,7 @@ export function createPublicTurn({ gate, routes, publicHost = () => null, public
   function otherOrigin(req, guest, route, pub) {
     const origin = req.headers.origin;
     if (!origin || origin === `https://${pub}` || originOk(origin)) return false;
+    if (guest.role === "watch") return true;
     const kind = req.method !== "GET" ? "input-refused" : guest.role === "turn" && route === "events" ? "stream-refused" : "request-refused";
     gate.refused(guest, kind, req.method === "GET" ? "other-origin" : "not-allowed");
     return true;
@@ -84,7 +104,9 @@ export function createPublicTurn({ gate, routes, publicHost = () => null, public
     }
     if (!g.allowed) { plain(res, 404); return true; }
     if (otherOrigin(req, g.guest, g.route, at.pub)) { plain(res, 403); return true; }
-    if (req.method === "GET" && g.route === "events") { plain(res, 404, "Open this hand-off's page again."); return true; } // the stream is a WebSocket here
+    if (req.method === "GET" && g.route === "events") { plain(res, 404, g.guest.role === "watch" ? "Open this watch link's page again." : "Open this hand-off's page again."); return true; } // the stream is a WebSocket here
+    // A watch link's page is nobody's to index or keep.
+    if (g.guest.role === "watch") res.setHeader("x-robots-tag", "noindex, nofollow, noarchive");
     const r = routes.find((x) => x.method === req.method && x.path === g.route);
     try {
       const has = r.needs ? r.needs() : true;
@@ -107,11 +129,14 @@ export function createPublicTurn({ gate, routes, publicHost = () => null, public
       refuseUpgrade(socket, 404, { error: "Unknown request." });
       return true;
     }
-    if (!g.allowed || g.route !== "events" || g.guest.role !== "turn") { refuseUpgrade(socket, 404, { error: "Unknown request." }); return true; }
-    if (otherOrigin(req, g.guest, g.route, at.pub)) { refuseUpgrade(socket, 403, { error: "Not from this page. Open the hand-off link again." }); return true; }
+    if (!g.allowed || g.route !== "events" || (g.guest.role !== "turn" && g.guest.role !== "watch")) { refuseUpgrade(socket, 404, { error: "Unknown request." }); return true; }
+    const watch = g.guest.role === "watch";
+    if (otherOrigin(req, g.guest, g.route, at.pub)) { refuseUpgrade(socket, 403, { error: watch ? "Not from this page. Open the watch link again." : "Not from this page. Open the hand-off link again." }); return true; }
+    // A link preview never gets the picture, and never counts as someone watching.
+    if (watch && previewBot(req)) { refuseUpgrade(socket, 403, { error: "Open this link in a browser to watch." }); return true; }
     const { req: sreq, res } = socketStream(req, socket, head, { pingMs, deadMs });
     const r = routes.find((x) => x.method === "GET" && x.path === "events");
-    Promise.resolve().then(() => r.handler({ req: sreq, res, route: "events", rest: [], role: "turn", invite: g.guest, byPages: false, pub: at.pub })).catch((e) => {
+    Promise.resolve().then(() => r.handler({ req: sreq, res, route: "events", rest: [], role: g.guest.role, invite: g.guest, byPages: false, pub: at.pub })).catch((e) => {
       log("liveview public", e?.message || e);
       if (!res.headersSent) { res.writeHead(500); res.end(); } else res.destroy();
     });

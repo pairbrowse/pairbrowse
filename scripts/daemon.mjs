@@ -581,7 +581,7 @@ const joinPrompt = createJoinPrompt({
 const clickApprovals = createClickApprovals({ hud, presence, collaboration, liveView, frontPage, docked: () => !!context.browserPages?.(), targetOf: targetIdOf, mask: output.mask, log, hostName: () => HOST,
   // A session joined from here with the approve role: the host's asks on its picture pages, answers sent back on the channel.
   screen: { pages: () => follow.screenPages(), call: screenCard }, sendAnswer: (id, answer) => follow.answerApproval(id, answer), chat: { canAnswer: () => phonelink.canAnswer() } });
-const phonelink = createPhoneLink({ config, secrets, notifier, approvals: () => clickApprovals, server: () => context.isServer(), log }); phonelink.attach(clickApprovals); // the Handoff page (daemon/phonelink.mjs): Telegram or Discord linked with a code, what goes there, approvals answered from that chat
+const phonelink = createPhoneLink({ config, secrets, notifier, approvals: () => clickApprovals, server: () => context.isServer(), log, watchLink: () => sharing.chatWatchLink() }); phonelink.attach(clickApprovals); // the Handoff page (daemon/phonelink.mjs): Telegram or Discord linked with a code, what goes there, approvals answered from that chat
 // Who used each session, for the session picker: joiners the host let in. A joiner let in also
 // takes any approval card in the page down at once (approvals.mjs cover).
 sharing.approvals.onChange(() => {
@@ -634,7 +634,7 @@ const outlines = createOutlines({ mask: output.mask });
 // Hand-offs to the person: the badge and the Tools tab as before, and their channels when hand-offs go there (daemon/yourturn.mjs).
 const yourTurn = createYourTurn({ config, grants, notifier, audit, handoffs, journal, hud, log, hostNote, agentBy, saveTabs: () => context.saveTabs(), sessionName: () => context.sessionName(),
   linkFor: (key) => sharing.handoffLink(key), sends: () => handoffSends(config, { server: context.isServer() }), actionsIn: (p) => presence.didIn(p), // what the person did there: names only (B15)
-  turnFile: (s) => sessionFile(s, "turn.json"), keptAlive: () => context.keepAlive(), successorOf: (p) => context.successorOf(p), pagesNow: () => context.openPages(), compatibility: () => context.compatibility(), savedCard: () => !!context.savedCard()?.on, personActedAt: (p) => presence.actedAt(p), wants: (a) => phonelink.wantsAction(a) }); // a restart's hand-offs come back (B16); setup problems reported apart (B14); a saved card masks every tab (B12); a step done in the window ends its hand-off (decision 8)
+  turnFile: (s) => sessionFile(s, "turn.json"), keptAlive: () => context.keepAlive(), successorOf: (p) => context.successorOf(p), pagesNow: () => context.openPages(), compatibility: () => context.compatibility(), savedCard: () => !!context.savedCard()?.on, personActedAt: (p) => presence.actedAt(p), wants: (a) => phonelink.wantsAction(a), watchLink: () => sharing.chatWatchLink() }); // a restart's hand-offs come back (B16); setup problems reported apart (B14); a saved card masks every tab (B12); a step done in the window ends its hand-off (decision 8)
 const timeline = createTimeline({ dir: () => timelineDir(context.sessionName()), enabled: () => config.timeline !== false, cap: () => config.timelineCap, mask: output.mask, step: () => journal.step(), onNote: (text) => hud.addActivity(`Note: ${text}`, HOST, null), log });
 const serve = createServe({
   onRunStatus: (...a) => yourTurn.onRunStatus(...a), yourTurn, onRunDone: (r) => phonelink.runDone(r), // a fast-mode run's hand-off step; hand-offs (B10 masking)

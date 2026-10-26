@@ -232,6 +232,8 @@ Slack, a webhook or ntfy): one message naming the kind of step, the site and the
 link. Opening the link shows the step and a "Take over" button; the tap takes the handed-over tab
 over on your phone (tap, scroll, hold, zoom, and a type box for the field you tapped), and Done
 hands it back; one reminder comes, and the agent stops safely if nobody finishes in time.
+To just look at what the browser is doing, send `/watch` to your linked Telegram or Discord bot:
+it answers with a view-only watch link for an hour ([Watch live by link](sharing.md#watch-live-by-link)).
 
 The link reaches the live view over a private route by default: a name in `liveViewHosts` with
 `inviteBaseUrl` (a tailnet works on a phone with its app) or an SSH tunnel. Only when you may be

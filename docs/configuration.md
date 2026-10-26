@@ -214,8 +214,14 @@
   from chat"): the linked chat answers approval cards (Telegram's Approve and Deny buttons, or a typed
   `approve K7Q2` / `deny K7Q2`; on Discord typed only), only from you in that chat, only for a card
   of your own agents on a tab it knows (held to that tab and site, as a joiner's answer is), each code
-  one card until it ends anywhere. While it is on, a card waits for the chat too. The helper reads
-  the bot's messages only while a link waits, or while answering is on and such a card waits.
+  one card until it ends anywhere. While it is on, a card waits for the chat too. `watchCommand`
+  (`true` by default, the page's "Answer /watch in the linked chat"): `/watch` (or `watch`) from you
+  in the linked chat answers with a watch link (view only, for an hour; see
+  [Watch live by link](sharing.md#watch-live-by-link)), and Telegram lists `/watch` in the bot's
+  menu. `watchInMessages` (`false` by default, "Add a watch link to hand-off messages"): each
+  hand-off and approval message also carries a watch link (left out where a channel leaves links
+  out). The helper reads the bot's messages only while a link waits, while answering is on and such
+  a card waits, or while `watchCommand` is on and an app is linked.
   The same channels also hear when a running proxied session's exit changes or its recheck fails
   (`network`, below; the webhook gets `{ "event": "pairbrowse.network", "network", "change",
   "paused", "at" }`).

@@ -12,6 +12,7 @@
 // person's own keys (liveview/options.mjs). The helper checks every event again
 // (liveview/input.mjs readViewerInput); this only shapes what a person's hands do.
 import { $, el } from "./common.js";
+import { createZoom } from "./liveview-zoom.js";
 
 const ACTION_WORDS = { login: "Sign in", captcha: "Verification", "2fa": "2FA code", payment: "Payment", other: "Your step" };
 const STATE_WORDS = { connecting: "Connecting", live: "Live", reconnecting: "Reconnecting", closed: "Ended" };
@@ -32,32 +33,8 @@ const NAMED = new Set(["Backspace", "Enter", "Tab", "Escape", "ArrowLeft", "Arro
 const hex = (bytes) => [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
 
-// The event stream over a WebSocket, shaped as the EventSource liveview.js uses (addEventListener,
-// onopen, onerror, readyState, close): a hand-off link's public address goes through a relay that
-// doesn't carry server-sent events (liveview/public-turn.mjs; the page says so with
-// data-stream="ws"). Each message holds one or more events as the stream writes them. A dropped or
-// refused socket is CLOSED at once and onerror runs, so liveview.js hands it to lost() (which asks
-// whether the hand-off still runs and reopens, or ends): EventSource's own retry has no
-// counterpart here.
-export function socketEvents(url) {
-  const ws = new WebSocket(url.replace(/^http/, "ws"));
-  const listeners = new Map();
-  const es = {
-    readyState: 0, onopen: null, onerror: null,
-    addEventListener(name, fn) { if (!listeners.has(name)) listeners.set(name, []); listeners.get(name).push(fn); },
-    close() { es.readyState = 2; try { ws.close(); } catch {} },
-  };
-  ws.onopen = () => { es.readyState = 1; es.onopen?.(); };
-  ws.onmessage = (m) => {
-    for (const block of String(m.data).split("\n\n")) {
-      const name = /^event: (.+)$/m.exec(block)?.[1];
-      const data = /^data: (.*)$/m.exec(block)?.[1];
-      if (name && data !== undefined) for (const fn of listeners.get(name) || []) fn({ data });
-    }
-  };
-  ws.onclose = () => { if (es.readyState === 2) return; es.readyState = 2; es.onerror?.(); };
-  return es;
-}
+// The event stream over a WebSocket (liveview-socket.js), as liveview.js opens it for this viewer.
+export { socketEvents } from "./liveview-socket.js";
 
 // base: the viewer's /<viewKey>/; img, stage: the picture and its pane; on(event, fn): the stream's
 // events (liveview.js, before the stream opens); frame(): the picture's
@@ -265,30 +242,12 @@ export function startTurn({ base, img, stage, on, frame, reopen, end }) {
     return count;
   };
 
-  // Zoom: the picture scaled on this device only, 1x to 4x, panned with two fingers.
-  const zoom = { z: 1, tx: 0, ty: 0 };
-  function applyZoom() {
-    const sw = stage.clientWidth, sh = stage.clientHeight;
-    const axis = (t, size, off, room) => (size * zoom.z <= room ? (room - size * zoom.z) / 2 - off : clamp(t, room - size * zoom.z - off, -off));
-    zoom.tx = axis(zoom.tx, box.offsetWidth, box.offsetLeft, sw);
-    zoom.ty = axis(zoom.ty, box.offsetHeight, box.offsetTop, sh);
-    box.style.transform = zoom.z === 1 ? "" : `translate(${zoom.tx}px, ${zoom.ty}px) scale(${zoom.z})`;
-    level.textContent = `${Math.round(zoom.z * 10) / 10}x`;
-  }
-  // Keeps the picture point under (cx, cy) on screen in place as the scale changes.
-  function zoomAt(z, cx, cy, from = { z: zoom.z, tx: zoom.tx, ty: zoom.ty }, to = { x: cx, y: cy }) {
-    const s = stage.getBoundingClientRect();
-    const ux = (cx - s.left - box.offsetLeft - from.tx) / from.z, uy = (cy - s.top - box.offsetTop - from.ty) / from.z;
-    zoom.z = clamp(z, ZOOM_MIN, ZOOM_MAX);
-    zoom.tx = to.x - s.left - box.offsetLeft - ux * zoom.z;
-    zoom.ty = to.y - s.top - box.offsetTop - uy * zoom.z;
-    applyZoom();
-  }
-  const middle = () => { const s = stage.getBoundingClientRect(); return [s.left + s.width / 2, s.top + s.height / 2]; };
+  // Zoom: the picture scaled on this device only, 1x to 4x, panned with two fingers (liveview-zoom.js).
+  const zoomer = createZoom({ stage, box, min: ZOOM_MIN, max: ZOOM_MAX, onLevel: (z) => { level.textContent = `${Math.round(z * 10) / 10}x`; } });
+  const zoom = zoomer.state, zoomAt = zoomer.at, middle = zoomer.middle;
   zoomIn.addEventListener("click", () => zoomAt(zoom.z * ZOOM_STEP, ...middle()));
   zoomOut.addEventListener("click", () => zoomAt(zoom.z / ZOOM_STEP, ...middle()));
   level.addEventListener("click", () => zoomAt(1, ...middle()));
-  addEventListener("resize", applyZoom);
 
   // One finger: wait (a tap, until it travels or holds), scroll, or press (held, then dragged).
   // Two fingers: pinch and pan the zoom; a press already down stays as it is.

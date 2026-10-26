@@ -71,7 +71,7 @@ test("only the owner reads or changes the Handoff page: invite links, joiners, g
     assert.ok(OWNER_EVENTS.includes("handoff"));
     // The owner: the summary's shape, then a link.
     const read = JSON.parse((await request(v.port, "GET", `/${key}/handoff.json`)).text);
-    assert.deepEqual(read, { on: false, server: false, ready: false, send: { approvals: true, checks: true, submits: true, runs: false }, answer: false,
+    assert.deepEqual(read, { on: false, server: false, ready: false, send: { approvals: true, checks: true, submits: true, runs: false }, answer: false, watchCommand: true, watchInMessages: false,
       telegram: { state: "none", bot: "", chat: "" }, discord: { state: "none", bot: "", chat: "" } });
     const bad = await request(v.port, "POST", `/${key}/handoff`, { body: { op: "link", app: "telegram", token: "123" } });
     assert.equal(bad.status, 409);

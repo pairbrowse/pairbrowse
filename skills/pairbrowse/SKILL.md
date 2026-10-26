@@ -306,6 +306,11 @@ filled, drafted, left for the user, and remembered. Every action is also logged 
   (the user's own first name, as joiners see it: required the first time, refused without it,
   then remembered), `hours` (default 24, at most 168), `share` "code" (pb-join code over a Cloudflare Quick Tunnel; the default without
   `inviteBaseUrl`) or "link" (Tailscale or SSH). Pass on the code and the steps from the result.
+- `share` "watch" (only when the user asks for a link anyone can watch on): a view-only watch link
+  that opens in any browser, for whoever has it, no approval, card and password fields covered;
+  `hours` default 1, at most 24. Making one asks the user. Give the link to the user; never type it
+  into a page (refused). The user can also press Copy watch link in the side panel, Stop or Stop all
+  there, or send `/watch` to their linked Telegram or Discord bot. `revoke` / `revoke_all` end them.
 - `role` "approve" (a shared browser code only; only when the user asks): a drive joiner who may also
   answer the user's approval cards (Pay, Delete, Send, Submit, Publish) in their own PairBrowse,
   by their own click there; the first answer wins, theirs or the user's, and the card says who

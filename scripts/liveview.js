@@ -13,7 +13,11 @@ const canDrive = role !== "watch";
 // are liveview-turn.js, loaded for it alone; the desktop's own input handlers below stand aside.
 const turnView = role === "turn";
 let turnUi = null;
-let socketEvents = null; // a hand-off's public address: the stream over a WebSocket (liveview-turn.js)
+let socketEvents = null; // the public address: the stream over a WebSocket (liveview-socket.js)
+// A watch link on the public address (view only, often a phone): its bar, zoom and reconnects are
+// liveview-watch.js, loaded for it alone once the page has loaded.
+const watchLink = role === "watch" && document.body.dataset.stream === "ws";
+let watchUi = null;
 // Only the host resizes the page: an invited viewer's pane never changes it.
 const mayResize = role === "owner";
 if (!canDrive) { stage.setAttribute("aria-label", "Live view of the PairBrowse browser (watch only)"); $("url-input").disabled = true; }
@@ -34,6 +38,7 @@ function setState(s) {
   $("state-text").textContent = yours ? "Your turn" : STATE_LABELS[s];
   document.body.dataset.s = s;
   turnUi?.state(s);
+  watchUi?.state(s);
   $("overlay-title").textContent = s === "closed" ? "The PairBrowse browser closed" : "Reconnecting";
   $("overlay-text").textContent = s === "closed" ? "It reopens on Claude's next action." : "Waiting for PairBrowse";
 }
@@ -126,7 +131,7 @@ let ended = false; // a hand-off that ended: its key is dead, so the stream is n
 const handlers = [];
 const on = (event, fn) => { handlers.push([event, fn]); es?.addEventListener(event, (e) => fn(JSON.parse(e.data))); };
 function openStream() {
-  if (es || ended) return;
+  if (es || ended || (watchLink && !watchUi)) return;
   es = socketEvents && document.body.dataset.stream === "ws" ? socketEvents(new URL(base + "events", location.href).href) : new EventSource(base + "events");
   for (const [event, fn] of handlers) es.addEventListener(event, (e) => fn(JSON.parse(e.data)));
   es.onopen = () => { setState("live"); fit(); };
@@ -135,6 +140,9 @@ function openStream() {
     // A hand-off's stream refused (its dropped one not yet noticed by the helper): the turn viewer
     // asks whether the hand-off still runs and opens it again, or ends.
     if (turnUi && es.readyState === EventSource.CLOSED) { es.close(); es = null; setState("reconnecting"); return turnUi.lost(); }
+    // A watch link's stream dropped: the watch viewer asks whether the link still works and opens
+    // it again, or says it ended.
+    if (watchUi && es.readyState === EventSource.CLOSED) { es.close(); es = null; setState("reconnecting"); return watchUi.lost(); }
     setState(es.readyState === EventSource.CLOSED ? "closed" : "reconnecting");
   };
 }
@@ -149,11 +157,26 @@ function endTurn() {
   $("overlay-text").textContent = "You can close this page.";
 }
 on("turn-ended", endTurn);
+// A watch link stopped or expired: its key is dead, so the stream is never opened again.
+function endWatch() {
+  ended = true;
+  es?.close();
+  es = null;
+  setState("closed");
+  $("overlay-title").textContent = "This watch link ended";
+  $("overlay-text").textContent = "It was stopped or it expired. Ask whoever sent it for a new one.";
+}
 // The turn viewer is loaded before the stream opens, so it hears the stream's first turn event.
 if (turnView) {
   import("./liveview-turn.js")
     .then((m) => { socketEvents = m.socketEvents; turnUi = m.startTurn({ base, img, stage, on, frame: () => frame, reopen: openStream, end: endTurn }); openStream(); })
     .catch(() => setState("closed"));
+} else if (watchLink) {
+  // Only from script, once the page has loaded: a link preview gets the page and never the stream.
+  const go = () => import("./liveview-watch.js")
+    .then((m) => { socketEvents = m.socketEvents; watchUi = m.startWatch({ base, img, stage, reopen: openStream, end: endWatch }); openStream(); })
+    .catch(() => setState("closed"));
+  if (document.readyState === "complete") go(); else addEventListener("load", go, { once: true });
 } else openStream();
 let hiddenTimer = null;
 document.addEventListener("visibilitychange", () => {

@@ -22,8 +22,39 @@ the invite links", "Revoke Sam's link". Claude uses `pairbrowse_invite` and give
 and the steps to send on.
 
 Or press **Share** in the side panel header (or the live view toolbar) and make one yourself: a
-join code (shared browser, can drive) or a watch link. It asks your first name once, shows the
-code or link once with Copy, and revoking still goes through Claude (`pairbrowse_invite revoke`).
+join code (shared browser, can drive) or a watch link (see [Watch live by link](#watch-live-by-link)).
+It asks your first name once for a code, shows the code or link once with Copy, and Settings
+(Sharing, Inviting people) lists what is out with Revoke.
+
+## Watch live by link
+
+A watch link lets anyone you give it to watch this browser live, from any browser on any computer
+or phone, with nothing to install: the page, the tabs and what agents do, as it happens. It is
+view only: nothing they click, tap or type reaches your browser, and card, security code,
+one-time code and password fields are covered in what they see. Nobody is asked before watching:
+whoever has the link can watch until it ends.
+
+- **Copy watch link** in the side panel (under the session's name) makes one for an hour and
+  copies it in one click. The Handoff page (Settings, Handoff, Watch live) has the same button
+  with a choice of 15 minutes, 1 hour, 4 hours or 24 hours. Share's watch link makes one too, and
+  you can ask Claude ("make a watch link for an hour"): Claude asks you first and gives you the
+  link to send; it never types it into a page.
+- Under the button, the side panel and the Handoff page list the open watch links: how many are
+  watching each one now, when it ends, **Stop**, and **Stop all**. A stopped or expired link goes
+  dark at once for everyone watching, and its page says it ended. `pairbrowse_invite revoke_all`
+  ends them too, and so does closing the browser window or PairBrowse stopping.
+- From your phone: with Telegram or Discord linked on the Handoff page, send `/watch` to your bot
+  and it answers with a watch link (Telegram also lists `/watch` in the bot's menu). Turn on "Add a
+  watch link to hand-off messages" there and each message sent to your phone carries one too.
+- On a phone the page fits the screen: pinch or use + and - to zoom into the picture, drag to move
+  around, double tap to zoom in or back out. On a computer it shows the tabs and the workspace
+  column as the live view does.
+- The link goes through a free Cloudflare Quick Tunnel (or your own `sharing.tunnel`), started with
+  the first watch link and stopped a few seconds after the last one ends, so nothing of this
+  computer is reachable while none is open. Chat apps' link previews get the page without a picture
+  and never count as watching.
+
+Anyone who has the link can pass it on: send it only where you mean to, and stop it when you are done.
 
 The live view only listens on this computer (`127.0.0.1`), so the other person needs a private
 route to it. Either way, first give it a fixed port in `~/.pairbrowse/config.json`:

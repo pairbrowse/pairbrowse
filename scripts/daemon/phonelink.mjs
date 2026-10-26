@@ -16,8 +16,14 @@
 // PairBrowse.". Everything else it reads is ignored. A cancel or the code's expiry saves nothing.
 // Only the pinned chat and user are ever answered or read from after that.
 //
-// Reading runs ONLY while a link waits, or while answering from chat is on and an approval the
-// chat may answer waits; it stops on unlink, cancel and the helper's stop (timers unref'd).
+// Reading runs ONLY while a link waits, while answering from chat is on and an approval the chat
+// may answer waits, or while /watch is on (handoff.watchCommand, on by default) for a linked app;
+// it stops on unlink, cancel, /watch turned off and the helper's stop (timers unref'd).
+//
+// /watch (or "watch") from the pinned chat and user: a watch link for that chat (view only, for
+// whoever has it, an hour: sharing.mjs chatWatchLink, the one made for the chat last while it has a
+// while left), its link previews off. Telegram lists /watch in the bot's command menu while it is on.
+// With handoff.watchInMessages (off by default) approval messages carry one too.
 //
 // Approvals (handoff.send.approvals, under the hand-off gate: notify/index.mjs handoffSends): each
 // card asked here gets a 4-character code; the message names the site's host, the click's class
@@ -32,7 +38,7 @@ import { paths } from "../paths.mjs";
 import { readJson, writeJsonAtomic, urlHost } from "../util.mjs";
 import { readConfigFile } from "../liveview/network.mjs";
 import { setReservedSecret, deleteSecret } from "../rules/secrets.mjs";
-import { buildSenders, handoffSends, handoffWants, actionGroup, SEND_GROUPS } from "./notify/index.mjs";
+import { buildSenders, handoffSends, handoffWants, actionGroup, SEND_GROUPS, watchForMessage, clock } from "./notify/index.mjs";
 import { httpsPost } from "./notify/post.mjs";
 import { TELEGRAM, DISCORD, TELEGRAM_API, DISCORD_API, DISCORD_GATEWAY, TELEGRAM_TOKEN, DISCORD_TOKEN, DISCORD_ID, CODE_ALPHABET, linkedTelegram, linkedDiscord } from "./notify/linked.mjs";
 import { createTelegramApi } from "./phonelink/telegram.mjs";
@@ -43,6 +49,9 @@ export const APPS = ["telegram", "discord"];
 const NAMES = { telegram: "Telegram", discord: "Discord" };
 const LINKED = "Linked to PairBrowse.";
 const ANSWER = /^\s*(approve|allow|deny)\s+([A-Za-z0-9]{4})\s*$/i;
+// /watch, Telegram's /watch@botname, or the bare word.
+export const WATCH = /^\s*\/?watch(?:@[A-Za-z0-9_]{3,64})?\s*$/i;
+export const WATCH_COMMANDS = [{ command: "watch", description: "A link to watch the browser live (view only)" }];
 const HOST = /^[a-z0-9.-]{1,253}(?::\d{1,5})?$/;
 const cleanName = (s) => String(s ?? "").replace(/[\u0000-\u001f\u007f-\u009f]/g, "").trim().slice(0, 64);
 const plain = (v) => !!v && typeof v === "object" && !Array.isArray(v);
@@ -55,7 +64,9 @@ const code = (n, random) => Array.from({ length: n }, () => CODE_ALPHABET[random
 // telegramBase, discordBase, gatewayUrl: the services' addresses (loopback stand-ins in tests).
 // request (notify/post.mjs httpsJson), post (httpsPost), connect (ws.mjs connect), timers, now,
 // random(n), quietMs (a pause between polls that brought nothing: tests), pollSeconds: tests.
-export function createPhoneLink({ config, secrets, notifier, approvals = () => null, server = () => false, log = () => {}, configFile = paths.config, linksFile = paths.handoffLinks,
+// watchLink(): a watch link for the linked chat ({ link, expiresAt } or { error }: sharing.mjs
+// chatWatchLink), or null (no /watch).
+export function createPhoneLink({ config, secrets, notifier, approvals = () => null, server = () => false, log = () => {}, configFile = paths.config, linksFile = paths.handoffLinks, watchLink = null,
   telegramBase = TELEGRAM_API, discordBase = DISCORD_API, gatewayUrl = DISCORD_GATEWAY, request, post = httpsPost, connect, timers = { set: setTimeout, clear: clearTimeout },
   now = Date.now, random = randomInt, quietMs = 0, pollSeconds, retryMs = 5000 }) {
   const tg = createTelegramApi({ base: telegramBase, ...(request ? { request } : {}), ...(pollSeconds !== undefined ? { pollSeconds } : {}) });
@@ -78,6 +89,8 @@ export function createPhoneLink({ config, secrets, notifier, approvals = () => n
   const shown = () => { const r = readJson(linksFile, {}); return plain(r) ? r : {}; };
   const sends = () => handoffSends(config, { server: server() === true });
   const answerOn = () => config.handoff?.answer === true;
+  // /watch answered in the linked chat: on unless turned off, and only with a way to make the link.
+  const watchOn = () => config.handoff?.watchCommand !== false && typeof watchLink === "function";
   const anyAnswerable = () => [...waiting.values()].some((w) => w.answerable);
 
   // ---- the summary (GET handoff.json, the handoff event) ----
@@ -96,6 +109,7 @@ export function createPhoneLink({ config, secrets, notifier, approvals = () => n
     return {
       on: h.away === true, server: server() === true, ready: h.enabled === true && usable > 0,
       send: Object.fromEntries(SEND_GROUPS.map((g) => [g, handoffWants(config, g)])), answer: answerOn(),
+      watchCommand: config.handoff?.watchCommand !== false, watchInMessages: config.handoff?.watchInMessages === true,
       telegram: appSummary("telegram"), discord: appSummary("discord"),
     };
   }
@@ -113,8 +127,9 @@ export function createPhoneLink({ config, secrets, notifier, approvals = () => n
     try { writeJsonAtomic(configFile, { ...file.config, handoff: next }); } catch (e) {
       return `config.json couldn't be written (${e?.code || "error"}). Check that PairBrowse's folder can be written, then try again.`;
     }
-    const { channels: list, enabled, send, answer } = next;
-    config.handoff = { ...config.handoff, channels: list, enabled: enabled === true, ...(send !== undefined ? { send } : {}), ...(answer !== undefined ? { answer } : {}) };
+    const { channels: list, enabled, send, answer, watchCommand, watchInMessages } = next;
+    config.handoff = { ...config.handoff, channels: list, enabled: enabled === true, ...(send !== undefined ? { send } : {}), ...(answer !== undefined ? { answer } : {}),
+      ...(watchCommand !== undefined ? { watchCommand } : {}), ...(watchInMessages !== undefined ? { watchInMessages } : {}) };
     return "";
   }
   function storeSecrets(set = [], remove = []) {
@@ -145,7 +160,7 @@ export function createPhoneLink({ config, secrets, notifier, approvals = () => n
   function wanted(app) {
     if (stopped) return false;
     if (apps[app].pending) return true;
-    return answerOn() && linked(app) && anyAnswerable();
+    return linked(app) && ((answerOn() && anyAnswerable()) || watchOn());
   }
   function sync() {
     // Telegram: one long poll at a time.
@@ -184,6 +199,8 @@ export function createPhoneLink({ config, secrets, notifier, approvals = () => n
     const token = a.pending?.token || saved(TELEGRAM.token);
     if (!TELEGRAM_TOKEN.test(token)) return 5000;
     if (a.offsetToken !== token) { a.offsetToken = token; a.offset = 0; }
+    // /watch in the bot's command menu (the menu button), once per token while it is on.
+    if (!a.pending && watchOn() && a.commandsFor !== token && linked("telegram")) { a.commandsFor = token; tg.setCommands?.(token, WATCH_COMMANDS).catch?.(() => {}); }
     const r = await tg.getUpdates(token, a.offset);
     if (!r.ok) {
       if (r.status === 409) {
@@ -219,7 +236,7 @@ export function createPhoneLink({ config, secrets, notifier, approvals = () => n
       }
       const pinned = saved(TELEGRAM.chat);
       if (pinned && !p && String(chat?.id) === pinned && String(from?.id) === pinned) {
-        const said = typedAnswer(m.text, "Telegram");
+        const said = WATCH.test(m.text) ? await watchReply("Telegram") : typedAnswer(m.text, "Telegram");
         if (said) await tg.sendMessage(token, pinned, said);
       }
       return;
@@ -249,8 +266,19 @@ export function createPhoneLink({ config, secrets, notifier, approvals = () => n
       return;
     }
     if (p || channel !== saved(DISCORD.channel) || user !== saved(DISCORD.user)) return;
-    const said = typedAnswer(content, "Discord");
+    const said = WATCH.test(content) ? await watchReply("Discord") : typedAnswer(content, "Discord");
     if (said) await dc.send(saved(DISCORD.token), channel, said);
+  }
+
+  // ---- /watch from the linked chat ----
+  // The answer's text: the link, until when, and that anyone who has it can watch; "" when /watch is off.
+  async function watchReply(from) {
+    if (!watchOn()) return "";
+    const r = await Promise.resolve().then(() => watchLink()).catch((e) => ({ error: e?.message || "error" }));
+    if (typeof r?.link !== "string") { log(`handoff: /watch from ${from} got no link`); return `Couldn't make a watch link: ${String(r?.error || "PairBrowse didn't answer").slice(0, 200)}`; }
+    log(`handoff: watch link sent to ${from}`);
+    const until = Number.isFinite(r.expiresAt) ? ` until ${clock(r.expiresAt)}` : "";
+    return `Watch the browser live, view only${until}:\n${r.link}\nAnyone with this link can watch${until ? " until then" : ""}. Stop it in PairBrowse's side panel.`;
   }
 
   // ---- answers from chat ----
@@ -370,6 +398,11 @@ export function createPhoneLink({ config, secrets, notifier, approvals = () => n
       if (typeof given.answer !== "boolean") return { error: "answer is true or false." };
       out.answer = given.answer;
     }
+    for (const k of ["watchCommand", "watchInMessages"]) {
+      if (given[k] === undefined) continue;
+      if (typeof given[k] !== "boolean") return { error: `${k} is true or false.` };
+      out[k] = given[k];
+    }
     if (given.send !== undefined) {
       if (!plain(given.send)) return { error: "send is { approvals, checks, submits, runs }." };
       for (const [k, v] of Object.entries(given.send)) {
@@ -382,8 +415,12 @@ export function createPhoneLink({ config, secrets, notifier, approvals = () => n
       ...h,
       ...(out.send ? { send: Object.fromEntries(SEND_GROUPS.map((g) => [g, typeof out.send[g] === "boolean" ? out.send[g] : handoffWants({ handoff: h }, g)])) } : {}),
       ...(out.answer !== undefined ? { answer: out.answer } : {}),
+      ...(out.watchCommand !== undefined ? { watchCommand: out.watchCommand } : {}),
+      ...(out.watchInMessages !== undefined ? { watchInMessages: out.watchInMessages } : {}),
     }));
     if (problem) return { error: `Not saved: ${problem}` };
+    // /watch turned off: the bot's command menu no longer lists it (on: listed at the next read).
+    if (out.watchCommand === false && linked("telegram")) { apps.telegram.commandsFor = ""; tg.setCommands?.(saved(TELEGRAM.token), [])?.catch?.(() => {}); }
     sync();
     log("handoff: what goes to your phone changed (from Settings)");
     changed();
@@ -413,7 +450,7 @@ export function createPhoneLink({ config, secrets, notifier, approvals = () => n
     waiting.set(c, { id: item.id, answerable, answeredHere: false });
     codeOf.set(item.id, c);
     sync();
-    Promise.resolve(notifier.send({ kind: "approval", code: c, host: info.host, action: info.action, expiresAt: info.expiresAt, ...(answerable ? { answer: true } : {}) })).catch(() => {});
+    watchForMessage(config, watchLink).then((watch) => notifier.send({ kind: "approval", code: c, host: info.host, action: info.action, expiresAt: info.expiresAt, ...(answerable ? { answer: true } : {}), ...(watch ? { watch } : {}) })).catch(() => {});
   }
   function onEnd(item) {
     const c = codeOf.get(item?.id);
@@ -441,6 +478,8 @@ export function createPhoneLink({ config, secrets, notifier, approvals = () => n
     return Promise.resolve(notifier.send({ kind: "run", host, outcome, steps: Math.max(0, Math.min(100_000, Number(steps) | 0)) })).catch(() => null);
   }
 
+  // A linked app with /watch on is read from the start.
+  sync();
   return {
     read, op, changed, attach, runDone,
     onChange: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },

@@ -86,7 +86,7 @@ const network = networkPanel($("network-panel"), () => base, { shown: (on) => { 
 const showHandoff = (on) => { const show = on && !outOfView($("handoff")); $("handoff").hidden = !show; $("nav-handoff").hidden = !show; applySearch(); };
 const handoff = handoffPanel({ $, base: () => base, live: () => conn === "live",
   shown: (on) => { $("ho-missing").hidden = true; showHandoff(on); },
-  missing: () => { $("ho-missing").hidden = VIEW !== "handoff"; $("ho-none").hidden = true; for (const id of ["handoff-away", "handoff-send", "handoff-privacy"]) $(id).hidden = VIEW === "handoff"; showHandoff(VIEW === "handoff"); } });
+  missing: () => { $("ho-missing").hidden = VIEW !== "handoff"; $("ho-none").hidden = true; for (const id of ["handoff-away", "handoff-send", "handoff-watch", "handoff-privacy"]) $(id).hidden = VIEW === "handoff"; showHandoff(VIEW === "handoff"); } });
 // (applySearch is not defined yet here: the section and its link only.)
 if (VIEW === "handoff") { $("handoff").hidden = false; $("nav-handoff").hidden = false; }
 
@@ -359,8 +359,8 @@ async function setInviteRole(id, role, shown) {
 }
 function inviteRow(i) {
   const shown = i.label ? String(i.label) : i.role === "watch" ? "a watch invite" : "a drive invite";
-  const kind = i.share === "code" ? "Join code" : "Link";
-  const rights = i.role === "watch" ? "can watch" : i.role === "approve" ? "can drive and approve" : "can drive";
+  const kind = i.share === "code" ? "Join code" : i.share === "watch" ? "Watch link" : "Link";
+  const rights = i.share === "watch" ? `anyone who has it can watch, ${Number(i.watching) > 0 ? `${Number(i.watching)} watching` : "nobody watching yet"}` : i.role === "watch" ? "can watch" : i.role === "approve" ? "can drive and approve" : "can drive";
   const face = avatar(i.label || kind, null, { decorative: true });
   const head = el("strong", {}, el("span", { className: "name", textContent: i.label ? String(i.label) : kind, title: i.label ? String(i.label) : kind }));
   const meta = [kind, rights, endsIn(i.expires)].filter(Boolean).join(" · ");
@@ -416,7 +416,7 @@ async function loadInvites() {
   const asked = invitesDrawn;
   const r = await getJson("invites.json");
   if (asked !== invitesDrawn) return; // a newer list came meanwhile
-  if (r.status === 200) return drawInvites(r.body);
+  if (r.status === 200) { handoff.drawWatch(r.body?.items); return drawInvites(r.body); }
   // An older helper without the route: the help line alone, as before.
   $("invite-list").replaceChildren();
   $("invite-list").hidden = true;
@@ -677,7 +677,7 @@ const connect = helperConnection({
   on("joinhost", hostsChanged);
   on("config", (c) => { const { restart, ...rest } = c || {}; drawConfig({ ...rest, ...(restart !== undefined ? { restart } : {}) }); });
   on("timeline", () => loadTimelineCount());
-  on("invites", drawInvites);
+  on("invites", (x) => { drawInvites(x); handoff.drawWatch(x?.items); });
   on("network", network.draw);
   on("handoff", handoff.draw);
 });

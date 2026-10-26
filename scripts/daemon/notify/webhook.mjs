@@ -26,7 +26,7 @@ export default {
           : message.kind === "network"
           ? { event: "pairbrowse.network", network: message.network, change: message.change, paused: message.paused, at: new Date(message.at).toISOString() }
           : { event: `pairbrowse.${message.kind}`, id: message.id, kind: message.action, host: message.host,
-            link: message.link ?? null, expiresAt: new Date(message.expiresAt).toISOString(), reason: message.reason ?? null, ...(message.privateOnly === true ? { privateOnly: true } : {}) };
+            link: message.link ?? null, expiresAt: new Date(message.expiresAt).toISOString(), reason: message.reason ?? null, ...(message.privateOnly === true ? { privateOnly: true } : {}), ...(message.watch ? { watch: message.watch } : {}) };
         const r = await post(url.value, JSON.stringify(body), { headers: { "content-type": "application/json" } });
         return { ...r, link: !!message.link };
       },

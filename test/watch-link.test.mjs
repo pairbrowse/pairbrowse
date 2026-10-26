@@ -551,6 +551,23 @@ test("on a phone: the watch viewer fits the screen, says it is view only, zooms 
     assert.ok(b && b.x >= 0 && b.x + b.width <= 390.5 && b.y >= 0 && b.y + b.height <= 844.5, `${sel} on screen`);
   }
   assert.ok((await s.page.locator("#watch-zoom-in").boundingBox()).height >= 44, "a finger's size");
+  // The layout: the picture fills the width right under the address; one connection indicator; the
+  // zoom keys in the bar, never over the picture; one tab, its title alone; activity lines cut with an ellipsis.
+  const lay = await s.page.evaluate(() => {
+    const r = (sel) => document.querySelector(sel).getBoundingClientRect();
+    const shown = (sel) => [...document.querySelectorAll(sel)].filter((n) => n.checkVisibility()).length;
+    const li = document.querySelector("#activity li");
+    return { img: r("#screen").toJSON(), toolbar: r(".toolbar").toJSON(), keys: r("#watchkeys").toJSON(), stage: r("#stage").toJSON(),
+      states: shown("#state, #watch-conn"), tabs: shown(".tab"), marks: shown(".tab .agent, .tab .claude"), ellipsis: li ? getComputedStyle(li).textOverflow : "ellipsis" };
+  });
+  assert.ok(Math.abs(lay.img.top - lay.toolbar.bottom) <= 2, `the picture starts under the address: ${lay.img.top} vs ${lay.toolbar.bottom}`);
+  assert.ok(lay.img.width >= 388, `fit to the width: ${lay.img.width}`);
+  assert.ok(lay.stage.bottom > 600, "the page area takes the screen's height");
+  assert.ok(lay.keys.bottom <= lay.img.top, "the zoom keys never cover the picture");
+  assert.equal(lay.states, 1, "one connection indicator");
+  assert.equal(lay.tabs, 1, "one tab");
+  assert.equal(lay.marks, 0, "no duplicated marks on it");
+  assert.equal(lay.ellipsis, "ellipsis");
   // Zoom on the phone: +, a double tap, back to 1x.
   await s.page.tap("#watch-zoom-in");
   assert.equal(await s.page.textContent("#watch-zoom-level"), "1.5x");

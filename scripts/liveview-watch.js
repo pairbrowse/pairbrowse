@@ -2,8 +2,10 @@
 // first and view only. liveview.js loads it for a watch link on that address alone, after the page
 // has loaded (a link preview that runs no script never opens the stream), and keeps the shared
 // parts (the stream, the picture and its size, the tabs and activity). This adds the bar that says
-// it is view only, zoom on this device (pinch, a drag to move around when zoomed in, a double tap,
-// + and -, Ctrl or Cmd with the wheel; liveview-zoom.js) and what a dropped stream does: the page
+// it is view only (its connection's state and the zoom keys in it, never over the picture), zoom on
+// this device (pinch, a drag to move around when zoomed in, a double tap, + and -, Ctrl or Cmd with
+// the wheel; liveview-zoom.js) (on a phone, liveview.css fits the picture to the screen's width at the
+// top of the page area), and what a dropped stream does: the page
 // asks its own address whether the link still works (404 once stopped or expired) and opens the
 // stream again, or says the link ended. Nothing here sends input: the helper refuses a watch
 // link's key every input route anyway.
@@ -15,21 +17,18 @@ const ZOOM_MIN = 1, ZOOM_MAX = 5, ZOOM_STEP = 1.5, DOUBLE_TAP_ZOOM = 2.5;
 const TAP_GAP_MS = 350, TAP_NEAR_PX = 24;
 const RETRY_MS = 2000; // a dropped stream, opened again after this
 const CHECK_MS = 8000; // the link's own address, asked at most this long
-const STATE_WORDS = { connecting: "Connecting", live: "Live", reconnecting: "Reconnecting", closed: "Ended" };
+const STATE_WORDS = { connecting: "Connecting", live: "Watching live", reconnecting: "Reconnecting", closed: "Ended" };
 
-// base: the page's /<key>/; img, stage: the picture and its pane; reopen(): opens the event stream
-// again; end(): the link ended (stopped or expired). Returns { state(s), lost() }.
+// base: the page's /<key>/; img, stage: the picture and its pane; reopen(): opens the event stream again; end(): the link ended (stopped or expired).
+// Returns { state(s), lost() }.
 export function startWatch({ base, img, stage, reopen, end }) {
   const box = $("frame"); // what zoom scales: the picture and what is drawn over it
   let stopped = false;
 
-  // ---- the bar: view only, the connection ----
-  const conn = el("span", { className: "watch-conn", id: "watch-conn" }, el("i"), el("span", { id: "watch-conn-text", textContent: STATE_WORDS.connecting }));
+  // ---- the bar: the connection (its one indicator), view only, the zoom keys ----
+  const conn = el("strong", { className: "watch-conn", id: "watch-conn" }, el("i"), el("span", { id: "watch-conn-text", textContent: STATE_WORDS.connecting }));
   conn.setAttribute("role", "status");
   conn.setAttribute("aria-live", "polite");
-  const bar = el("div", { className: "watchbar", id: "watchbar" },
-    el("p", { className: "watch-title" }, el("strong", { textContent: "Watching live" }), el("span", { className: "watch-only", textContent: "View only" })),
-    conn);
   // ---- zoom: -, the level (back to the whole page), + ----
   const zoomOut = el("button", { className: "mini", id: "watch-zoom-out", type: "button", textContent: "-" });
   zoomOut.setAttribute("aria-label", "Zoom out");
@@ -40,11 +39,12 @@ export function startWatch({ base, img, stage, reopen, end }) {
   const keys = el("div", { className: "watchkeys", id: "watchkeys" }, zoomOut, level, zoomIn);
   keys.setAttribute("role", "group");
   keys.setAttribute("aria-label", "Zoom");
+  const bar = el("div", { className: "watchbar", id: "watchbar" },
+    el("p", { className: "watch-title" }, conn, el("span", { className: "watch-only", textContent: "View only" })), keys);
   document.querySelector(".window").prepend(bar);
-  stage.append(keys);
   stage.setAttribute("aria-label", "The shared browser, live and view only. Pinch or use + and - to zoom; drag to move around when zoomed in.");
 
-  const zoomer = createZoom({ stage, box, min: ZOOM_MIN, max: ZOOM_MAX, onLevel: (z) => { level.textContent = `${Math.round(z * 10) / 10}x`; } });
+  const zoomer = createZoom({ stage, box, min: ZOOM_MIN, max: ZOOM_MAX, top: true, onLevel: (z) => { level.textContent = `${Math.round(z * 10) / 10}x`; } });
   const zoom = zoomer.state, zoomAt = zoomer.at, middle = zoomer.middle;
   zoomIn.addEventListener("click", () => zoomAt(zoom.z * ZOOM_STEP, ...middle()));
   zoomOut.addEventListener("click", () => zoomAt(zoom.z / ZOOM_STEP, ...middle()));

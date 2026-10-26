@@ -4,16 +4,17 @@
 // { z, tx, ty } as it stands now. at(z, cx, cy, from?, to?): zoom to z keeping the picture point
 // under (cx, cy) on screen in place (a pinch passes where it started, from, and where its middle is
 // now, to). apply(): the picture kept inside the stage (after a resize). middle(): the stage's
-// middle, for the + and - buttons. onLevel(z): the zoom changed (a level button's words).
+// middle, for the + and - buttons. onLevel(z): the zoom changed (a level button's words). top: a
+// picture shorter than the stage stays at its top (else centered), as the watch viewer lays it out.
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
 
-export function createZoom({ stage, box, min = 1, max = 4, onLevel = () => {} }) {
+export function createZoom({ stage, box, min = 1, max = 4, onLevel = () => {}, top = false }) {
   const state = { z: 1, tx: 0, ty: 0 };
   function apply() {
     const sw = stage.clientWidth, sh = stage.clientHeight;
-    const axis = (t, size, off, room) => (size * state.z <= room ? (room - size * state.z) / 2 - off : clamp(t, room - size * state.z - off, -off));
+    const axis = (t, size, off, room, start = false) => (size * state.z <= room ? (start ? 0 : (room - size * state.z) / 2) - off : clamp(t, room - size * state.z - off, -off));
     state.tx = axis(state.tx, box.offsetWidth, box.offsetLeft, sw);
-    state.ty = axis(state.ty, box.offsetHeight, box.offsetTop, sh);
+    state.ty = axis(state.ty, box.offsetHeight, box.offsetTop, sh, top);
     box.style.transform = state.z === 1 ? "" : `translate(${state.tx}px, ${state.ty}px) scale(${state.z})`;
     onLevel(state.z);
   }

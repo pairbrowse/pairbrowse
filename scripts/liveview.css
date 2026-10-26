@@ -482,29 +482,43 @@ body[data-role="turn"] .frame { transform-origin: 0 0; }
 .turn-opt:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 /* ---------- a watch link's viewer (liveview-watch.js): view only, phone first ---------- */
-/* The bar that says so, the picture zoomed on this device alone (touch, the + and - keys), and on a
-   narrow screen none of the workspace column: the tabs, the address and the last action stay. */
-.watchbar { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 6px 12px; background: var(--elevated); color: var(--ink); border-bottom: 1px solid var(--edge); }
+/* One bar on top: the connection (the page's one indicator), "View only" and the zoom keys, never
+   over the picture. On a phone: the shown tab alone with its title, the picture fit to the width and
+   at the top of the page area, which takes the screen's height (zoomed in, the picture uses all of
+   it), and the last three activity lines under it, each cut with an ellipsis; none of the workspace
+   column. */
+.watchbar { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 4px 6px 4px 12px; background: var(--elevated); color: var(--ink); border-bottom: 1px solid var(--edge); }
 .watch-title { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; margin: 0; font-size: var(--fs-3); white-space: nowrap; overflow: hidden; }
-.watch-title strong { font-weight: 650; overflow: hidden; text-overflow: ellipsis; }
-.watch-only { flex: none; padding: 1px 8px; border-radius: 999px; background: var(--hover); color: var(--ink-2); font-size: var(--fs-1); font-weight: var(--fw-name); }
-.watch-conn { display: inline-flex; align-items: center; gap: 5px; flex: none; font-size: var(--fs-2); color: var(--ink-2); }
-.watch-conn i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.watch-conn { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-weight: 650; overflow: hidden; text-overflow: ellipsis; }
+.watch-conn i { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
 .watch-conn[data-s="live"] i { background: var(--ok); }
 .watch-conn[data-s="reconnecting"] i { background: var(--warn); }
 .watch-conn[data-s="closed"] i { background: var(--bad); }
-.watchkeys { position: absolute; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); z-index: 3; display: flex; gap: 4px; padding: 4px; border: 1px solid var(--edge); border-radius: var(--r-3); background: var(--frame); box-shadow: 0 6px 18px oklch(0 0 0 / 0.22); }
-.watchkeys .mini { min-width: 44px; height: 44px; color: var(--ink); font-size: var(--fs-4); }
-.watchkeys .watch-level { font-variant-numeric: tabular-nums; font-size: var(--fs-3); }
+.watch-only { flex: none; padding: 1px 8px; border-radius: 999px; background: var(--hover); color: var(--ink-2); font-size: var(--fs-1); font-weight: var(--fw-name); }
+.watchkeys { display: flex; flex: none; align-items: center; gap: 2px; }
+.watchkeys .mini { min-width: 32px; height: 32px; padding: 0 6px; border-radius: var(--r-2); color: var(--ink); font-size: var(--fs-4); }
+.watchkeys .watch-level { min-width: 40px; font-variant-numeric: tabular-nums; font-size: var(--fs-2); color: var(--ink-2); }
 body[data-role="watch"][data-stream="ws"] .stage { touch-action: none; overflow: hidden; }
 body[data-role="watch"][data-stream="ws"] .frame { transform-origin: 0 0; }
-body[data-role="watch"][data-stream="ws"][data-s="closed"] .watchkeys { display: none; }
-body[data-role="watch"][data-stream="ws"] #state { display: none; } /* the bar says it */
+body[data-role="watch"][data-stream="ws"] #state, body[data-role="watch"][data-stream="ws"][data-s="closed"] .watchkeys { display: none; }
 @media (max-width: 640px) {
   body[data-role="watch"][data-stream="ws"] { height: 100vh; height: 100dvh; }
-  body[data-role="watch"][data-stream="ws"] .side, body[data-role="watch"][data-stream="ws"] #side-btn,
-  body[data-role="watch"][data-stream="ws"] #overview-btn, body[data-role="watch"][data-stream="ws"] #overview { display: none; }
+  body[data-role="watch"][data-stream="ws"] .side, body[data-role="watch"][data-stream="ws"] #side-btn, body[data-role="watch"][data-stream="ws"] #overview-btn, body[data-role="watch"][data-stream="ws"] #overview { display: none; }
   body[data-role="watch"][data-stream="ws"] .window, body[data-role="watch"][data-stream="ws"] .activity { grid-column: 1 / -1; }
+  body[data-role="watch"][data-stream="ws"] .window { border-left: 0; }
+  body[data-role="watch"][data-stream="ws"] .watchkeys .mini { min-width: 44px; height: 44px; }
+  body[data-role="watch"][data-stream="ws"] .watchkeys .watch-level { min-width: 44px; }
+  body[data-role="watch"][data-stream="ws"] .strip { padding: 6px 8px 0; }
+  body[data-role="watch"][data-stream="ws"] .tab:not([aria-selected="true"]), body[data-role="watch"][data-stream="ws"] .tab .agent, body[data-role="watch"][data-stream="ws"] .tab .claude { display: none; }
+  body[data-role="watch"][data-stream="ws"] .tab { flex: 1 1 auto; width: auto; max-width: none; }
+  body[data-role="watch"][data-stream="ws"] .stage { align-items: flex-start; }
+  body[data-role="watch"][data-stream="ws"] .activity { flex-direction: column; align-items: stretch; gap: 6px; min-height: 0; padding: 10px 12px; padding-bottom: max(10px, env(safe-area-inset-bottom)); border-left: 0; overflow: hidden; }
+  body[data-role="watch"][data-stream="ws"] .activity .driver { display: inline-flex; }
+  body[data-role="watch"][data-stream="ws"] .activity ol { flex-direction: column; gap: 6px; flex: none; mask-image: none; }
+  body[data-role="watch"][data-stream="ws"] .activity li:nth-child(n+4) { display: none; }
+  body[data-role="watch"][data-stream="ws"] .activity li, body[data-role="watch"][data-stream="ws"] .activity li:nth-child(-n+3) { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  body[data-role="watch"][data-stream="ws"] .activity li + li::before { content: none; }
+  body[data-role="watch"][data-stream="ws"] .activity li > * + * { margin-left: 6px; }
 }
 
 /* Network (ui/network.js) in the Profile drawer, the owner's only: proxies, the form, a test's

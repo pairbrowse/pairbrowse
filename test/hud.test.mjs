@@ -1331,3 +1331,26 @@ test("a new viewport size takes the agent's cursor and outline down; its next cu
     await browser.close();
   }
 });
+
+test("a hand-off's \"Your turn\" that is over comes down (dropBadge): the agents' own statuses show again; any other badge stands", async () => {
+  const { createHud } = await import("../scripts/daemon/hud.mjs");
+  const { CHALLENGE_TURN } = await import("../scripts/popups.mjs");
+  const page = { isClosed: () => false, url: () => "https://example.com/", evaluate: async () => undefined };
+  const shown = [];
+  const hud = createHud({ pages: async () => [page], participants: () => ["a"], waiting: () => null, liveView: () => ({ setStatus: (b) => shown.push(b) }), notify: () => {} });
+  await hud.setBadgeFor("a", "Filling the form", "claude");
+  await hud.setBadge(CHALLENGE_TURN, "you");
+  // Another text than the badge's: nothing happens.
+  await hud.dropBadge("Sign in");
+  assert.equal(hud.badge().text, CHALLENGE_TURN);
+  // The check's "Your turn" is over: the agent's own status is back on the badge.
+  await hud.dropBadge(CHALLENGE_TURN);
+  assert.deepEqual(hud.badge(), { text: "Filling the form", kind: "claude", color: hud.badge().color });
+  assert.equal(shown.at(-1).text, "Filling the form");
+  // No agent status left: the badge goes.
+  await hud.setBadgeFor("a", "", "clear");
+  await hud.setBadge(CHALLENGE_TURN, "you");
+  await hud.dropBadge(CHALLENGE_TURN);
+  assert.deepEqual(hud.badge(), { text: "", kind: "clear", color: "" });
+  assert.deepEqual(shown.at(-1), { text: "", kind: "clear", color: "" });
+});

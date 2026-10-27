@@ -63,6 +63,8 @@
       } catch { agentTargets = null; }
       return true;
     }
+    // The badge as the person reads it in the page ("" when none shows): tests (pairbrowse_test_badge).
+    if (kind === "badge-state") return host?.isConnected ? String(box?.querySelector("span")?.textContent || "") : "";
     if (kind === "bar") {
       setBar(text);
       return true;

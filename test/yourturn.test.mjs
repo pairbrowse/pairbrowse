@@ -51,7 +51,14 @@ function setup({ enabled = true, away = true, server = false, channels = [{ type
     page: null,
     badgeNow: { text: "", kind: "clear" },
     async setBadge(text, kind) { badges.push({ text, kind }); this.badgeNow = { text, kind }; },
-    async setBadgeFor(p, text, kind) { badges.push({ p, text, kind }); yt.onBadge(p, { kind, text, color: "" }); },
+    statuses: new Map(),
+    async setBadgeFor(p, text, kind) {
+      badges.push({ p, text, kind });
+      if (kind === "clear" || !text) this.statuses.delete(p); else this.statuses.set(p, { text, kind });
+      yt.onBadge(p, { kind, text, color: "" });
+    },
+    statusOf(p) { return this.statuses.get(p) || null; },
+    async dropBadge(text) { if (this.badgeNow.kind === "you" && this.badgeNow.text === text) await this.setBadge("", "clear"); },
     badge() { return this.badgeNow; },
     sparkPage() { return this.page; },
     sparkColor: () => "#E8743B",
@@ -869,4 +876,56 @@ test("a desktop with a linked channel sends every step to the phone too; handoff
   assert.match(await s.yt.onStatus("p1", { kind: "you", text: "Please sign in", step: "login" }, page), /^Your turn sent \(webhook\)/);
   assert.equal(s.grants.open().length, 1);
   assert.equal(s.sent.filter((m) => m.event === "pairbrowse.turn").length, 1);
+});
+
+test("the person ends a hand-off (Done, the window): the window's \"Your turn\" comes down by itself, without an agent's status; another open step's stands", async () => {
+  // PairBrowse's own check, Done on the phone: the badge (and with it the bar and the side panel's
+  // row) and the Tools tab's entry go at once.
+  const s = setup();
+  const check = pageAt("https://www.example.org/recaptcha/demo");
+  s.yt.onChallenge(CHALLENGE_TURN, check);
+  await tick(); await tick();
+  assert.deepEqual(s.hud.badgeNow, { text: CHALLENGE_TURN, kind: "you" });
+  const [c] = s.grants.open();
+  s.grants.end(c.id, "done");
+  await tick(); await tick();
+  assert.deepEqual(s.hud.badgeNow, { text: "", kind: "clear" }, "the check's Your turn is down");
+  assert.equal(s.handoffs.list().length, 0, "and its Tools tab entry");
+  // The same check ended by the window: down too.
+  s.yt.onChallenge(CHALLENGE_TURN, pageAt("https://other.example/check"));
+  await tick(); await tick();
+  s.grants.end(s.grants.open()[0].id, "window");
+  await tick(); await tick();
+  assert.deepEqual(s.hud.badgeNow, { text: "", kind: "clear" });
+
+  // An agent's "you", Done on the phone: its "you" status goes (the bar with it); its wait returns.
+  const page = pageAt("https://shop.example/login");
+  s.hud.page = page;
+  await s.hud.setBadgeFor("p1", "Sign in, then press Done", "you");
+  await s.yt.onStatus("p1", { kind: "you", text: "Sign in, then press Done", step: "login" }, page);
+  const [g] = s.grants.open();
+  const waiting = s.yt.ended(page, "p1");
+  s.grants.end(g.id, "done");
+  assert.deepEqual(await waiting, { id: g.id, reason: "done" });
+  await tick(); await tick();
+  assert.equal(s.hud.statusOf("p1"), null, "the agent's Your turn is down");
+  assert.deepEqual(s.badges.at(-1), { p: "p1", text: "", kind: "clear" });
+
+  // The agent's status says another step by the time the person presses Done: it stands.
+  await s.hud.setBadgeFor("p1", "Enter the code", "you");
+  await s.yt.onStatus("p1", { kind: "you", text: "Enter the code", step: "2fa" }, page);
+  await s.hud.setBadgeFor("p1", "Approve the payment", "you");
+  s.grants.end(s.grants.open()[0].id, "done");
+  await tick(); await tick();
+  assert.deepEqual(s.hud.statusOf("p1"), { text: "Approve the payment", kind: "you" }, "a different step's Your turn stands");
+
+  // The agent's own next status (agent) or a cleared check never take down an agent's "you".
+  const t = setup();
+  const tab = pageAt("https://shop.example/pay");
+  t.hud.page = tab;
+  await t.hud.setBadgeFor("p2", "Approve it", "you");
+  await t.yt.onStatus("p2", { kind: "you", text: "Approve it", step: "payment" }, tab);
+  t.grants.end(t.grants.open()[0].id, "revoked");
+  await tick(); await tick();
+  assert.deepEqual(t.hud.statusOf("p2"), { text: "Approve it", kind: "you" }, "called off: the agent's status is its own");
 });

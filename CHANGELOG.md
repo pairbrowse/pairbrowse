@@ -5,6 +5,21 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## Unreleased
+
+PairBrowse is a plugin for Claude Code and Codex: the agent fills in forms, signs up for services
+and clicks through websites in a visible browser window on your computer, while you watch every
+step and take over the parts only a person can do, in the window or from your phone.
+
+**Fixed**
+
+- **"Your turn" goes away as soon as you finish the step.** When PairBrowse hands you a step (a
+  CAPTCHA it saw on the page, or a sign-in the agent asked you to do) and you finish it, by
+  pressing **Done** on your phone or by doing it in the PairBrowse window, the "Your turn" label
+  in the page and the hand-off row in the side panel now go away at once. Before, they could stay
+  up until the agent spoke again, for example after solving a CAPTCHA whose green tick stays on
+  the page. A different step the agent still waits on keeps its own "Your turn".
+
 ## 0.18.1 (2026-10-27)
 
 PairBrowse is a plugin for Claude Code and Codex: the agent fills in forms, signs up for services

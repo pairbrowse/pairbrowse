@@ -41,6 +41,7 @@ export function applyTestGate(env = process.env) {
 export const SWITCHES = {
   ACTIVE_MS: "how long an agent's connection counts as active (serve.mjs)",
   APPROVAL: "pairbrowse_test_approval: the approval card, clicked as a person would",
+  BADGE: "pairbrowse_test_badge: the badge (\"Your turn: ...\") each tab shows, as the person reads it",
   CRASH_WINDOW_MS: "the crash-loop guard's window and hold, in place of 5 minutes (daemon/browser/supervise.mjs)",
   FAILOVER_MS: "how long a joiner waits on a silent tunnel before the standby (sharing/join-client.mjs)",
   FILL: "pairbrowse_test_fill: a field in a tab set as a person would (a card number no agent may type)",

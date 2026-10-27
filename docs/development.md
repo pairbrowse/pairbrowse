@@ -139,6 +139,7 @@ is under the temp folder with a linked runtime), so none reaches an installed he
 | `SHOTS` | gate | you: a folder | `ui-screen` and `ui-right` save screenshots there |
 | `ACTIVE_MS` | knob | `integration/tour-fixes` | How long an agent's connection counts as active |
 | `APPROVAL` | knob | `integration/approval`, `integration/test-gate` | Adds `pairbrowse_test_approval`: the approval card, clicked as a person would |
+| `BADGE` | knob | `integration/handoff-done` | Adds `pairbrowse_test_badge`: the badge each tab shows ("Your turn: ..."), as the person reads it in the page |
 | `CRASH_WINDOW_MS` | knob | `integration/server-display` | The crash-loop guard's window and hold (5 minutes otherwise): three closes within it stop starts for that long |
 | `FILL` | knob | `integration/join`, `integration/shared-rules` | Adds `pairbrowse_test_fill`: a field in a tab set as a person would (`page.fill`), for card numbers no agent may type |
 | `FAILOVER_MS` | knob | `failover`, `integration/connections` | How long a joiner waits on a silent tunnel before the standby |

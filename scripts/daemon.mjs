@@ -640,8 +640,7 @@ const serve = createServe({
   onRunStatus: (...a) => yourTurn.onRunStatus(...a), yourTurn, onRunDone: (r) => phonelink.runDone(r), // a fast-mode run's hand-off step; hand-offs (B10 masking)
   config, log, host: HOST, createConnection, clients, collaboration, tabClaims, context, hud, presence, popups, output, screenshots,
   secrets, facts, sharing, follow, pause, remoteHolder, personTabs, reconnecting: (except) => liveView()?.reconnecting?.(except) || null, front: () => tabOrder.front(4000), drainHostNotes: () => hostNotes.splice(0), revision: () => revision, bumpRevision, session, shareMessage, recorder, tabNames: tabLabels, journal, timeline, clickApprovals, outlines, updateNote: () => handoff.note(),
-  // Tests only (PAIRBROWSE_TEST_TAB_ORDER=1): read and move tabs in the strip, as a person would
-  // by dragging them; no app gets this tool otherwise.
+  // Tests only: each tool behind its own switch (testenv.mjs SWITCHES); no app gets them otherwise.
   testTools: {
     // Tests only (PAIRBROWSE_TEST_MEMORY=1): how many listeners the browser has for its own end,
     // which grows with every session that came and went if their servers' listeners are kept.
@@ -653,7 +652,8 @@ const serve = createServe({
       const m = process.memoryUsage();
       return { text: JSON.stringify({ close: ctx?.listenerCount("close") ?? -1, disconnected: ctx?.browser?.()?.listenerCount("disconnected") ?? -1, contexts: ctx ? contextCount(ctx) : -1, screenshots: screenshots.held().size, clients: clients.size, rss: m.rss, heapUsed: m.heapUsed, heapTotal: m.heapTotal, external: m.external, arrayBuffers: m.arrayBuffers }) };
     } } : {}),
-    ...(testOn("TAB_ORDER") ? { pairbrowse_test_tab_order: (args) => tabOrder.testCommand(args) } : {}),
+    ...(testOn("TAB_ORDER") ? { pairbrowse_test_tab_order: (args) => tabOrder.testCommand(args) } : {}), // tabs in the strip, moved as a person drags them
+    ...(testOn("BADGE") ? { pairbrowse_test_badge: async () => ({ text: JSON.stringify(await Promise.all((await context.openPages()).filter((p) => !p.isClosed()).map(async (p) => ({ url: p.url(), badge: await within(2000, Promise.resolve(hud.call(p, "", "badge-state")).catch(() => null)) })))) }) } : {}), // the badge each tab shows, as its text reads
     ...(testOn("FILL") ? { pairbrowse_test_fill: async ({ url, selector, value } = {}) => { const p = (await context.openPages()).find((x) => !x.isClosed() && x.url() === url); return (await within(5000, p ? p.fill(String(selector), String(value), { timeout: 4000 }).then(() => true, () => false) : Promise.resolve(false))) ? { text: "filled" } : { text: "not filled", error: true }; } } : {}), // tests only (FILL): a field set as a person would, card numbers included (no agent may type them)
     // Tests only (PAIRBROWSE_TEST_JOIN_PROMPT=1): the join request in each tab's bottom bar, and
     // clicks on it as a person would (a trusted click), as an agent's or a joiner's input would,

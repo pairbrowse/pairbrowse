@@ -212,7 +212,9 @@ export function createYourTurn({ config, grants, notifier, sends, handoffs, jour
   // null when hand-offs stay in the window. key: the Tools tab's key ("status:<p>", "run:<p>",
   // "check"). A replacement after a restart (B16): expiresAt, the lost link's deadline, and
   // reminded, whether its one reminder went already.
-  async function start({ key, participant = null, page, action, expiresAt = null, reminded = false }) {
+  // shown: the "Your turn" text the window shows for this step (its badge), taken down when the
+  // person ends the step (dropShown).
+  async function start({ key, participant = null, page, action, expiresAt = null, reminded = false, shown = "" }) {
     if (!sends() || !wants(action)) return null;
     if (!page || page.isClosed?.()) return { line: "Your turn shows in the PairBrowse window; there is no tab of yours to hand over to the user's phone." };
     // A message names the site's host: a tab on no site (about:blank, a file) stays in the window.
@@ -231,6 +233,7 @@ export function createYourTurn({ config, grants, notifier, sends, handoffs, jour
       if (same) {
         if (same.key !== key) (same.also ??= new Set()).add(key);
         if (participant && !same.participant) same.participant = participant;
+        if (shown) (same.shown ??= new Map()).set(key, shown);
         log(`hand-off ${same.id}: the same step again; its link stands`);
         return { id: same.id, line: sentLine(same, same.sent.length ? { sent: same.sent } : null) };
       }
@@ -244,7 +247,7 @@ export function createYourTurn({ config, grants, notifier, sends, handoffs, jour
       log(`hand-off: no grant (${e?.message || e})`);
       return { line: "The hand-off link couldn't be made (daemon.log says why): tell the user directly. They can do the step in the PairBrowse window." };
     }
-    const t = { id: g.id, key, participant, page, action, host: hostOf(page), session, expiresAt: g.expiresAt, sent: [], timer: null, reminded: !!reminded, since: Date.now(), unwatch: null };
+    const t = { id: g.id, key, participant, page, action, host: hostOf(page), session, expiresAt: g.expiresAt, sent: [], timer: null, reminded: !!reminded, since: Date.now(), unwatch: null, shown: new Map(shown ? [[key, shown]] : []) };
     turns.set(t.id, t);
     watchWindow(t);
     keep(t);
@@ -360,11 +363,32 @@ export function createYourTurn({ config, grants, notifier, sends, handoffs, jour
     if (reason === "expired") { timedOut(t).catch((e) => log(`hand-off timeout: ${e?.message || e}`)); return; }
     // Its Tools tab entries go at once (the agent moved on, Done, the window): nothing waits any more.
     if (!KEEP.has(reason)) for (const key of [t.key, ...(t.also || [])]) handoffs.clear(key);
+    dropShown(t, reason);
     hostNote(endNote(t, reason));
     // The browser comes back by itself: recover() sends the new link, or the ended message then.
     if (reason === "browser-restarted" && k && keptAlive()) { k.deferred = true; return; }
     if (reason !== "done" && t.sent.length) send({ kind: "ended", id: t.id, action: t.action, host: t.host, link: null, expiresAt: t.expiresAt, reason }).catch(() => {});
   });
+
+  // The window's "Your turn" for a hand-off that ended comes down by itself (the badge, the bar in
+  // every tab, the side panel's row): PairBrowse's own check's on every end but the agent's (the
+  // check is over or its tab gone), a run's step and an agent's "you" only when the person ended
+  // it (Done, the window). An agent's "you" goes only while it still says this step and no other
+  // hand-off of that agent is open; its next status is its own again. A restart's end (KEEP) and
+  // the expiry ("Timed out", timedOut) keep theirs.
+  const quietly = (fn) => { try { Promise.resolve(fn()).catch(() => {}); } catch {} };
+  function dropShown(t, reason) {
+    if (KEEP.has(reason) || reason === "expired" || reason === "agent" || !t.shown?.size) return;
+    const byPerson = reason === "done" || reason === "window";
+    for (const [key, text] of t.shown) {
+      if (key === "check" || (byPerson && key.startsWith("run:"))) { quietly(() => hud.dropBadge(text)); continue; }
+      if (!byPerson || !key.startsWith("status:")) continue;
+      const participant = key.slice("status:".length);
+      if ([...turns.values()].some((o) => hasKey(o, key))) continue; // another step of this agent's is open
+      const st = hud.statusOf?.(participant);
+      if (st?.kind === "you" && st.text === text) quietly(() => hud.setBadgeFor(participant, "", "clear"));
+    }
+  }
 
   // A hand-off that may not come back: the ended message it was spared (stopped safely), once.
   function giveUp(id, k) {
@@ -384,6 +408,13 @@ export function createYourTurn({ config, grants, notifier, sends, handoffs, jour
     return setupLines({ verification: (VERIFICATION[action] || VERIFICATION.other)(hostOf(page) || "this site"), items });
   }
 
+  // What the window shows now for a step that comes back after a restart (recover): the check's
+  // own words, or the agent's "you" while it still stands.
+  const shownNow = (key, participant) => {
+    if (key === "check") return CHALLENGE_TURN;
+    const st = participant && key === `status:${participant}` ? hud.statusOf?.(participant) : null;
+    return st?.kind === "you" ? String(st.text || "") : "";
+  };
   const endKey = (key, reason) => { for (const t of [...turns.values()]) if (hasKey(t, key)) grants.end(t.id, reason); };
   const actionOf = (step, text) => (ACTIONS.includes(step) ? step : handoffKind(text));
 
@@ -396,7 +427,7 @@ export function createYourTurn({ config, grants, notifier, sends, handoffs, jour
       if (args.kind !== "you") { steps.delete(participant); endKey(key, "agent"); return ""; }
       const action = actionOf(args.step, args.text);
       steps.set(participant, action);
-      const r = await start({ key, participant, page, action });
+      const r = await start({ key, participant, page, action, shown: String(args.text || "") });
       return r ? [r.line, report(action, page)].filter(Boolean).join("\n") : "";
     },
     // The badge's statuses (hud.mjs onStatus): the Tools tab's hand-off entry for an agent's "you".
@@ -414,7 +445,7 @@ export function createYourTurn({ config, grants, notifier, sends, handoffs, jour
       if (kind === "you") {
         const action = handoffKind(text);
         handoffs.set(key, { text, page: page || null, kind: action, by: { label: label || "Agent", color: hud.sparkColor(participant) } });
-        start({ key, participant, page, action }).then((r) => {
+        start({ key, participant, page, action, shown: String(text || "") }).then((r) => {
           if (!r?.id) return;
           log(`hand-off ${r.id}: a fast-mode step`);
           const lines = report(action, page);
@@ -428,7 +459,7 @@ export function createYourTurn({ config, grants, notifier, sends, handoffs, jour
       hud.setBadge(text, "you").catch(() => {});
       handoffs.set("check", { text, page: page || null, kind: "captcha", by: { label: "PairBrowse", color: "" } });
       if ([...turns.values()].some((t) => hasKey(t, "check") && t.page === page)) return;
-      start({ key: "check", page, action: "captcha" }).then((r) => {
+      start({ key: "check", page, action: "captcha", shown: text }).then((r) => {
         if (!r?.id) return;
         log(`hand-off ${r.id}: a check on the page`);
         const lines = report("captcha", page);
@@ -439,7 +470,7 @@ export function createYourTurn({ config, grants, notifier, sends, handoffs, jour
     // hand-off ends and a tab it held is the person's again.
     onChallengeCleared() {
       const text = hud.badge().text;
-      if (text === CHALLENGE_TURN || (checkTimedOut && text === checkTimedOut.text)) hud.setBadge("", "clear").catch(() => {});
+      if (text === CHALLENGE_TURN || (checkTimedOut && text === checkTimedOut.text)) quietly(() => hud.dropBadge(text));
       if (checkTimedOut) { try { grants.release(checkTimedOut.page); } catch {} checkTimedOut = null; }
       handoffs.clear("check");
       endKey("check", "cleared");
@@ -477,7 +508,7 @@ export function createYourTurn({ config, grants, notifier, sends, handoffs, jour
         kept.delete(id);
         const page = (k.page && successorOf(k.page)) || tabAt(Array.isArray(open) ? open : [], k.entry.url);
         if (page && k.entry.expiresAt - now() > REISSUE_MIN_MS) {
-          const r = await start({ key: k.entry.key, participant: k.participant, page, action: k.entry.action, expiresAt: k.entry.expiresAt, reminded: k.entry.reminded }).catch(() => null);
+          const r = await start({ key: k.entry.key, participant: k.participant, page, action: k.entry.action, expiresAt: k.entry.expiresAt, reminded: k.entry.reminded, shown: shownNow(k.entry.key, k.participant) }).catch(() => null);
           if (r?.id) { log(`hand-off ${id}: replaced by ${r.id} after the restart`); continue; }
         }
         giveUp(id, k);

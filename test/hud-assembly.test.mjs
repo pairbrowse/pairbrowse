@@ -11,10 +11,9 @@ import { HUD_PARTS, hudPart, hudSource } from "../scripts/hud/assemble.mjs";
 import { hudScript } from "../scripts/browser.mjs";
 
 // SHA-256 of scripts/hud.js before the split (commit 9c462de): the parts change nothing. A
-// deliberate change to the page script updates this value with it (last: the
-// shadow roots' CSS as constructed stylesheets, so a page whose CSP allows no inline styles keeps
-// the bar, the badge, the cursor and the pointers styled).
-const PRE_SPLIT_SHA256 = "fb1171e762e995ebd3c79bac9506e21945a744f3d3aadebdcb6e892c07646af4";
+// deliberate change to the page script updates this value with it (last: the badge as the person
+// reads it, for tests: "badge-state").
+const PRE_SPLIT_SHA256 = "d8657b4316e974760361db33aac539a46e102d6900724498b57a776c0e4f26cc";
 const PLACEHOLDERS = ["__PB_NAME__", "__PB_TOKEN__", "__PB_TAG_HUD__", "__PB_TAG_BAR__", "__PB_TAG_CURSOR__", "__PB_AGENT_COLOR__", '"__PB_MOTION__"'];
 
 test("the parts joined are the page script as it was in one file", () => {

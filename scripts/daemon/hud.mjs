@@ -192,10 +192,22 @@ export function createHud({ pages, waiting, liveView, notify, pause = () => ({ b
     }
     try { onStatus(participant, statuses.get(participant) || null); } catch {} // the Tools tab's hand-offs
     if (badge.kind === "you" && badge.text === CHALLENGE_TURN) return; // PairBrowse's own hand-off stands
+    await showStatuses();
+  }
+  // The agents' statuses on the badge: a "you" over the others, else the latest, else nothing.
+  async function showStatuses() {
     const all = [...statuses.values()].sort((a, b) => b.t - a.t);
     const shown = all.find((s) => s.kind === "you") || all[0];
     if ((shown?.text || "") === badge.text && (shown?.kind || "clear") === badge.kind && (shown?.color || "") === badge.color) return; // as shown already
     await setBadge(shown?.text || "", shown?.kind || "clear", shown?.color || "");
+  }
+  // A "Your turn" that is over (its hand-off ended: Done, the window, the check cleared) comes down
+  // if the badge still shows it, and the agents' own statuses show again; any other badge stands.
+  async function dropBadge(text) {
+    if (!text || badge.kind !== "you" || badge.text !== String(text)) return;
+    badge = { text: "", kind: "clear", color: "" };
+    if (statuses.size) await showStatuses();
+    else await setBadge("", "clear");
   }
   const statusOf = (participant) => statuses.get(participant) || null;
   // The badge in every tab and the live view. kind "you" also notifies the user. color: the
@@ -400,7 +412,7 @@ export function createHud({ pages, waiting, liveView, notify, pause = () => ({ b
     // The page script's name and key: forms.mjs reads and claims fields through it.
     key: [HUD_NAME, HUD_TOKEN],
     refreshBars: () => pages().then((all) => all.forEach(applyBar)).catch(() => {}),
-    source, call, ensure, onPageLoad, applyBar, setReconnecting, setRecording, setSandboxOff, setBadge, setBadgeFor, statusOf, badge: () => badge,
+    source, call, ensure, onPageLoad, applyBar, setReconnecting, setRecording, setSandboxOff, setBadge, setBadgeFor, dropBadge, statusOf, badge: () => badge,
     moveSpark, sparkPage, sparkOwner, sparkList, hideCursor, forgetPage, sparkColor, setApp, forgetParticipant, adoptParticipant, clearSparks: () => { sparks.clear(); sparksChanged(); }, onSparks: (fn) => { sparkListeners.add(fn); return () => sparkListeners.delete(fn); }, onCursor: (fn) => { cursorListeners.add(fn); return () => cursorListeners.delete(fn); }, setSharedSpark, sharedSpark, setPersonMark, tabIcon, readPointer, showPointers,
     addActivity, onActivity: (fn) => { listeners.add(fn); return () => listeners.delete(fn); }, lastIn: (page) => lastInTab.get(page) || null, cursorTo, showCursor, markTargets,
     pressOn, declarePress, onPress: (fn) => { pressListeners.add(fn); return () => pressListeners.delete(fn); },

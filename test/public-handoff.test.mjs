@@ -353,3 +353,37 @@ test("yourturn: when the public link couldn't start the message still goes, with
   assert.equal(sent.find((m) => m.kind === "reminder").privateOnly, true);
   yt.stop?.().catch?.(() => {});
 });
+
+// A clean session (a temporary one, clean-<n>) is shown as "Clean session", which is no session's
+// name: its hand-off links were 404 everywhere (every key matched against the shown name). The live
+// view matches grants against the session's own name (sharing.mjs passes view.sessionName).
+test("a hand-off in a clean session: its link opens (grants are matched against the session's own name, not its shown name)", async () => {
+  const tabs = fakeTabs(["https://www.google.com/recaptcha/api2/demo"]);
+  const grants = createGrants({});
+  const view = await startLiveView({ getContext: async () => tabs.ctx, currentUrl: async () => tabs.pages[0].url(), grants, publicHost: () => PUB, sessionName: () => "clean-1793084332782" });
+  view.setSession({ name: "Clean session", where: "Local", temporary: true });
+  try {
+    const g = grants.mint({ session: "clean-1793084332782", page: tabs.pages[0], action: "captcha" });
+    const landing = await request(view.guestPort, "GET", `/${g.redeemKey}/`);
+    assert.equal(landing.status, 200, "the public link's landing page");
+    assert.match(landing.text, /Take over/);
+    const tap = await request(view.guestPort, "POST", `/${g.redeemKey}/redeem`, { body: {}, origin: ORIGIN });
+    assert.equal(tap.status, 200);
+    const viewer = await request(view.guestPort, "GET", JSON.parse(tap.text).view);
+    assert.equal(viewer.status, 200, "the turn viewer");
+    assert.equal(grants.open().length, 1, "the grant is still open");
+  } finally { view.close(); }
+});
+
+test("sharing hands the live view the session's own name for matching hand-off grants", async () => {
+  const hostNote = () => {};
+  hostNote.drop = () => {};
+  const live = { url: "http://127.0.0.1:4123/ownerkey/", port: 4123, guestPort: 4999, setStatus() {}, setSession() {}, setCollaboration() {}, setDev() {}, close() {}, watchGrants() {} };
+  const view = { currentUrl: () => "about:blank", getContext: async () => ({ pages: () => [] }), status: () => ({}), session: () => ({ name: "Clean session" }), sessionName: () => "clean-42", collaboration: () => ({}), secretDomains: () => [], grants: createGrants({}) };
+  let opts = null;
+  const sharing = createSharing({ config: {}, log: () => {}, host: "Me", view, notify() {}, hostNote, startLive: async (o) => { opts = o; return live; } });
+  try {
+    await sharing.ensureLiveView();
+    assert.equal(opts.sessionName(), "clean-42");
+  } finally { sharing.stopTunnel?.(); }
+});

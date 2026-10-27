@@ -153,7 +153,8 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
       timeline: view.timeline, mask: view.mask, layoutDefaults: view.layoutDefaults, settings: view.settings, reporter: view.reporter || null, clickApprovals: view.clickApprovals || null, handoff: view.handoff || null,
       sessionOps: view.sessionOps || null, outlines: view.outlines || null, tools: view.tools || null, capture: view.capture || null, covers: view.covers || null,
       onPagesKey: view.onPagesKey || (() => {}), onPersonInput: view.onPersonInput || (() => {}), activityLog: view.activityLog || null,
-      grants: view.grants || null, publicHost: () => tun.handoffHost(), publicShared: () => tun.handoffShared(),
+      // The open session's own name (a clean session's is clean-<n>; its shown name, "Clean session", is no session's): hand-off grants are matched against it.
+      sessionName: view.sessionName, grants: view.grants || null, publicHost: () => tun.handoffHost(), publicShared: () => tun.handoffShared(),
       // Hand-offs on the public address only while its link is on (a tunnel kept for watch links never carries them).
       grantsPublic: () => config.handoff?.publicLink === true,
     });

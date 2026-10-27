@@ -36,6 +36,10 @@ browser live from wherever they are.
 
 **Fixed**
 
+- **Hand-off links open in a clean session:** when the agent handed you a step (a CAPTCHA, a
+  sign-in) while the browser ran a clean, throwaway session, the link sent to your phone showed
+  only "404", on the first open and every one after. The link now opens its page with Take over,
+  as in any other session.
 - **The approval card names the agent clearly:** when an agent asks you to allow a final click
   (pay, send, submit), the card in the page drew what it wants on top of the agent's name. It now
   reads "Claude wants to click" on one line, and a long name is shortened instead.

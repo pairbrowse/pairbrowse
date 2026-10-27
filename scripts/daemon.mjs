@@ -525,7 +525,7 @@ const sharing = createSharing({
         refreshTabs();
       },
     },
-    status: () => hud.badge(), session: () => context.sessionInfo(), collaboration: () => collaboration.state(),
+    status: () => hud.badge(), session: () => context.sessionInfo(), sessionName: () => context.sessionName(), collaboration: () => collaboration.state(),
     // Named final clicks asked in the browser (owner only). Declared further down: read when the
     // live view starts, after startup.
     get clickApprovals() { return clickApprovals; }, get handoff() { return phonelink; }, // the Handoff page's routes and event

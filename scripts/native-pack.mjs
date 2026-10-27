@@ -18,14 +18,14 @@
 // build yet.
 export const NATIVE = {
   version: "155.0.8059.84",
-  arm64: { file: "pairbrowse-155.0.8059.84-macos-arm64.zip", sha256: "f0b6510a3778e4120acfaee1a6a17e51cc699c381663dc70d46d4abc7a1509e3" },
-  x64: { file: "pairbrowse-155.0.8059.84-macos-x86_64.zip", sha256: "090cedf0ddaa4d6d805a77d8431552d9f688aff65878b731e0df5c20205a8793" },
-  linux: { file: "pairbrowse-155.0.8059.84-linux-x64.tar.xz", sha256: "68f8b97a1ce339f45451c78ea5baa7dbfff7bfccd716688b749a6104869cf4d9" },
+  arm64: { file: "pairbrowse-155.0.8059.84-3-macos-arm64.zip", sha256: "eaba6a33b18b0a7fcc33e0d3aaad451fb61f2059068b797ab412fc3c5cfa6e26" },
+  x64: { file: "pairbrowse-155.0.8059.84-3-macos-x86_64.zip", sha256: "e1036dbf333e105315d7dc8f2fb3ab3d3d1b64700952b18b9db2d8ecff1f1f7c" },
+  linux: { file: "pairbrowse-155.0.8059.84-3-linux-x64.tar.xz", sha256: "9ea8438c356b660cf4a9fdcc365049e231248955900ad713a3c3071a149e47f6" },
   windows: { file: "pairbrowse-155.0.8059.84-windows-x64.zip", sha256: null },
   engine: {
-    file: "pairbrowse-engine-155.0.8059.84.tgz",
-    sha256: "62e114ab894d17e57e0bb0ffe90146fd5b3b83df026fa85615981a0a5d455107",
-    files: { "engine.mjs": "25b28028a123e124d20e84dcb71a6789586a8c4e231cda00e6b0cf10d2d13ece", "collector.js": "74119914770bc592c92f3b7b25da65a1cb464f78f381ab5b27c981756f11d4e6" },
+    file: "pairbrowse-engine-155.0.8059.84-2.tgz",
+    sha256: "e58d1f67fb59cc547dc0b82313839c7b7fc85fbb8d68ba5b496af3645577b571",
+    files: { "engine.mjs": "645e87504073c98082f57b0453dd9e81a8e010847a951c61800af9e0ac431d38", "collector.js": "74119914770bc592c92f3b7b25da65a1cb464f78f381ab5b27c981756f11d4e6" },
   },
   baseUrl: "https://github.com/pairbrowse/pairbrowse/releases/download/browser-155.0.8059.84",
 };

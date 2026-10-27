@@ -5,6 +5,38 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## 0.18.1 (2026-10-27)
+
+PairBrowse is a plugin for Claude Code and Codex: the agent fills in forms, signs up for services
+and clicks through websites in a visible browser window on your computer, while you watch every
+step and take over the parts only a person can do. This release installs a new build of the
+PairBrowse browser, build 3 of version 155.0.8059.84 (release `browser-155.0.8059.84`), at the
+next start: it downloads the build for your computer, checks it and keeps the previous one for
+rollback.
+
+**Changed**
+
+- **The browser's own pages are up to date:** the side panel and Settings now carry everything
+  0.18.0 brought: **Copy watch link**, the tidier hand-off list, and the Handoff page without the
+  Away switch.
+- **One place to type on a new tab:** the cursor goes to the page's search box only; the address
+  bar still works with a click or Cmd+L.
+- **Clearer buttons:** the dot at the foot of the left sidebar says what Local and Live mean when
+  you point at it, the sparkle button names its shortcut, and the agent panel's collapse and
+  expand buttons sit at its foot like the left sidebar's.
+
+**Fixed**
+
+- **No dark flash before a light page:** with a light look, the first site after one of the
+  browser's own pages no longer shows dark for a moment; sites learn your light or dark choice
+  from their first request. A dark look stays dark, with no light flash either.
+- **Settings stays dark from the start,** also when opened in a background tab.
+- **Copy on the Handoff page** copies straight to the clipboard (the page may write to it, never
+  read it).
+- **Cmd+Shift+L opens and closes the left sidebar again on a Mac.**
+- **The loading screen always goes away,** even when the window draws nothing for a while, instead
+  of staying over the window and blocking clicks.
+
 ## 0.18.0 (2026-10-27)
 
 PairBrowse is a plugin for Claude Code and Codex: the agent fills in forms, signs up for services

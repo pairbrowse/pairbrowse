@@ -5,12 +5,16 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
-## Unreleased (draft)
+## 0.18.0 (2026-10-27)
 
 PairBrowse is a plugin for Claude Code and Codex: the agent fills in forms, signs up for services
 and clicks through websites in a visible browser window on your computer, while you watch every
-step and take over the parts only a person can do. This draft adds a way for anyone to watch that
-browser live from wherever they are.
+step and take over the parts only a person can do. This release makes steps handed to your phone
+work every time (a CAPTCHA, a sign-in, a code: you see the tab live on the phone and finish it
+there) and adds watch links, so anyone you choose can watch the browser live from wherever they
+are. The PairBrowse browser stays at `browser-155.0.8059.84` for now; a browser update with the
+redesigned side panel and Settings pages (the watch link button and the new hand-off list among
+them) follows. Until then, ask the agent for a watch link or send `/watch` to your bot.
 
 **New**
 

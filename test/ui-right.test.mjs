@@ -1795,6 +1795,81 @@ describe("side panel: header, agent card, people, pause, requests and folding", 
   assert.deepEqual(errors, []);
 }));
 
+// The side panel at the dock's size (346 x 977) with the review scene (scripts/dev/look/right.json:
+// six people, a goal log of four steps, Activity open, the session card): the checklist keeps at
+// least three rows in view (once squeezed to a 40 px scroll box under the Status box), the pane
+// scrolls for the rest, and nothing in the agent card overlaps; the session card's buttons keep
+// their labels whole inside the card at 346 and at 300 px (Switch session once ran past its edge).
+const LOOK_RIGHT = JSON.parse(readFileSync(new URL("../scripts/dev/look/right.json", import.meta.url), "utf8"));
+describe("side panel at 346 x 977: the checklist keeps three rows, the session buttons fit", () => pageTest("right", { native: false, viewport: { width: 346, height: 977 }, fixtures: LOOK_RIGHT.helper }, async ({ page, inPage, until, errors }) => {
+  await until("the agent card and its steps", () => !document.getElementById("agent").hidden && document.querySelectorAll("#checklist-items li[data-key]").length === 4);
+  await until("the session card", () => !document.getElementById("session-card").hidden && document.getElementById("switch-btn").checkVisibility());
+  await page.waitForTimeout(400); // the folds' opening transitions
+  const layout = () => inPage(() => {
+    const r = (e) => { const b = e.getBoundingClientRect(); return { top: b.top, bottom: b.bottom, left: b.left, right: b.right, height: b.height }; };
+    const list = document.getElementById("checklist");
+    return {
+      list: r(list), client: list.clientHeight, scrollTop: list.scrollTop,
+      rows: [...document.querySelectorAll("#checklist-items li[data-key]")].map(r),
+      status: r(document.getElementById("agent-status")), agent: r(document.getElementById("agent")),
+      people: r(document.getElementById("people")),
+    };
+  });
+  const l = await layout();
+  const three = l.rows.slice(0, 3).reduce((s, x) => s + x.height, 0);
+  assert.ok(l.client >= three - 0.5, `the checklist shows at least three rows (${l.client} px, three rows ${three} px)`);
+  assert.equal(l.scrollTop, 0);
+  for (const [i, row] of l.rows.slice(0, 3).entries()) {
+    assert.ok(row.top >= l.list.top - 0.5 && row.bottom <= l.list.bottom + 0.5, `row ${i} whole inside the checklist`);
+    assert.ok(row.bottom <= l.status.top + 0.5, `row ${i} not under the Status box`);
+  }
+  // A row past the floor is clipped by the checklist's own edge and scrolls into view there.
+  assert.equal(await inPage(() => getComputedStyle(document.getElementById("checklist")).overflowY), "auto");
+  assert.ok(l.list.bottom <= l.status.top + 0.5, "the Status box under the checklist, not over it");
+  assert.ok(l.status.bottom <= l.agent.bottom + 0.5, "the Status box inside the agent card");
+  assert.ok(l.agent.bottom <= l.people.top + 0.5, "the people rows under the agent card");
+  assert.ok(await inPage(() => { const s = document.querySelector("#pane-agent .scroll"); return s.scrollHeight > s.clientHeight; }), "the pane scrolls for the rest");
+
+  const actions = () => inPage(() => {
+    const card = document.getElementById("session-card").getBoundingClientRect();
+    return [...document.querySelectorAll("#session-actions button")].filter((b) => b.checkVisibility()).map((b) => {
+      const x = b.getBoundingClientRect();
+      return { id: b.id, inside: x.left >= card.left - 0.5 && x.right <= card.right + 0.5 && x.top >= card.top - 0.5 && x.bottom <= card.bottom + 0.5, scroll: b.scrollWidth, client: b.clientWidth };
+    });
+  });
+  for (const width of [346, 300]) {
+    await page.setViewportSize({ width, height: 977 });
+    await page.waitForTimeout(100);
+    const buttons = await actions();
+    assert.deepEqual(buttons.map((b) => b.id), ["session-save", "share-btn", "switch-btn"], `${width} px: Save, Share, Switch session`);
+    for (const b of buttons) {
+      assert.ok(b.inside, `${width} px: ${b.id} inside the session card`);
+      assert.ok(b.scroll <= b.client, `${width} px: ${b.id}'s label whole (${b.scroll} > ${b.client})`);
+    }
+  }
+  assert.deepEqual(errors, []);
+}));
+
+// The side panel with a long goal log and the review scene's people: the steps still scroll in
+// their own area, at least four row heights and at most half the panel's height, under a card
+// head that stays put; the Status box stays under the list.
+describe("side panel with a long checklist: its own scroll area between the floor and half the panel", () => pageTest("right", { native: false, viewport: { width: 346, height: 977 }, fixtures: { ...LOOK_RIGHT.helper, journal: LONG(450) } }, async ({ inPage, until, errors }) => {
+  await until("the first page", () => !document.getElementById("agent").hidden && document.querySelectorAll("#checklist-items li[data-key]").length === 200);
+  await sleep(400);
+  const box = await inPage(() => {
+    const b = document.getElementById("checklist"), row = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--row-check"));
+    return { h: b.clientHeight, sh: b.scrollHeight, floor: 4 * row, half: innerHeight / 2, bottom: b.getBoundingClientRect().bottom, status: document.getElementById("agent-status").getBoundingClientRect().top, head: document.getElementById("agent-name").getBoundingClientRect().top };
+  });
+  assert.ok(box.sh > box.h, "the steps scroll in their own area");
+  assert.ok(box.h >= box.floor - 0.5, `at least four row heights (${box.h} px)`);
+  assert.ok(box.h <= box.half + 0.5, `at most half the panel (${box.h} px)`);
+  assert.ok(box.bottom <= box.status + 0.5, "the Status box under the list");
+  await inPage(() => { const b = document.getElementById("checklist"); b.scrollTop = b.scrollHeight; });
+  await until("the second page", () => document.querySelectorAll("#checklist-items li[data-key]").length === 400);
+  assert.equal(await inPage(() => document.getElementById("agent-name").getBoundingClientRect().top), box.head, "the card head stays put");
+  assert.deepEqual(errors, []);
+}));
+
 // Without the extension's API (a plain page): defaults, no error.
 describe("side panel without the extension's API: defaults", () => pageTest("right", { native: false, bridge: false, viewport: { width: 360, height: 900 } }, async ({ page, errors }) => {
   await page.waitForTimeout(300);

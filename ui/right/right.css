@@ -173,6 +173,12 @@ body[data-paused="true"] #pause-btn::before { width: 0; height: 0; padding: 0; b
 #agent-body:not([hidden]) { display: flex; flex-direction: column; min-height: 0; }
 #agent-body > * { flex: none; }
 #agent-body > #checklist { flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; overflow-anchor: none; }
+/* The side panel (no left dock) has the people's rows, Activity and the session card under the
+   agent card too: shrinking the card to fit them all squeezed the steps to a sliver. There the card
+   keeps its height and the pane scrolls for the rest; a long list scrolls in its own area, at least
+   about three rows (four row heights) and up to half the panel's height. */
+html:not([data-host="native"]) #pane-agent .scroll:has(#agent:not([hidden])) > .status, html:not([data-host="native"]) .status > .agent { flex: none; }
+html:not([data-host="native"]) #agent-body > #checklist { max-height: max(calc(4 * var(--row-check)), 50vh); }
 .checklist ol { list-style: none; margin: var(--sp-2) 0 0; padding: 0; }
 .checklist li { display: grid; grid-template-columns: 17px 1fr; gap: var(--sp-3); align-items: center; min-height: var(--row-check); font-size: var(--fs-2); color: var(--ink); } /* mockup: the 17 px marks */
 .checklist li.empty { display: block; min-height: 0; color: var(--muted); font-size: var(--fs-2); }
@@ -403,12 +409,14 @@ body[data-recording="true"] #record-btn::before { border-radius: 2px; background
 .session-card[data-clean="true"] .sname b { color: var(--accent-ink); }
 .saved { grid-column: 2; align-self: start; font-size: var(--fs-2); line-height: 20px; color: var(--ink-2); }
 .saved[hidden] { display: none; }
-.row3 { grid-column: 1 / -1; display: flex; gap: var(--sp-2); margin-top: var(--sp-3); }
+/* A narrow panel wraps the row rather than clip a label: no button is narrower than its label, so
+   Switch session takes a line of its own when the three do not fit side by side. */
+.row3 { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-3); }
 .row3 .save { flex: 84 1 0; } .row3 .share-btn { flex: 93 1 0; } .row3 .switch { flex: 134 1 0; }
 /* In the browser Save alone takes the row (Switch session is the strip's and the left dock's, Part H). */
 html[data-host="native"] .row3 { display: grid; grid-template-columns: 1fr; }
 html[data-host="native"] .row3[hidden], html[data-host="native"] .row3.empty, html[data-host="native"] #switch-btn { display: none; }
-.row3 button { flex: 1 1 auto; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: var(--icon-gap); height: var(--ctl); padding: 0 var(--sp-2); border: 1px solid var(--edge-btn); border-radius: var(--r-2); background-color: var(--btn); color: var(--ink); font-size: var(--fs-3); font-weight: 500; white-space: nowrap; cursor: pointer; box-shadow: inset 0 1px 0 var(--edge-light); transition: background-color var(--t-hover); }
+.row3 button { flex: 1 1 auto; min-width: max-content; display: inline-flex; align-items: center; justify-content: center; gap: var(--icon-gap); height: var(--ctl); padding: 0 var(--sp-2); border: 1px solid var(--edge-btn); border-radius: var(--r-2); background-color: var(--btn); color: var(--ink); font-size: var(--fs-3); font-weight: 500; white-space: nowrap; cursor: pointer; box-shadow: inset 0 1px 0 var(--edge-light); transition: background-color var(--t-hover); }
 .row3 button[hidden] { display: none; }
 .row3 button:hover { background-color: var(--hover); }
 .row3 .share-btn[aria-expanded="true"] { background-color: var(--hover); }

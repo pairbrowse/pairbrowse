@@ -23,6 +23,7 @@ const { ACTIONS, clock: utcClock } = await import("../scripts/daemon/notify/mess
 const MIN = 60_000;
 const CARD = "4242 4242 4242 4242";
 const tick = () => new Promise((r) => setImmediate(r));
+const until = async (fn, ms = 3000) => { for (const end = Date.now() + ms; Date.now() < end; await new Promise((r) => setTimeout(r, 5))) if (fn()) return true; return false; };
 const linesOf = (f) => { try { return readFileSync(f, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)); } catch { return []; } };
 
 function pageAt(url, tabs = []) {
@@ -822,4 +823,38 @@ test("the option list: a turn viewer gets the focused select's options of a scop
   assert.ok(logged.length && logged.every((l) => l === `hand-off ${id}: chose from a list`), logged.join("\n"));
   assert.ok(!JSON.stringify({ logged, audit: s.audit(), sent: s.sent, notes: s.notes }).includes("January"));
   gate.close();
+});
+
+// PairBrowse's own check hands a CAPTCHA over, then the agent's status names the same step on the
+// same tab: one hand-off and one message. A second grant used to end the first, whose link (on the
+// phone already, or sent once the public address was up) then opened a 404.
+test("the check, then the agent's status on the same tab and step: one grant, one message, the link stays live", async () => {
+  const s = setup();
+  const page = pageAt("https://www.google.com/recaptcha/api2/demo");
+  s.yt.onChallenge(CHALLENGE_TURN, page);
+  await until(() => s.sent.length === 1);
+  const [g] = s.grants.open();
+  const line = await s.yt.onStatus("p1", { kind: "you", text: "Solve the CAPTCHA", step: "captcha" }, page);
+  assert.match(line, new RegExp(`hand-off ${g.id}`), line);
+  assert.deepEqual(s.grants.open().map((x) => x.id), [g.id], "the same grant stands");
+  assert.equal(s.sent.length, 1, "no second message");
+  // The agent's next status ends it, as its own would.
+  await s.yt.onStatus("p1", { kind: "working", text: "Going on" }, page);
+  assert.equal(s.grants.open().length, 0);
+});
+
+test("a hand-off that ends while its link is starting sends nothing (its link would be dead)", async () => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const s = setup({ extra: { linkFor: async (key) => { await gate; return `https://x.trycloudflare.com/${key}/`; } } });
+  const page = pageAt("https://shop.example/login");
+  const pending = s.yt.onStatus("p1", { kind: "you", text: "Please sign in", step: "login" }, page);
+  await tick();
+  const [g] = s.grants.open();
+  s.grants.end(g.id, "agent");
+  release();
+  const line = await pending;
+  assert.match(line, /ended before its message went out/, line);
+  await tick();
+  assert.equal(s.sent.filter((m) => m.event === "pairbrowse.turn").length, 0);
 });

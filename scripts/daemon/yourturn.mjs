@@ -120,6 +120,8 @@ export function createYourTurn({ config, grants, notifier, sends, handoffs, jour
   const loaded = new Set(); // sessions whose turn.json this helper read (once each)
   const steps = new Map(); // participant -> the step kind its last "you" named (pairbrowse_status step)
   const pending = new Set(); // messages on their way (the helper's stop waits for them)
+  // Whether a hand-off is key's: its own, or one more step that named the same tab and step (start).
+  const hasKey = (t, key) => t.key === key || !!t.also?.has(key);
   let checkTimedOut = null; // { page, text }: PairBrowse's own check that timed out, held until it clears
 
   const record = (kind, t, detail = null) => {
@@ -220,7 +222,19 @@ export function createYourTurn({ config, grants, notifier, sends, handoffs, jour
       return { line: "Hand-offs are on, but no hand-off channel can be used (daemon.log names why): tell the user directly. They can do the step in the PairBrowse window." };
     }
     // The same key's earlier step on another tab is over: the agent (or the check) moved on.
-    for (const t of [...turns.values()]) if (t.key === key && t.page !== page) grants.end(t.id, key === "check" ? "cleared" : "agent");
+    for (const t of [...turns.values()]) if (hasKey(t, key) && t.page !== page) grants.end(t.id, key === "check" ? "cleared" : "agent");
+    // The same step on the same tab already handed over (PairBrowse's own check saw the CAPTCHA, then
+    // the agent's status names it, or the other way round): that hand-off and its one message stand;
+    // a second grant would end the first and leave its link, already on the phone, dead.
+    if (!expiresAt) {
+      const same = [...turns.values()].find((t) => t.page === page && t.action === action);
+      if (same) {
+        if (same.key !== key) (same.also ??= new Set()).add(key);
+        if (participant && !same.participant) same.participant = participant;
+        log(`hand-off ${same.id}: the same step again; its link stands`);
+        return { id: same.id, line: sentLine(same, same.sent.length ? { sent: same.sent } : null) };
+      }
+    }
     const session = sessionName();
     let g;
     try {
@@ -240,7 +254,9 @@ export function createYourTurn({ config, grants, notifier, sends, handoffs, jour
     }
     // The link (a public one may take a while to start, step 21b) and the message, all inside the
     // result's wait: past REPORT_MS the result says the message is on its way.
-    const sending = Promise.all([linkOf(g.redeemKey), watchForMessage(config, watchLink)]).then(([{ link, privateOnly }, watch]) => send({ kind: "turn", id: t.id, action, host: t.host, link, expiresAt: t.expiresAt,
+    // A hand-off that ended while its link was starting (the agent moved on) sends nothing: its link
+    // would be dead on arrival.
+    const sending = Promise.all([linkOf(g.redeemKey), watchForMessage(config, watchLink)]).then(([{ link, privateOnly }, watch]) => !turns.has(t.id) ? { r: { sent: [], ended: true }, link } : send({ kind: "turn", id: t.id, action, host: t.host, link, expiresAt: t.expiresAt,
       ...(expiresAt ? { reason: "browser-restarted" } : {}), ...(privateOnly ? { privateOnly } : {}), ...(watch ? { watch } : {}) }).then((r) => ({ r, link })));
     const recorded = sending.then(({ r, link }) => {
       t.sent = typesSent(r);
@@ -277,6 +293,7 @@ export function createYourTurn({ config, grants, notifier, sends, handoffs, jour
   function sentLine(t, r) {
     const n = tabNumber(t.page);
     const what = `hand-off ${t.id} for ${n >= 0 ? `tab ${n}` : "its tab"}, until ${clock(t.expiresAt)}`;
+    if (r?.ended) return `Your turn: ${what} ended before its message went out (nothing was sent). ${WAIT}`;
     if (r === null) return `Your turn is on its way to the user's channels: ${what}. ${WAIT}`;
     if (r.error) return `Your turn couldn't be sent (${r.error}): tell the user directly; ${what} stays open in the PairBrowse window and live view. ${WAIT}`;
     const failed = [...new Set((r.failed || []).map((f) => f.type))];
@@ -365,7 +382,7 @@ export function createYourTurn({ config, grants, notifier, sends, handoffs, jour
     return setupLines({ verification: (VERIFICATION[action] || VERIFICATION.other)(hostOf(page) || "this site"), items });
   }
 
-  const endKey = (key, reason) => { for (const t of [...turns.values()]) if (t.key === key) grants.end(t.id, reason); };
+  const endKey = (key, reason) => { for (const t of [...turns.values()]) if (hasKey(t, key)) grants.end(t.id, reason); };
   const actionOf = (step, text) => (ACTIONS.includes(step) ? step : handoffKind(text));
 
   return {
@@ -408,7 +425,7 @@ export function createYourTurn({ config, grants, notifier, sends, handoffs, jour
     onChallenge(text, page) {
       hud.setBadge(text, "you").catch(() => {});
       handoffs.set("check", { text, page: page || null, kind: "captcha", by: { label: "PairBrowse", color: "" } });
-      if ([...turns.values()].some((t) => t.key === "check" && t.page === page)) return;
+      if ([...turns.values()].some((t) => hasKey(t, "check") && t.page === page)) return;
       start({ key: "check", page, action: "captcha" }).then((r) => {
         if (!r?.id) return;
         log(`hand-off ${r.id}: a check on the page`);
@@ -434,7 +451,7 @@ export function createYourTurn({ config, grants, notifier, sends, handoffs, jour
     // participant's own (its "you" or its run's hand-off step), else the one covering page.
     // browser_wait_for and the fast-mode handoff step race it (B15).
     ended(page, participant = null) {
-      const own = participant ? [...turns.values()].find((t) => t.key === `status:${participant}` || t.key === `run:${participant}`) : null;
+      const own = participant ? [...turns.values()].find((t) => hasKey(t, `status:${participant}`) || hasKey(t, `run:${participant}`)) : null;
       return own ? grants.ended(own.page) : page ? grants.ended(page) : null;
     },
     // Whether agents' results from page are masked and its pictures covered (B10): during a hand-off,

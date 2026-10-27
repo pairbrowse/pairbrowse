@@ -406,3 +406,18 @@ test("the landing page's still of the handed-over tab: for a browser on the rede
     assert.equal(s.grants.open()[0].redeemed, false, "a still uses nothing up");
   } finally { s.view.close(); }
 });
+
+test("a link that ended opens a page that says so (404), the same for every key no grant names", async () => {
+  const s = await setup();
+  try {
+    const g = s.mint();
+    s.grants.end(g.id, "agent");
+    for (const k of [g.redeemKey, "ab".repeat(32)]) {
+      const r = await request(s.port, "GET", `/${k}/`, { ua: "Mozilla/5.0 (iPhone)" });
+      assert.equal(r.status, 404);
+      assert.match(r.text, /This PairBrowse link has ended/);
+      assert.match(r.headers["content-security-policy"], /default-src 'none'/);
+    }
+    assert.equal((await request(s.port, "GET", `/${"ab".repeat(32)}/config.json`)).text, "404", "any other path stays a bare 404");
+  } finally { s.view.close(); }
+});

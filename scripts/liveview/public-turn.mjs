@@ -29,7 +29,7 @@
 // lets go of the one stream and its reconnect is taken.
 import { acceptUpgrade, refuseUpgrade } from "../ws.mjs";
 import { roleMay } from "./invites.mjs";
-import { LOOPBACK, originOk, plain, pathParts, VIEWER_CSP } from "./http.mjs";
+import { LOOPBACK, originOk, plain, pathParts, VIEWER_CSP, SECURITY_HEADERS } from "./http.mjs";
 import { TURN_ROLES } from "./grants.mjs";
 
 // What the public address serves, by role, as "METHOD route".
@@ -46,6 +46,13 @@ const BOTS = /(?:twitter|telegram|discord|slack|linkedin|pinterest|reddit|apple|
 export const previewBot = (req) => req.method === "HEAD" || BOTS.test(String(req.headers?.["user-agent"] || "")) || !req.headers?.["user-agent"];
 export const PING_MS = 20_000;
 export const DEAD_MS = 60_000;
+
+// The page a link no longer valid opens on the public address (404, no script, no style).
+export const ENDED_PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>PairBrowse link ended</title></head><body><h1>This PairBrowse link has ended</h1><p>It was used already, replaced by a newer message, or ran out of time. Open the newest link you were sent; if the step is still open, it is in the PairBrowse window too.</p></body></html>`;
+function ended(res) {
+  res.writeHead(404, { ...SECURITY_HEADERS, "content-type": "text/html; charset=utf-8", "content-security-policy": VIEWER_CSP, "x-robots-tag": "noindex, nofollow, noarchive" });
+  res.end(ENDED_PAGE);
+}
 
 // The viewer's policy on the public address: its own wss: origin named too (some browsers don't
 // read 'self' as covering a WebSocket).
@@ -99,6 +106,9 @@ export function createPublicTurn({ gate, routes, invites = null, publicHost = ()
     const g = grantOf(req);
     if (!g) {
       if (!at.named) return false;
+      // A person opening a link that ended (used, replaced by a newer message, timed out) reads why;
+      // every key no live grant or watch link names gets this same page, so it tells nothing apart.
+      if (req.method === "GET" && /^\/[0-9a-f]{64}\/?$/.test(String(req.url).split("?")[0])) return ended(res), true;
       plain(res, 404);
       return true;
     }

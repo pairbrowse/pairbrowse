@@ -40,6 +40,11 @@ browser live from wherever they are.
   sign-in) while the browser ran a clean, throwaway session, the link sent to your phone showed
   only "404", on the first open and every one after. The link now opens its page with Take over,
   as in any other session.
+- **One message per step, with a link that works:** when PairBrowse saw a CAPTCHA and handed it
+  to your phone, and the agent then asked for the same step, a second link replaced the first, and
+  the first message's link (often the one you tapped) showed "404". The same step on the same tab
+  now stays one hand-off with one message, and a link that ended opens a page saying it ended and
+  to open the newest one, instead of a bare "404".
 - **The hand-off page on your phone shows the tab first:** the page a hand-off link opens now
   shows the handed-over tab as it is, refreshed about once a second, above **Take over** (view
   only, card fields covered), and its title reads in light and dark mode (it was dark on dark).

@@ -223,6 +223,9 @@ body[data-s="reconnecting"] .skeleton p, body[data-s="closed"] .skeleton p { vis
 .overlay div { text-align: center; color: var(--ink); }
 .overlay strong { display: block; font-size: 15px; margin-bottom: 4px; }
 .overlay span { color: var(--ink-2); }
+/* A hand-off's phone page says how it ended on a card of its own, readable over any page. */
+body[data-role="turn"] .overlay div { max-width: min(340px, calc(100% - 32px)); padding: 20px 24px; border-radius: 14px; background: var(--frame); border: 1px solid var(--edge); box-shadow: var(--shadow-raised); }
+body[data-role="turn"] .overlay strong { font-size: var(--fs-5); margin-bottom: 6px; }
 .hint { position: absolute; top: 10px; left: 50%; translate: -50% 0; padding: 6px 12px; border-radius: 999px; background: color-mix(in srgb, var(--elevated) 92%, transparent); color: var(--ink); box-shadow: 0 0 0 1px var(--edge); font-size: var(--fs-2); line-height: 1.4; white-space: nowrap; opacity: 0; transform: translateY(-4px); transition: opacity var(--t), transform var(--t); pointer-events: none; }
 .stage:focus .hint { opacity: 1; transform: none; }
 

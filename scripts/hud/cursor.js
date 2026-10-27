@@ -58,6 +58,7 @@
         .f.on{opacity:1}
         @media (prefers-reduced-motion:reduce){.c,.f{transition:none}.c.click .r{animation:none;opacity:.9;transform:scale(.4);background:#fff}}
       </style><div class="c" aria-hidden="true"><div class="r"></div><svg viewBox="1 1 22 22"><path d="${POINTER}" fill="#fff" stroke="__PB_AGENT_COLOR__" stroke-width="1.4" stroke-linejoin="round"/></svg><span></span></div><div class="f" aria-hidden="true"></div>`);
+      styled(shadow);
       cur = shadow.querySelector(".c");
       outlineEl = shadow.querySelector(".f");
       outline = null;

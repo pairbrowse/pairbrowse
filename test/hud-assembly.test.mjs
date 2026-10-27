@@ -12,9 +12,9 @@ import { hudScript } from "../scripts/browser.mjs";
 
 // SHA-256 of scripts/hud.js before the split (commit 9c462de): the parts change nothing. A
 // deliberate change to the page script updates this value with it (last: the
-// approval card's name and what the agent wants side by side on one line; no separator after
-// "Paused by"; a new viewport size takes the agent's cursor and outline down).
-const PRE_SPLIT_SHA256 = "17eac3125e79eb8c86e04f8c1c8c7d6b145e8d932c0296a9812ebd26c35c38e0";
+// shadow roots' CSS as constructed stylesheets, so a page whose CSP allows no inline styles keeps
+// the bar, the badge, the cursor and the pointers styled).
+const PRE_SPLIT_SHA256 = "fb1171e762e995ebd3c79bac9506e21945a744f3d3aadebdcb6e892c07646af4";
 const PLACEHOLDERS = ["__PB_NAME__", "__PB_TOKEN__", "__PB_TAG_HUD__", "__PB_TAG_BAR__", "__PB_TAG_CURSOR__", "__PB_AGENT_COLOR__", '"__PB_MOTION__"'];
 
 test("the parts joined are the page script as it was in one file", () => {

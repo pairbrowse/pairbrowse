@@ -23,9 +23,9 @@
       @keyframes s{50%{transform:rotate(45deg) scale(1.12)}}
       @media (prefers-reduced-motion:reduce){.you,.you svg{animation:none}}
     </style><div class="b" aria-hidden="true"><svg viewBox="0 0 16 16"><path fill="currentColor" d="${SPARK}"/></svg><span></span><b class="x" title="Hide">×</b></div>`);
+    styled(shadow);
     box = shadow.querySelector(".b");
-    hostPlace = document.createElement("style"); // where the badge sits: above the bar when there is one
-    shadow.appendChild(hostPlace);
+    hostPlace = liveStyle(shadow); // where the badge sits: above the bar when there is one
     placeBadge();
     shadow.querySelector(".x").addEventListener("click", () => host.remove()); // hide it on this page
     document.documentElement.appendChild(host);

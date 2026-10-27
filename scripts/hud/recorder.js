@@ -65,6 +65,33 @@
   let ttPolicy = null;
   try { ttPolicy = globalThis.trustedTypes?.createPolicy?.(`pairbrowse-${Math.random().toString(36).slice(2)}`, { createHTML: (x) => x }) || null; } catch {}
   const html = (x) => (ttPolicy ? ttPolicy.createHTML(x) : x);
+  // Pages whose content security policy allows no inline styles (style-src without 'unsafe-inline')
+  // drop a <style> element, shadow roots' too: the bar showed as plain text and the spark at full
+  // size. Each shadow root's CSS goes in as a constructed stylesheet instead, which that policy
+  // doesn't govern; the <style> stays only where constructed sheets aren't there.
+  const constructed = typeof CSSStyleSheet === "function" && "replaceSync" in CSSStyleSheet.prototype;
+  function styled(shadow) {
+    if (!constructed || !("adoptedStyleSheets" in shadow)) return;
+    try {
+      const sheets = [];
+      for (const el of shadow.querySelectorAll("style")) { const s = new CSSStyleSheet(); s.replaceSync(el.textContent); sheets.push(s); el.remove(); }
+      shadow.adoptedStyleSheets = [...shadow.adoptedStyleSheets, ...sheets];
+    } catch {}
+  }
+  // A style whose text changes later (the badge's place): set through .textContent, as a <style>.
+  function liveStyle(shadow) {
+    if (constructed && "adoptedStyleSheets" in shadow) {
+      try {
+        const sheet = new CSSStyleSheet();
+        shadow.adoptedStyleSheets = [...shadow.adoptedStyleSheets, sheet];
+        let text = "";
+        return { get textContent() { return text; }, set textContent(t) { text = String(t); try { sheet.replaceSync(text); } catch {} } };
+      } catch {}
+    }
+    const el = document.createElement("style");
+    shadow.appendChild(el);
+    return el;
+  }
   // The element really under the pointer or holding focus, also inside shadow DOM.
   const control = (e) => { for (const el of e.composedPath()) if (el.matches?.(CONTROL)) return el; return null; };
   const focused = () => { let el = document.activeElement; while (el?.shadowRoot?.activeElement) el = el.shadowRoot.activeElement; return el; };

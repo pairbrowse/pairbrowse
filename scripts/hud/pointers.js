@@ -54,6 +54,7 @@
         .v.fresh b{opacity:1}
         @media (prefers-reduced-motion:reduce){.p,.v b{transition:none}}
       </style><div aria-hidden="true"></div>`);
+      styled(shadow);
       peersBox = shadow.querySelector("div");
       document.documentElement.appendChild(peersHost);
       addEventListener("scroll", kickPeers, { passive: true });

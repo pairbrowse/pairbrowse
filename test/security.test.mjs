@@ -280,3 +280,32 @@ test("only known modules reach beyond this computer", async () => {
     .sort();
   assert.deepEqual(found, Object.keys(KNOWN).sort());
 });
+
+// No test outside test/optin opens a real Cloudflare Quick Tunnel: a helper the harness started
+// gets the guest port as its "tunnel" unless the opt-in switch PAIRBROWSE_TEST_REAL_TUNNEL=1 is set
+// (CI's live job never sets it), and startQuickTunnel refuses there before cloudflared is touched.
+// Only opt-in tests (and the one opt-in case in shared-mode) name that switch, and only by reading it.
+test("test helpers never open a real tunnel without the opt-in switch; no test sets it", async () => {
+  const { testTunnel } = await import("../scripts/testenv.mjs");
+  const { mkdtempSync, mkdirSync, symlinkSync, realpathSync: real, readdirSync, readFileSync } = await import("node:fs");
+  const { tmpdir: temp } = await import("node:os");
+  const { join: j } = await import("node:path");
+  const base = real(mkdtempSync(j(temp(), "pb-tun-")));
+  const harness = j(base, "h"), plain = j(base, "p");
+  mkdirSync(harness); mkdirSync(plain); mkdirSync(j(plain, "runtime"));
+  symlinkSync(plain, j(harness, "runtime"), "dir");
+  assert.equal(testTunnel({ PAIRBROWSE_HOME: harness }), "private", "a harness helper: the guest port stands in, hand-off links stay private");
+  assert.equal(testTunnel({ PAIRBROWSE_HOME: harness, PAIRBROWSE_TEST_REAL_TUNNEL: "1" }), "real", "the opt-in tests");
+  assert.equal(testTunnel({ PAIRBROWSE_HOME: plain }), null, "an installed helper: as in production");
+  assert.equal(testTunnel({ PAIRBROWSE_HOME: plain, PAIRBROWSE_TEST_TUNNEL: "direct" }), "direct");
+  // startQuickTunnel itself refuses in a harness helper, before any download or process.
+  const { execFileSync } = await import("node:child_process");
+  const out = execFileSync(process.execPath, ["--input-type=module", "-e", `const { startQuickTunnel } = await import(${JSON.stringify(new URL("../scripts/tunnels/quick.mjs", import.meta.url).href)}); try { await startQuickTunnel(4999); console.log("started"); } catch (e) { console.log(e.message); }`],
+    { env: { ...process.env, PAIRBROWSE_HOME: harness, PAIRBROWSE_TEST_REAL_TUNNEL: "" } }).toString().trim();
+  assert.match(out, /opens no real tunnel/);
+  // No test file outside test/optin sets the switch (reading it to opt in is fine).
+  const files = (dir) => readdirSync(new URL(dir, import.meta.url), { recursive: true }).filter((f) => /\.(m?js)$/.test(f)).map((f) => [`${dir}${f}`, readFileSync(new URL(`${dir}${f}`, import.meta.url), "utf8")]);
+  for (const [f, src] of [...files("./"), ...files("./integration/")].filter(([f]) => !f.includes("optin/") && !f.endsWith("security.test.mjs"))) {
+    assert.doesNotMatch(src, /PAIRBROWSE_TEST_REAL_TUNNEL\s*[:=]\s*["']1["']/, `${f} sets the real-tunnel switch`);
+  }
+});

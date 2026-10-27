@@ -12,7 +12,7 @@ import net from "node:net";
 import { randomBytes } from "node:crypto";
 import { startQuickTunnel, watchTunnel } from "../tunnels/quick.mjs";
 import { isQuickTunnelHost, sleep } from "../util.mjs";
-import { testValue } from "../testenv.mjs";
+import { testTunnel } from "../testenv.mjs";
 
 export const DEV_COOKIE = "__pairbrowse_dev";
 export const DEV_PORTS_MAX = 3;
@@ -147,7 +147,7 @@ export function createDevProxy({ hostname, port, access, publicHost }) {
 
 // The shared ports and who may use them. isIn(key): whether a joiner (inviteId:joinerId) is still
 // in the session; a token works only while they are.
-export function createDevShare({ log = () => {}, startTunnel = (port) => startQuickTunnel(port, { log }), direct = testValue("TUNNEL") === "direct", onStopped = () => {} } = {}) {
+export function createDevShare({ log = () => {}, startTunnel = (port) => startQuickTunnel(port, { log }), direct = ["direct", "private"].includes(testTunnel()), onStopped = () => {} } = {}) {
   const shares = new Map(); // port -> { port, hostname, proxy, tunnel, origin, host }
   const tokens = new Map(); // token -> { key, role, port }
   const starting = new Set(); // shares whose first tunnel is still starting (stopAll ends them too)

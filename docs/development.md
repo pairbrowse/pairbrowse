@@ -127,7 +127,6 @@ is under the temp folder with a linked runtime), so none reaches an installed he
 | `EXECUTABLE` | gate | you: a browser binary | Runs the browsers of `connections`, `shared-mode`, `shared-restart`, `record` and `optin/failover` on another build (the PairBrowse browser); `optin/native-join`, `optin/profiles-native` and the macOS half of `optin/graphics-spike` need a native build here, `optin/server-native` a native build for Linux. A native build (its `Contents/MacOS/pairbrowse`) with `ENGINE` set also runs every helper the integration tests start through `test/helpers/daemon.mjs` (`helperHome`, `testBrowser`, `linkInstalls`: the build as it is installed, the engine pack copied into each test home) and the direct launches of `net-browsercheck` and `graphics-probe` on it, plus `graphics-diagnostics`' native case; their first call in each home waits through the one graphics measurement (`throughMeasuring` in `test/helpers/util.mjs`) |
 | `JOINER_EXECUTABLE` | gate | you: a browser binary | The joiner's browser in `shared-mode` and `record` |
 | `NATIVE` | gate | you: the PairBrowse browser | Also runs `draw` and a `picker` case on the native build |
-| `REAL_TUNNEL` | gate | you: `1` | Real Cloudflare Quick Tunnels: `optin/failover`, `optin/public-handoff` and one `shared-mode` case |
 | `NTFY` | gate | you: `1` | Real hand-off messages to a random topic on ntfy.sh, read back: `optin/ntfy` |
 | `YOUTUBE` | gate | you: `1` | The `shared-mode` case on youtube.com |
 | `EXCALIDRAW` | gate | you: `1` | The `shared-mode` case on excalidraw.com |
@@ -163,6 +162,7 @@ is under the temp folder with a linked runtime), so none reaches an installed he
 | `SILENT_MS` | knob | `failover`, `join` | When a joiner's stream counts as silent |
 | `TAB_ORDER` | knob | `integration/taborder` | Adds `pairbrowse_test_tab_order`: read and move tabs in the strip |
 | `TUNNEL` | knob | the sharing tests, `bench` | `direct`: the guest port stands in for a tunnel |
+| `REAL_TUNNEL` | knob | you: `1` | Real Cloudflare Quick Tunnels: `optin/failover`, `optin/public-handoff`, `optin/phone-handoff` and one `shared-mode` case. A helper the harness started never opens one without it (`testTunnel` in `scripts/testenv.mjs`): the guest port stands in for join codes and watch links, and hand-off links stay on the live view's own address (with `TUNNEL` `direct` they use the guest port too); `startQuickTunnel` refuses there |
 | `TURN_MAX_MS` | knob | `integration/turn-cap` | The most one call may hold the shared queue (10 minutes otherwise) |
 | `TURN_MS` | knob | `yourturn`, `integration/your-turn` | A hand-off's life in ms, its one reminder at two thirds of it (`handoff.grantMinutes` and `remindMinutes` otherwise) |
 | `UNSEEN_MS` | knob | `integration/departures` | How long after its last call an agent stops showing (30 minutes otherwise) |

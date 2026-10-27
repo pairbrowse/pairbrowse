@@ -12,7 +12,7 @@ import { randomBytes } from "node:crypto";
 import { join, dirname } from "node:path";
 import { paths } from "../paths.mjs";
 import { downloadPinned, isQuickTunnelHost, pidAlive, sleep } from "../util.mjs";
-import { testMs } from "../testenv.mjs";
+import { testMs, testTunnel } from "../testenv.mjs";
 import { withInstallLock } from "../install-lock.mjs";
 
 const run = promisify(execFile);
@@ -103,6 +103,8 @@ export function helperAlive() {
 }
 export async function startQuickTunnel(port, { log = () => {}, timeoutMs = 60_000, exe, resolves = resolvesAtCloudflare, resolvesLocally = resolvesHere, logDir = paths.tunnels } = {}) {
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("bad live view port");
+  // A helper the test harness started opens a real Quick Tunnel only in the opt-in tests.
+  if (!exe && ["direct", "private"].includes(testTunnel())) throw new Error("a test helper opens no real tunnel (set PAIRBROWSE_TEST_REAL_TUNNEL=1 in an opt-in test)");
   const program = exe || await ensureCloudflared(log);
   mkdirSync(logDir, { recursive: true, mode: 0o700 });
   const file = join(logDir, `${port}-${randomBytes(4).toString("hex")}.log`);

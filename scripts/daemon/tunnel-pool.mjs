@@ -4,7 +4,7 @@
 import { startQuickTunnel, watchTunnel, onTunnelExit, tunnelEnded } from "../tunnels/quick.mjs";
 import { tunnelConfig } from "../tunnels/config.mjs";
 import { startOwnTunnel } from "../tunnels/start.mjs";
-import { testMs, testValue } from "../testenv.mjs";
+import { testMs, testTunnel } from "../testenv.mjs";
 
 // startHandoff(port): starts the public tunnel (hand-offs and watch links; tests pass a stand-in; by
 // default as the pool's: Quick Tunnel, the user's own, or the guest port itself under the test
@@ -15,7 +15,7 @@ export function createTunnelPool({ config, log, hostNote, save, startHandoff = n
   // every address (sharing/join-client.mjs), so when one tunnel goes down their PairBrowse moves to the other
   // and nothing drops, and a replacement starts here. Stopped when the last code ends
   // (revoked, expired, revoke_all) or the helper shuts down.
-  const direct = testValue("TUNNEL") === "direct"; // tests: the guest port stands in
+  const direct = ["direct", "private"].includes(testTunnel()); // tests: the guest port stands in (never a real tunnel without REAL_TUNNEL)
   // The user's own tunnel instead (config sharing.tunnel: tunnels/config.mjs): one connection on
   // an address of theirs, started again on that same address when it ends, so join codes keep
   // working; the pool of two and joiners' address rotation are for Quick Tunnels, whose address

@@ -1,5 +1,6 @@
 // The live view and letting other people in: invite links, join codes through the sharing tunnel
 // (joiners get the shared tabs, tabsync.mjs), and the host's approvals.
+import { testTunnel } from "../testenv.mjs";
 import { RECORD_READY_MS } from "./capture.mjs";
 import { ownTitle } from "./tablabels.mjs";
 import { startLiveView, createInvites, liveViewHostsFrom, inviteBaseFrom } from "../liveview.mjs";
@@ -523,8 +524,9 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
   // Whether hand-off links have a private route of their own (inviteBaseUrl on a liveViewHosts
   // name): without one the Away switch offers the public link (step 21b).
   const privateRoute = () => !!inviteBase;
-  // Hand-off links go through the public tunnel unless a private route is set.
-  const publicOn = () => !privateRoute();
+  // Hand-off links go through the public tunnel unless a private route is set (or a test helper
+  // without a tunnel switch: testenv.mjs testTunnel "private").
+  const publicOn = () => !privateRoute() && testTunnel() !== "private";
   // Whether text holds a live link's key (a watch link, a live view link): agents never type one
   // into a page (daemon/serve/refuse.mjs).
   const linkIn = (text) => invites.keyIn(text);

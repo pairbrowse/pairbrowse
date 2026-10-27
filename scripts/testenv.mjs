@@ -55,6 +55,7 @@ export const SWITCHES = {
   NO_DIRECT: "a network where no direct screen connection can be made",
   PANEL: "pairbrowse_test_panel: the side panel's worker",
   PICK_WAIT_MS: "how long the session picker waits (daemon/sessions/picker.mjs)",
+  REAL_TUNNEL: "a helper the test harness started may open a real Cloudflare Quick Tunnel (the opt-in tests); without it such a helper never does (testTunnel)",
   RECHECK_MS: "how often a running proxied session's exit is checked again (daemon/network.mjs), in place of network.recheckMinutes",
   RELAUNCH_MS: "keep-alive's one pause before each start after the browser closed by itself, in place of 2, 10 and 30 s (daemon/browser/supervise.mjs)",
   RESTART_MS: "the tunnel pool's restart pause (daemon/tunnel-pool.mjs)",
@@ -78,3 +79,15 @@ export const testValue = (name, env = process.env) => env[named(name)];
 export const testOn = (name, env = process.env) => testValue(name, env) === "1";
 // A duration switch in ms, or fallback when unset or not a positive number.
 export const testMs = (name, fallback, env = process.env) => Number(testValue(name, env)) || fallback;
+
+// How a helper's tunnels start under the test harness, so no test outside test/optin ever opens a
+// real Quick Tunnel: "direct" (the TUNNEL switch: the guest port stands in for every tunnel, hand-off
+// links included), "private" (a helper the harness started with neither switch: the guest port
+// stands in for join codes and watch links, and hand-off links stay on the live view's own address,
+// as with a private route), "real" (REAL_TUNNEL, the opt-in tests), or null (not the harness's
+// helper: as in production).
+export function testTunnel(env = process.env) {
+  if (testValue("TUNNEL", env) === "direct") return "direct";
+  if (!harnessStarted(env)) return null;
+  return testOn("REAL_TUNNEL", env) ? "real" : "private";
+}

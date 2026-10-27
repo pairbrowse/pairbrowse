@@ -34,9 +34,10 @@ document.body.dataset.host = pb || nativeHost ? "native" : "page";
 // state they don't have. The star is the engine's own in the address bar beside the nav-right
 // fragment, so the fragment draws none in the browser.
 const KEYS = mac
-  ? { back: "Back (⌘[)", forward: "Forward (⌘])", reload: "Reload (⌘R)", find: "Find in page (⌘F)" }
-  : { back: "Back (Alt+Left)", forward: "Forward (Alt+Right)", reload: "Reload (Ctrl+R)", find: "Find in page (Ctrl+F)" };
+  ? { back: "Back (⌘[)", forward: "Forward (⌘])", reload: "Reload (⌘R)", find: "Find in page (⌘F)", sparkle: "Agent panel (⇧⌘Y)" }
+  : { back: "Back (Alt+Left)", forward: "Forward (Alt+Right)", reload: "Reload (Ctrl+R)", find: "Find in page (Ctrl+F)", sparkle: "Agent panel (Ctrl+Shift+Y)" };
 for (const id of ["back", "forward", "reload", "find"]) { $(id).setAttribute("aria-label", KEYS[id]); $(id).title = KEYS[id]; }
+$("sparkle").title = KEYS.sparkle; // its name stays "Agent panel" (a toggle: aria-pressed says open)
 
 const tabsEl = $("tabs");
 let base = null; // the helper's address, `${origin}/${key}/`; null: not connected

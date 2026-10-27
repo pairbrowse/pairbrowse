@@ -46,6 +46,11 @@ browser live from wherever they are.
   single Show button. A step that ended (Done on the phone, the agent moved on) leaves the list at
   once.
 
+- **Clearer tooltips and a tidier agent panel:** the Local/Live dot at the foot of the workspace
+  says what it means ("Local: only you are here", "Live: shared, or someone watches"), the agent
+  panel's sparkle names its shortcut (⇧⌘Y on a Mac, Ctrl+Shift+Y elsewhere), and the agent panel's
+  collapse and expand buttons moved to a row at its foot, as in the workspace on the left.
+
 **Fixed**
 
 - **Hand-off links open in a clean session:** when the agent handed you a step (a CAPTCHA, a

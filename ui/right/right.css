@@ -80,8 +80,17 @@ body[data-tab]:not([data-tab="agent"]) .tabs { border-radius: 12px; border-botto
 /* Dock states (the browser build): the rail is a 44 px column of four buttons; hidden shows nothing. */
 #rail[hidden] { display: none; }
 #rail { width: 44px; display: grid; align-content: start; justify-items: center; gap: var(--sp-1); padding-top: 0; }
-.rail-top { justify-self: stretch; display: grid; place-items: center; height: 44px; margin-bottom: 2px; border-bottom: 1px solid var(--edge); }
-.rail-top .dock-btn { margin-left: 0; }
+#rail { padding-top: var(--sp-2); }
+/* The dock's collapse and expand at its foot, as the left dock's (left.css .foot-row): the open
+   dock's on the right, the rail's centred; no row while neither is shown (the extension host). */
+.foot { flex: none; margin: 0 var(--dock-gutter); padding: var(--sp-2) 0 var(--sp-4); border-top: 1px solid var(--edge); }
+.foot-row { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-1); padding: 0 var(--dock-inset); }
+.foot .dock-btn { margin-left: 0; }
+.foot:not(:has(.dock-btn:not([hidden]))) { display: none; }
+html[data-dock="rail"] #rail { flex: 1; }
+html[data-dock="rail"] .foot { width: 44px; box-sizing: border-box; margin: 0; padding: var(--sp-2) var(--sp-1); }
+html[data-dock="rail"] .foot-row { justify-content: center; padding: 0; }
+html[data-dock="hidden"] .foot { display: none; }
 .rail-btn { display: grid; place-items: center; width: var(--ctl); height: var(--ctl); border: 0; border-radius: var(--r-2); background: transparent; color: var(--ink-2); cursor: pointer; transition: color var(--t-hover), background-color var(--t-hover); }
 .rail-btn:hover { background: var(--hover); color: var(--ink); }
 .rail-btn { position: relative; }

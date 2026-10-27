@@ -737,6 +737,10 @@ describe("the hash modes", () => pageTest("strip", { viewport: TALL }, async ({ 
   await until("nav-end", () => document.body.dataset.mode === "nav-end");
   assert.deepEqual(await inPage(() => ["row", "nav-left", "nav-right", "nav-end"].map((id) => document.getElementById(id).checkVisibility())), [false, false, false, true]);
   assert.equal(await inPage(() => document.getElementById("sparkle").getAttribute("aria-pressed")), "true");
+  // Its tooltip names the shortcut in this platform's keys, as the other buttons' do; its name stays the toggle's.
+  const sp = await inPage(() => ({ title: document.getElementById("sparkle").title, label: document.getElementById("sparkle").getAttribute("aria-label"), mac: document.getElementById("find").title.includes("⌘") }));
+  assert.equal(sp.title, sp.mac ? "Agent panel (⇧⌘Y)" : "Agent panel (Ctrl+Shift+Y)");
+  assert.equal(sp.label, "Agent panel");
   await page.click("#sparkle");
   await until("sparkle off", () => document.getElementById("sparkle").getAttribute("aria-pressed") === "false");
   assert.equal((await callsOf(shim, "layout", "set")).at(-1)[0].right, 0);

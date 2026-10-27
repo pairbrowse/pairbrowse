@@ -89,14 +89,16 @@ describe("tabs", () => pageTest("right", opts(), async ({ page, inPage, until, e
   await until("Tools by End", () => document.body.dataset.tab === "tools");
   assert.equal(await inPage(() => document.querySelector('[aria-label="Open the dock as a sheet"]')), null, "no sheet state in the mojom: no sheet button");
   await until("the collapse button", () => document.getElementById("dock-collapse").checkVisibility());
+  // At the dock's foot, as the left dock's (the strip's sparkle, at the top, toggles the same dock).
   const collapse = await inPage(() => {
-    const b = document.getElementById("dock-collapse"), r = b.getBoundingClientRect(), bar = document.querySelector(".tabs").getBoundingClientRect();
-    return { w: r.width, h: r.height, right: r.right, middle: r.top + r.height / 2 - (bar.top + (bar.height - 1) / 2), label: b.getAttribute("aria-label"), expanded: b.getAttribute("aria-expanded") };
+    const b = document.getElementById("dock-collapse"), r = b.getBoundingClientRect(), tabs = document.querySelector(".tabs").getBoundingClientRect();
+    return { w: r.width, h: r.height, right: r.right, inFoot: !!b.closest("footer.foot"), belowMain: r.top >= document.querySelector("main").getBoundingClientRect().bottom - 1, inTabs: r.top < tabs.bottom, bottomGap: innerHeight - r.bottom, label: b.getAttribute("aria-label"), expanded: b.getAttribute("aria-expanded") };
   });
   assert.equal(collapse.w, 28);
   assert.equal(collapse.h, 28);
-  assert.ok(Math.abs(collapse.right - (330 - 20)) <= 1, `right edge ${collapse.right}`); // on the shared right edge, inside the Agent panel card
-  assert.ok(Math.abs(collapse.middle) <= 1, `vertically centered in the bar (${collapse.middle})`);
+  assert.ok(Math.abs(collapse.right - (330 - 20)) <= 1, `right edge ${collapse.right}`); // on the shared right edge
+  assert.deepEqual([collapse.inFoot, collapse.belowMain, collapse.inTabs], [true, true, false], "a foot row under the panes, not in the tab bar");
+  assert.ok(collapse.bottomGap >= 8 && collapse.bottomGap <= 24, `the foot's own spacing at the bottom (${collapse.bottomGap})`);
   assert.equal(collapse.label, "Collapse the agent panel");
   assert.equal(collapse.expanded, "true");
   assert.equal(await inPage(visible, "#dock-expand"), false, "no expand button while open");
@@ -447,8 +449,9 @@ describe("checklist read retried on return", () => pageTest("right", opts({ jour
 describe("session card", () => pageTest("right", opts({ session: { name: "Checkout test", where: "Local", temporary: false } }), async ({ page, helper, inPage, until, errors }) => {
   await until("the session name", () => document.getElementById("session-name").textContent === "Checkout test");
   assert.equal(await inPage(visible, "#session-line"), true);
-  const card = await inPage(() => { const c = document.getElementById("session-card").getBoundingClientRect(); return { bottom: c.bottom, vh: innerHeight }; });
-  assert.ok(card.vh - card.bottom >= 0 && card.vh - card.bottom <= 12, `a raised card just above the bottom (its 8 px margin): ${card.vh - card.bottom}`);
+  // Just above the bottom, or above the dock's foot row (collapse) where the browser shows one.
+  const card = await inPage(() => { const c = document.getElementById("session-card").getBoundingClientRect(), f = document.getElementById("dock-foot"); return { bottom: c.bottom, end: f.checkVisibility() ? f.getBoundingClientRect().top : innerHeight }; });
+  assert.ok(card.end - card.bottom >= 0 && card.end - card.bottom <= 12, `a raised card just above the bottom or the foot row (its 8 px margin): ${card.end - card.bottom}`);
   // Part H: in the browser the session card switches nothing (the strip's logo and the left dock's
   // Sessions row do) and End session, which only opened the picker, is gone: no Save, no buttons.
   assert.deepEqual(await inPage(() => [...document.querySelectorAll("#session-card button")].filter((b) => b.checkVisibility() && !b.closest("#watch-row")).map((b) => b.id)), [], "no Share, Save, Switch or fold without a helper route");
@@ -457,7 +460,7 @@ describe("session card", () => pageTest("right", opts({ session: { name: "Checko
   assert.equal(await inPage(() => !!document.getElementById("end-confirm")), false);
   assert.equal(await inPage(visible, "#share-card"), false);
   // At the gutter on every side, its icon on the shared 20 px edge.
-  assert.deepEqual(await inPage(() => { const c = document.getElementById("session-card").getBoundingClientRect(), i = document.querySelector("#session-card .sicon").getBoundingClientRect(); return [c.left, innerWidth - c.right, innerHeight - c.bottom, i.left]; }), [8, 8, 8, 20]);
+  assert.deepEqual(await inPage(() => { const c = document.getElementById("session-card").getBoundingClientRect(), i = document.querySelector("#session-card .sicon").getBoundingClientRect(); const f = document.getElementById("dock-foot"), end = f.checkVisibility() ? f.getBoundingClientRect().top : innerHeight; return [c.left, innerWidth - c.right, end - c.bottom, i.left]; }), [8, 8, 8, 20]);
   let dialogs = 0;
   page.on("dialog", (d) => { dialogs++; d.dismiss(); });
   await sleep(200);
@@ -1213,8 +1216,8 @@ describe("rail and hidden", () => pageTest("right", opts(), async ({ page, helpe
   assert.equal(await inPage(visible, "#rail"), true);
   assert.equal(await inPage(visible, "main"), false);
   assert.equal(await inPage(() => document.getElementById("rail").getBoundingClientRect().width), 44);
-  assert.deepEqual(await inPage(() => { const b = document.getElementById("dock-expand"); return { shown: b.checkVisibility(), inTop: b.parentElement.classList.contains("rail-top"), h: b.parentElement.getBoundingClientRect().height }; }),
-    { shown: true, inTop: true, h: 44 });
+  assert.deepEqual(await inPage(() => { const b = document.getElementById("dock-expand"), r = b.getBoundingClientRect(); return { shown: b.checkVisibility(), inFoot: !!b.closest("footer.foot"), atBottom: innerHeight - r.bottom <= 24, centred: Math.abs(r.left + r.width / 2 - 22) <= 0.5 }; }),
+    { shown: true, inFoot: true, atBottom: true, centred: true }, "the rail's expand at its foot, centred");
   assert.deepEqual(await inPage(() => [...document.querySelectorAll(".rail-btn")].map((b) => b.getAttribute("aria-label"))), ["Agent", "Page", "Screenshots", "Tools"]);
   assert.deepEqual(await inPage(() => [...document.querySelectorAll(".rail-btn")].map((b) => b.getAttribute("aria-current"))), ["true", null, null, null], "the rail says which tab opens");
   assert.equal(await inPage(() => getComputedStyle(document.querySelector(".rail-btn[aria-current]")).boxShadow.includes("inset")), true, "in a shape, not by color alone");
@@ -1293,16 +1296,16 @@ describe("collapse and expand", () => pageTest("right", opts(), async ({ page, s
   await page.keyboard.press("Enter");
   await until("the rail, focus on expand", () => document.documentElement.dataset.dock === "rail" && document.activeElement?.id === "dock-expand");
   assert.deepEqual((await sets()).map((c) => c.args[0]), [{ ...fixture, right: 1 }]);
+  // At the rail's foot, as the left dock's: centred in the 44 px column, a line above it.
   const expand = await inPage(() => {
-    const b = document.getElementById("dock-expand"), r = b.getBoundingClientRect(), top = b.parentElement.getBoundingClientRect(), cs = getComputedStyle(b), ts = getComputedStyle(b.parentElement);
-    return { label: b.getAttribute("aria-label"), expanded: b.getAttribute("aria-expanded"), cx: r.left + r.width / 2, cy: r.top + r.height / 2, topH: top.height,
-      line: [ts.borderBottomWidth, ts.borderBottomColor], ring: [cs.outlineStyle, cs.outlineWidth, cs.outlineOffset, cs.outlineColor] };
+    const b = document.getElementById("dock-expand"), r = b.getBoundingClientRect(), foot = b.closest("footer.foot"), cs = getComputedStyle(b), fs = getComputedStyle(foot);
+    return { label: b.getAttribute("aria-label"), expanded: b.getAttribute("aria-expanded"), cx: r.left + r.width / 2, bottomGap: innerHeight - r.bottom,
+      line: [fs.borderTopWidth, fs.borderTopColor], ring: [cs.outlineStyle, cs.outlineWidth, cs.outlineOffset, cs.outlineColor] };
   });
   assert.equal(expand.label, "Expand the agent panel");
   assert.equal(expand.expanded, "false");
   assert.equal(expand.cx, 22);
-  assert.ok(Math.abs(expand.cy - 21.5) <= 1, `centered in the 44 px band (${expand.cy})`);
-  assert.equal(expand.topH, 44);
+  assert.ok(expand.bottomGap >= 4 && expand.bottomGap <= 16, `at the foot (${expand.bottomGap} px from the bottom)`);
   assert.deepEqual(expand.line, ["1px", await inPage(token, "edge")]);
   assert.deepEqual(expand.ring, ["solid", "2px", "2px", await inPage(token, "accent")], "the 2 px accent focus ring");
   await page.keyboard.press("Enter");

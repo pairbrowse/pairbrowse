@@ -961,13 +961,13 @@ scenario("left: Local, then Live, then Reconnecting at the foot (open dock)", { 
   helper.set("collaboration", { guests: [{ label: "Ana", role: "watch" }] });
   await until("live", () => document.getElementById("status").dataset.state === "live");
   s = await inPage(statusOf);
-  assert.deepEqual([s.text, s.title], ["Live", "Live session, 1 person with you"]);
+  assert.deepEqual([s.text, s.title], ["Live", "Live: shared, or someone watches (1 person with you)"]);
   assert.equal(s.dot, s.ok, "a green dot when live");
   helper.set("collaboration", { guests: [] });
   await until("local again", () => document.getElementById("status").dataset.state === "local");
   helper.set("collaboration", { guests: [{ label: "Ana", role: "drive" }, { label: "Sam", role: "watch" }] });
   await until("live again", () => document.getElementById("status").dataset.state === "live");
-  assert.equal(await inPage(() => document.getElementById("status").title), "Live session, 2 people with you");
+  assert.equal(await inPage(() => document.getElementById("status").title), "Live: shared, or someone watches (2 people with you)");
   for (const st of helper.streams) st.res.destroy();
   await until("reconnecting", () => document.getElementById("status").dataset.state === "reconnecting");
   s = await inPage(statusOf);
@@ -981,7 +981,7 @@ scenario("left: the rail shows the status as a dot alone, over the gear", { view
   const s = await inPage(statusOf);
   assert.equal(s.wordShown, false, "no word in the rail");
   assert.equal(s.text, "Live", "the word stays for screen readers");
-  assert.equal(s.title, "Live session, 1 person with you", "and as the tooltip");
+  assert.equal(s.title, "Live: shared, or someone watches (1 person with you)", "and as the tooltip");
   assert.equal(s.dot, s.ok);
   assert.ok(Math.abs(s.dotX - s.gearX) <= 0.5, `the dot ${s.dotX} centred over the gear ${s.gearX}`);
   assert.ok(Math.abs(s.dotX - 22) <= 0.5, "centred in the 44 px rail");
@@ -992,7 +992,7 @@ scenario("left: no helper is Local, grey, never an error", { viewport: OPEN, nat
   const { inPage, until } = ctx;
   await until("closed", () => document.body.dataset.s === "closed");
   const s = await inPage(statusOf);
-  assert.deepEqual([s.state, s.text, s.title], ["local", "Local", "Local · no agent connected"]);
+  assert.deepEqual([s.state, s.text, s.title], ["local", "Local", "Local: only you are here (no agent connected)"]);
   assert.equal(s.dot, s.muted);
   assert.notEqual(s.dot, s.warn);
   await clean(ctx);

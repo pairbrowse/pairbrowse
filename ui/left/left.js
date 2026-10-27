@@ -98,10 +98,11 @@ function drawStatus() {
   const status = $("status");
   status.dataset.state = state;
   $("status-text").textContent = words;
-  const detail = state === "live" ? `Live session, ${guests.length === 1 ? "1 person" : `${guests.length} people`} with you`
+  // The dot's tooltip says what each state means: Local, only you; Live, shared or watched.
+  const detail = state === "live" ? `Live: shared, or someone watches (${guests.length === 1 ? "1 person" : `${guests.length} people`} with you)`
     : state === "reconnecting" ? "Reconnecting to PairBrowse"
-    : offline ? "Local · no agent connected"
-    : session?.name ? `${String(session.where || "Local")} · ${session.name}` : "Local · not shared";
+    : offline ? "Local: only you are here (no agent connected)"
+    : "Local: only you are here";
   status.title = detail;
 }
 function drawSession() {

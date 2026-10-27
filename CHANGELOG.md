@@ -56,6 +56,13 @@ browser live from wherever they are.
 - **The step handed to your phone starts at the top:** the picture of the page you take over now
   sits right under the header, fit to the screen's width, as on a watch link, instead of in the
   middle with an empty band above it.
+- **The agent's checklist stays readable in the side panel:** with several people in a session, the
+  steps the agent works through shrank to a sliver of about one and a half rows under the Status
+  box, so the list looked cut off. The checklist now always shows at least three steps, and the
+  panel scrolls for the rest; a very long list still scrolls in its own area.
+- **Switch session fits in a narrow side panel:** the session card's Save, Share and Switch session
+  buttons sat in one row that was too narrow, so "Switch session" ran past the card's edge. A
+  narrow panel now puts Switch session on a line of its own, and every label shows in full.
 
 ## 0.17.1 (2026-10-25)
 
@@ -66,13 +73,6 @@ PairBrowse browser stays at `browser-155.0.8059.84`; nothing new to download.
 
 **Fixed**
 
-- **The agent's checklist stays readable in the side panel:** with several people in a session, the
-  steps the agent works through shrank to a sliver of about one and a half rows under the Status
-  box, so the list looked cut off. The checklist now always shows at least three steps, and the
-  panel scrolls for the rest; a very long list still scrolls in its own area.
-- **Switch session fits in a narrow side panel:** the session card's Save, Share and Switch session
-  buttons sat in one row that was too narrow, so "Switch session" ran past the card's edge. A
-  narrow panel now puts Switch session on a line of its own, and every label shows in full.
 - **The Away switch keeps your newest choice:** turning Away on or off in the side panel could flip
   back a moment later when the helper's answer to an earlier click arrived after your latest one.
   The switch now always shows the setting you chose last.

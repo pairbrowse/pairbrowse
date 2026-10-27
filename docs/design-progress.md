@@ -534,3 +534,76 @@ Follow-ups landed: frame-src/frame-ancestors for the picker and the switcher pop
    `#313C4C`, inactive tabs `#15202F`, new tab page `#313C4C`: the dark navy and blue-grey of
    the sheet's family. New subsets run through `design-subset` with a brief; `design-validate`
    before a release.
+
+## Quality pass, 2026-10-27 (every surface scored, fixes reviewed from screenshots)
+
+Method: every surface rendered headless over the pages' harness (`scripts/dev/ui-look-all.mjs`,
+`scripts/dev/window-preview.mjs`, the framed settings views) and, for the live view, the watch link,
+the hand-off viewer and the HUD, over a real helper on a temporary home (scratch scripts
+`liveview-look.mjs`, `hud-look.mjs`); the native shell photographed from the 155 build launched on a
+throwaway profile. Scores 1 to 10 weigh hierarchy, spacing, alignment, type, contrast (AA), states,
+motion, copy for newcomers and touch targets. Screenshots:
+`/private/tmp/claude-502/-Users-Artifex-Projects-pairbrowse/aa14f57a-290c-4f1f-b0ab-fbeadd39539d/scratchpad/design-pass/`
+(`ui/`, `ui2/`, `window/`, `hud/`, `liveview/`, `native-shell-*.png`). The browser's own pages are
+dark only (the engine's pages ignore the system scheme); the live view, watch and hand-off pages were
+scored in both schemes.
+
+| Surface | Before | After | Notes |
+|---|---|---|---|
+| Window composition (strip, docks, timeline, approval; `window/window.png`) | 9 | 9 | matches the reference |
+| Tab strip, nav fragments, Share card (`ui/strip*.png`) | 8.5 | 8.5 | |
+| Left dock, rail, empty (`ui/left*.png`) | 8.5 | 8.5 | |
+| Right dock, native host: Agent, Page, Screenshots, Tools (`ui/right.png`, `ui2/right-*.png`) | 8 | 8 | checklist newest first is a choice, kept |
+| Right panel as the open build's side panel (`ui/right-extension.png`) | 6 | 8 | checklist squeezed to 1.5 rows; "Switch session" clipped (fixed, see below) |
+| New tab page (`ui/newtab.png`) | 8.5 | 8.5 | |
+| Session picker, More and Join open (`ui/picker.png`, `ui2/picker-more.png`) | 8.5 | 8.5 | |
+| Sessions page (`ui/sessions.png`) | 8.5 | 8.5 | |
+| Activity page (`ui/activity.png`) | 8.5 | 8.5 | |
+| Timeline strip (`ui/timeline.png`) | 8 | 8 | |
+| Approval card page, More actions (`ui/approve.png`, `ui2/approve-more.png`) | 8.5 | 8.5 | |
+| Joiner's picture page, connecting (`ui/screen.png`) | 8 | 8 | |
+| Settings, PairBrowse section and Report dialog (`ui/settings*.png`, `ui2/settings-report.png`) | 8.5 | 8.5 | |
+| Settings, Proxies page (`ui2/settings-proxies-*.png`) | 8 | 8 | |
+| Settings, Handoff page with Watch live (`ui2/settings-handoff-*.png`) | 8.5 | 8.5 | |
+| HUD: badge, bar chips, cursor, peers, join card, REC, sandbox, failed chip (`hud/*.png`) | 8.5 | 8.5 | cursor a white pointer, colour on edge and pill |
+| HUD: approval card in the page (`hud/hud-approval*.png`) | 5 | 8.5 | the verb's span shared the join dot's class: "wants to click" drew as a dot over the name (fixed) |
+| HUD: paused bar | 7 | 8.5 | stray separator after "Paused by Sam" (fixed) |
+| HUD after the page's size changes | 6 | 8.5 | outline and cursor stayed at the old spot after a resize (fixed) |
+| Live view, owner, dark and light (`liveview/owner-*.png`) | 7 | 8 | see the two minors kept |
+| Live view, owner, drawer Profile and Timeline, Share, overview | 8 | 8 | |
+| Live view in a 440 px pane (`liveview/owner-dark-narrow.png`) | 4 | 8 | the column left the page a 160 px slit (fixed: a rail under 720 px) |
+| Watch link on a phone (`liveview/watch-phone-*.png`) | 8.5 | 8.5 | |
+| Watch link ended or reconnecting (`liveview/watch-phone-ended.png`) | 6 | 8.5 | the skeleton's words showed through the overlay, "pairbrowse" lowercase (fixed) |
+| Guest (drive link) view (`liveview/guest-dark-live.png`) | 8 | 8 | |
+| Hand-off landing page (`liveview/turn-landing-dark.png`) | 9 | 9 | |
+| Hand-off viewer on a phone (`liveview/turn-phone-dark.png`) | 7 | 8.5 | the picture sat mid-screen under an empty band (fixed: at the top, as the watch page) |
+| Telegram and Discord message texts (`scripts/daemon/notify/message.mjs`) | 8.5 | 8.5 | plain, say what to do and until when |
+| Native shell, resting, Settings, a page (`native-shell-*.png`) | 8 | 8 | engine patches, private repo; notes below |
+
+Kept under 8.5, deliberately: the owner's live view carries two bottom lines, the page's own bar
+inside the picture and the view's activity line under it, both starting with who is driving (the
+activity line also filters by person; folding one into the other is a larger change); the owner's
+"Live" pill in the toolbar means the stream is connected while the left dock's "Live" means shared
+(both wordings are tested; a rename is a copy decision for the lead).
+
+Verified, not a defect: a watch link serves several viewers at once and again after they leave; the
+"Reconnecting" seen in a headless desktop browser is the public route refusing a user agent that
+names itself headless, as a link preview (`liveview/public-turn.mjs` BOTS).
+
+Native shell notes for the engine's owner (not changed here): the omnibox takes the focus ring on a
+new tab while the new tab page shows its own search box, two places to type; the rails' icons and
+the Local/Live dot at the left rail's foot carry no words (tooltips should name each, "Local: only
+you are here"); the toolbar's search and sparkle buttons need tooltips or a function before they
+ship; the right dock's toggle sits at the toolbar's far right while the left dock's sits at its
+rail's foot (one placement for both reads better); the rest (strip, tab outline, Share as the one
+accent, the content card's edge, the PairBrowse sections at the top of Settings) matches the design.
+
+Checks on main after the fixes (892759b, c853d13): lint clean; unit 1720 pass, 0 fail, 443 skipped
+(live); fuzz 103 pass; manifests valid; integration 92 pass, 0 fail, 21 skipped (opt-in); the
+native-engine unit tests against the 155 engine pack 172 pass, 0 fail; a live subset on the 155
+build (tools, click flows, form patterns, input pace, hand-off, watch link, recording, join) 13 pass,
+0 fail; real Quick Tunnel opt-ins (sharing failover, shared browser through a tunnel) pass on their
+second run (the first timed out on Cloudflare's control stream). Bench (`npm run bench:check`,
+screenshots on): click p50 331 ms (budget 600, baseline 517), start 1060 ms (budget 1500, baseline
+1.2 s), helper RSS at the end 234 MB (budget 260), helper idle after work 0.5% (budget 1%): no
+regression against `docs/engineering-progress.md`.

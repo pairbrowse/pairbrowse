@@ -46,10 +46,12 @@ const NAV_TIMEOUT_MS = { back: 10_000, forward: 10_000, reload: 15_000, go: 20_0
 const FIT_MIN = { width: 320, height: 240 };
 const FIT_MAX = 3000;
 const PIXEL_RATIO_MAX = 3;
-// Screencast frames: JPEG, at most this many pixels a side.
+// Screencast frames: JPEG, at most this many pixels a side. Quality 70: text on a phone zoomed
+// in rings less than at 60, for about 15% more bytes a frame (a slow reader skips frames anyway,
+// and the still once the page settles is sharper again: cast.mjs).
 const CAST_MAX_SIDE = 1920;
 const CAST_DEFAULT_SIDE = 1600;
-const CAST_QUALITY = 60;
+const CAST_QUALITY = 70;
 
 // One event from a viewer of the live view (liveview.js), checked before it is replayed: known
 // kinds and actions, places inside the picture (frame: its { w, h }, CSS pixels; unknown: a wide

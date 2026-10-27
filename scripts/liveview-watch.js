@@ -92,6 +92,8 @@ export function startWatch({ base, img, stage, reopen, end }) {
   }
   stage.addEventListener("pointerup", up);
   stage.addEventListener("pointercancel", up);
+  // Safari's own pinch (its gesture events) would zoom the whole page instead: never here.
+  for (const ev of ["gesturestart", "gesturechange", "gestureend"]) document.addEventListener(ev, (e) => e.preventDefault(), { passive: false });
   // Keys on the stage itself: + and - zoom, 0 goes back to the whole page.
   stage.addEventListener("keydown", (e) => {
     if (e.ctrlKey || e.metaKey || e.altKey) return;

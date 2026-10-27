@@ -1519,8 +1519,8 @@ it depends on.
    Done, a scope `<select>` shown from two scope tabs, "That tab isn't on screen." with "Go back"
    posting `turn { show }` of the grant's tab) and a keys row (the type box, `-`, the zoom level
    which resets to 1x, `+`), 44 px targets, the box at 1rem so a phone doesn't zoom on focus.
-   Touch: a press starts after `HOLD_MS` 200 ms without travel (so a 2 s hold reaches the page as
-   about 1.8 s), a release before that is moved, pressed, released together; travel past 8 px
+   Touch: a press starts after `HOLD_MS` 450 ms without travel (so a 2 s hold reaches the page as
+   about 1.55 s, and a pinch whose second finger lands late still forms), a release before that is moved, pressed, released together; travel past 8 px
    before the press is `wheel` at the start point in page pixels at the current zoom; a moved
    press drags with `buttons: 1`; a cancelled press still releases; a second finger before the
    press pinches (the picture point under the fingers' midpoint stays under it, panning too), after

@@ -9,7 +9,9 @@
 // card number field, so the browser's autofill picks the card), and the option list: an open select
 // list is the browser's own popup and never in the picture, so after a tap the viewer asks for the
 // focused select's options, lists them over the picture, and the helper sends the choice as the
-// person's own keys (liveview/options.mjs). The helper checks every event again
+// person's own keys (liveview/options.mjs). Zoomed in, it reports the part of the tab on screen,
+// and the helper sends a sharper still of that part once the page settles (liveview/zoomstill.mjs),
+// drawn over it until the next moving frame. The helper checks every event again
 // (liveview/input.mjs readViewerInput); this only shapes what a person's hands do.
 import { $, el } from "./common.js";
 import { createZoom } from "./liveview-zoom.js";
@@ -17,7 +19,10 @@ import { createZoom } from "./liveview-zoom.js";
 const ACTION_WORDS = { login: "Sign in", captcha: "Verification", "2fa": "2FA code", payment: "Payment", other: "Your step" };
 const STATE_WORDS = { connecting: "Connecting", live: "Live", reconnecting: "Reconnecting", closed: "Ended" };
 const DRAG_PX = 8; // a finger that travels further scrolls the page instead of clicking
-const HOLD_MS = 200; // a finger that stays put this long presses, and holds until it lifts
+// A finger that stays put this long presses, and holds until it lifts. Long enough for a pinch's
+// second finger, which often lands a moment after the first: once a press is down two fingers no
+// longer pinch (a press already down stays as it is), so at 200 ms most pinches never formed.
+const HOLD_MS = 450;
 const TAP_GAP_MS = 400, TAP_NEAR_PX = 16; // double and triple taps
 const ZOOM_MIN = 1, ZOOM_MAX = 4, ZOOM_STEP = 1.5;
 const TEXT_AT = 32; // a longer insert (a pasted or suggested phrase) goes as one text event
@@ -26,6 +31,7 @@ const POST_MS = 10_000; // one request's bound
 const RETRY_MS = 1000; // a POST that didn't arrive goes again after this
 const STREAM_RETRY_MS = 2000; // the stream, refused while the helper still holds a dropped one
 const LOW_MS = 2 * 60_000; // the time left turns red under this
+const VIEW_MS = 250; // the part on screen is reported once zoom and pan rest this long
 // Keys the type box passes on by name (a phone keyboard's Enter and Backspace; a hardware
 // keyboard's arrows and Tab). Shift only: no shortcut ever leaves the box.
 const NAMED = new Set(["Backspace", "Enter", "Tab", "Escape", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"]);
@@ -126,7 +132,7 @@ export function startTurn({ base, img, stage, on, frame, reopen, end }) {
     setAway(t.state === "off");
     fill.hidden = t.savedCard !== true;
     fitFocus();
-    if (live) { ready = true; send(); }
+    if (live) { ready = true; send(); reportView(); }
   }
   on("turn", onTurn);
 
@@ -245,7 +251,7 @@ export function startTurn({ base, img, stage, on, frame, reopen, end }) {
 
   // Zoom: the picture scaled on this device only, 1x to 4x, panned with two fingers (liveview-zoom.js);
   // a picture shorter than the page area stays at its top, right under the header (liveview.css).
-  const zoomer = createZoom({ stage, box, min: ZOOM_MIN, max: ZOOM_MAX, top: true, onLevel: (z) => { level.textContent = `${Math.round(z * 10) / 10}x`; } });
+  const zoomer = createZoom({ stage, box, min: ZOOM_MIN, max: ZOOM_MAX, top: true, onLevel: (z) => { level.textContent = `${Math.round(z * 10) / 10}x`; reportView(); } });
   const zoom = zoomer.state, zoomAt = zoomer.at, middle = zoomer.middle;
   zoomIn.addEventListener("click", () => { zoomedByHand = true; zoomAt(zoom.z * ZOOM_STEP, ...middle()); });
   zoomOut.addEventListener("click", () => { zoomedByHand = true; zoomAt(zoom.z / ZOOM_STEP, ...middle()); });
@@ -352,10 +358,50 @@ export function startTurn({ base, img, stage, on, frame, reopen, end }) {
   stage.addEventListener("pointerup", up);
   stage.addEventListener("pointercancel", up);
   stage.addEventListener("contextmenu", (e) => e.preventDefault());
+  // Safari's own pinch (its gesture events) zooms the whole page, header and keys too, and a page
+  // zoomed that way can't be pinched back from the picture (it takes every touch): never here.
+  for (const ev of ["gesturestart", "gesturechange", "gestureend"]) document.addEventListener(ev, (e) => e.preventDefault(), { passive: false });
   stage.addEventListener("wheel", (e) => {
     e.preventDefault();
     if (live && !stopped && onPicture(e.clientX, e.clientY)) add({ type: "wheel", ...point(e.clientX, e.clientY), dx: e.deltaX, dy: e.deltaY });
   }, { passive: false });
+
+  // ---- the sharper still of the part on screen, zoomed in ----
+  // The part of the picture on screen (page pixels) and the screen's pixels for one of them, sent
+  // once zoom and pan rest and only when it changed (again after a reconnect: the stream's view is new).
+  let viewTimer = 0, viewSent = "";
+  function reportView() {
+    clearTimeout(viewTimer);
+    viewTimer = setTimeout(() => {
+      if (!ready || stopped || img.hidden) return;
+      const r = img.getBoundingClientRect(), st = stage.getBoundingClientRect(), f = frame();
+      if (r.width < 2 || r.height < 2 || f.w < 2 || f.h < 2) return;
+      const kx = f.w / r.width, ky = f.h / r.height; // page pixels per screen point
+      const x0 = Math.max(r.left, st.left), x1 = Math.min(r.right, st.right), y0 = Math.max(r.top, st.top), y1 = Math.min(r.bottom, st.bottom);
+      if (x1 - x0 < 2 || y1 - y0 < 2) return;
+      const v = { x: Math.round((x0 - r.left) * kx), y: Math.round((y0 - r.top) * ky), w: Math.round((x1 - x0) * kx), h: Math.round((y1 - y0) * ky), px: Math.round(((window.devicePixelRatio || 1) / kx) * 100) / 100 };
+      const sig = JSON.stringify(v);
+      if (sig === viewSent) return;
+      viewSent = sig;
+      fetch(base + "turn-view", { method: "POST", headers: { "content-type": "application/json" }, body: sig, cache: "no-store", signal: AbortSignal.timeout(POST_MS) }).catch(() => { viewSent = ""; });
+    }, VIEW_MS);
+  }
+  // The still, over the part it shows (in the picture's own box, so zoom moves it along), until the
+  // next frame: a moving one, or the whole tab's still.
+  const sharp = el("img", { className: "sharp", id: "sharp", alt: "", hidden: true });
+  box.append(sharp);
+  let stills = 0;
+  on("frame", () => { stills++; sharp.hidden = true; });
+  on("sharp", (d) => {
+    const f = frame(), mine = ++stills;
+    if (!d || typeof d.img !== "string" || d.fw !== f.w || d.fh !== f.h || !(d.w > 0 && d.h > 0)) return;
+    sharp.onload = () => {
+      if (mine !== stills) return;
+      Object.assign(sharp.style, { left: `${(d.x / f.w) * 100}%`, top: `${(d.y / f.h) * 100}%`, width: `${(d.w / f.w) * 100}%`, height: `${(d.h / f.h) * 100}%` });
+      sharp.hidden = false;
+    };
+    sharp.src = "data:image/jpeg;base64," + d.img;
+  });
 
   // ---- the type box: opens the keyboard, passes each character on, keeps nothing ----
   let composing = false, composed = "";
@@ -409,6 +455,7 @@ export function startTurn({ base, img, stage, on, frame, reopen, end }) {
     stopped = true;
     clearInterval(ticker);
     clearTimeout(retry);
+    clearTimeout(viewTimer);
     if (g) clearTimeout(g.timer);
     pending = []; out = null;
     for (const c of [type, done, tabs, back, fill]) c.disabled = true;
@@ -421,7 +468,7 @@ export function startTurn({ base, img, stage, on, frame, reopen, end }) {
   return {
     state(s) {
       live = s === "live";
-      if (!live) ready = false; // until the stream's next turn event
+      if (!live) { ready = false; viewSent = ""; } // until the stream's next turn event
       conn.dataset.s = s;
       connText.textContent = STATE_WORDS[s] || s;
       if (s === "closed") stop();

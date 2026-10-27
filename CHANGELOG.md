@@ -5,6 +5,28 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## Unreleased
+
+PairBrowse is a plugin for Claude Code and Codex: the agent fills in forms, signs up for services
+and clicks through websites in a visible browser window on your computer, while you watch every
+step and take over the parts only a person can do, in the window or from your phone.
+
+**Fixed**
+
+- **Pinching works on the phone.** When a step is handed to your phone, the page opens zoomed in
+  on the part that matters. Pinching to zoom back out (or in) often did nothing, especially on an
+  iPhone: when the second finger landed a moment after the first, the first finger already counted
+  as a press on the page. A finger now has to stay still for almost half a second before it
+  presses, so a pinch forms however your fingers land. Two fingers also move the picture around,
+  one finger still scrolls the page, and Safari no longer zooms the whole page around the picture.
+- **A sharper picture on the phone.** Once the page stops moving, PairBrowse sends a sharp picture
+  of it. Before, that sharp picture was replaced a moment later by a lower quality one, over and
+  over, so phones (and the live view) mostly showed the blurrier picture while using more data.
+  The sharp picture now stays until the page changes. When you zoom in on your phone during a
+  handed-off step, PairBrowse also sends the part you are looking at in full detail for your
+  phone's screen, without ever changing the page's size. The picture while the page moves is a
+  little sharper too.
+
 ## 0.18.2 (2026-10-27)
 
 PairBrowse is a plugin for Claude Code and Codex: the agent fills in forms, signs up for services

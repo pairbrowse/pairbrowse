@@ -11,8 +11,10 @@
 // The view key's stream: one at a time; while it is open the picture is pinned to the grant's
 // scope (cast.mjs pinned). It gets frames of scope tabs only, as they are (the person must see the
 // card field they type into; every other guest keeps covers), the tab list and activity of scope
-// tabs only, and two events of its own: turn ({ id, action, host, expiresAt, scope, state,
-// savedCard }) and, when the grant ends, turn-ended ({ reason }), after which the stream closes.
+// tabs only, and events of its own: turn ({ id, action, host, expiresAt, scope, state,
+// savedCard }), sharp (a phone zoomed in: a sharper still of the part it shows, POST turn-view,
+// liveview/zoomstill.mjs) and, when the grant ends, turn-ended ({ reason }), after which the stream
+// closes.
 //
 // "Fill saved card" (spec server-mode B12): in a session whose browser has a saved card on, the
 // viewer offers it (savedCard in the turn event), and its tap (POST turn-fill-card) sends ArrowDown
@@ -40,6 +42,7 @@ import { focusedSelect, chooseInPage, listOf, pickKeys, OPTION_WORDS } from "./o
 import { sse, json, plain, originOk, pathParts, SECURITY_HEADERS, VIEWER_CSP } from "./http.mjs";
 import { hostOf, guestTabs, guestActivity } from "./tabs.mjs";
 import { focusOf } from "./focus.mjs";
+import { createZoomStills, readView } from "./zoomstill.mjs";
 
 export const TURN_ROLES = new Set(["turn", "redeem"]);
 const OPENER_MS = 1000; // asking a new tab which tab opened it
@@ -90,9 +93,10 @@ const FOCUS_MS = 8000; // reading the focused field (its frame, value and card s
 // tab that matters, for the phone's first zoom (liveview/focus.mjs; tests). focused(page): the focused
 // field as runner/cards.mjs focusedFillField reads it (tests). select(page): the focused select as
 // liveview/options.mjs focusedSelect reads it, choose(page, index, count): chooseInPage (tests).
+// personTab(page): a person's own tab (never a hand-off's picture).
 export function createTurnGate({ grants = null, sessionName, idOf, getContext, cast, linkGuests, clients, viewers, inviteOrigin = null, invites = null, onChanged = () => {}, log = () => {},
-  savedCard = () => false, humanPost = async () => {}, readFocus = (page) => focusOf(page), focused = (page) => focusedFillField(page), select = (page) => focusedSelect(page), choose = (page, index, count) => chooseInPage(page, index, count), now = Date.now }) {
-  const streams = new Map(); // event stream -> { guest, stream, sig }
+  personTab = () => false, savedCard = () => false, humanPost = async () => {}, readFocus = (page) => focusOf(page), focused = (page) => focusedFillField(page), select = (page) => focusedSelect(page), choose = (page, index, count) => chooseInPage(page, index, count), now = Date.now }) {
+  const streams = new Map(); // event stream -> { guest, stream, sig, view (the phone's zoom: zoomstill.mjs) }
   const watched = new WeakSet(); // browser contexts whose new tabs are checked for their opener
 
   const guestOf = (role, id) => ({ id: `${role}-${id}`, grant: id, role, label: LABEL });
@@ -191,7 +195,7 @@ export function createTurnGate({ grants = null, sessionName, idOf, getContext, c
   function openStream(res, guest) {
     const stream = grants?.openStream(guest.grant);
     if (!stream) return false;
-    streams.set(res, { guest, stream, sig: "" });
+    streams.set(res, { guest, stream, sig: "", view: null });
     res.once("close", () => { stream.close(); streams.delete(res); });
     return true;
   }
@@ -209,6 +213,19 @@ export function createTurnGate({ grants = null, sessionName, idOf, getContext, c
   function pinned() {
     if (!streams.size) return null;
     return [...new Set([...streams.values()].flatMap((s) => scopeOf(s.guest)))];
+  }
+
+  // Whether a stream gets a frame of the tab on screen as it is: a turn stream, that tab in its scope.
+  const frameTo = (res) => { const g = linkGuests.get(res); return g?.role === "turn" && inScope(cast.state.lastFrameFrom, g); };
+  // A phone zoomed in: a sharper still of the part it shows, to its own stream (liveview/zoomstill.mjs).
+  const zoom = createZoomStills({ cast, personTab, log, targets: () => [...streams].map(([res, s]) => ({ res, view: s.view, ok: () => frameTo(res) })), send: (res, d) => res.write(sse("sharp", d)) });
+  // The part of the tab a hand-off's phone shows now (POST turn-view): false when it isn't one.
+  function view(guest, body) {
+    const v = readView(body);
+    if (!v) return false;
+    for (const s of streams.values()) if (s.guest.grant === grantOf(guest)) s.view = v;
+    zoom.wake();
+    return true;
   }
 
   // A tab opened by a scope tab while the grant is live joins the scope (a sign-in or 3-D Secure
@@ -342,11 +359,9 @@ export function createTurnGate({ grants = null, sessionName, idOf, getContext, c
   }
 
   return {
-    on: !!grants, match, refusedOrigin, forTurn, onScreen, batchOf, openStream, started, pinned, changed, tick, watch, landing, redeem, showTab, fillCard, options, pick,
+    on: !!grants, match, refusedOrigin, forTurn, onScreen, batchOf, openStream, started, pinned, changed, tick, watch, landing, redeem, showTab, fillCard, options, pick, view, frameTo,
     // The last frame, for a turn stream that just opened: only from a scope tab, as it is.
     frameFor: (guest) => (cast.state.lastFrame && inScope(cast.state.lastFrameFrom, guest) ? cast.state.lastFrame : null),
-    // Whether a stream gets a frame of the tab on screen as it is: a turn stream, that tab in its scope.
-    frameTo: (res) => { const g = linkGuests.get(res); return g?.role === "turn" && inScope(cast.state.lastFrameFrom, g); },
     // The page a turn viewer's still comes from: the shown tab in scope, the grant's tab when none
     // is shown, or null when another tab is on screen.
     // The landing page's still (role redeem): the grant's tab on screen, else its first scope tab.
@@ -354,6 +369,6 @@ export function createTurnGate({ grants = null, sessionName, idOf, getContext, c
     stillOf: (guest) => (cast.state.shown ? (onScreen(guest) ? cast.state.shown.page : null) : scopeOf(guest)[0] || null),
     refused: (guest, kind, detail) => grants?.refused(grantOf(guest), kind, detail),
     end: (guest, reason) => !!grants && grants.end(grantOf(guest), reason),
-    close() { stopEnd(); stopRevokeAll(); for (const s of streams.values()) s.stream.close(); streams.clear(); },
+    close() { stopEnd(); stopRevokeAll(); zoom.close(); for (const s of streams.values()) s.stream.close(); streams.clear(); },
   };
 }

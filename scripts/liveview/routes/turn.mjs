@@ -1,9 +1,10 @@
 // A hand-off grant's own routes on the owner's port (spec server-mode B3, B4): the landing page's
 // "Take over" (role redeem), Done and switching among the grant's tabs (role turn, right "turn"),
-// "Fill saved card" in a saved-card session (role turn, B12), the option list (role turn), and calling a hand-off off from the
+// "Fill saved card" in a saved-card session (role turn, B12), the option list (role turn), the part a
+// zoomed-in phone shows (role turn), and calling a hand-off off from the
 // Tools tab (the owner, right "tools"). The landing page itself
 // is GET "" (routes/viewer.mjs hands role redeem to liveview/grants.mjs). startLiveView mounts them.
-import { json, plain, readJsonBody, BODY_MAX } from "../http.mjs";
+import { json, plain, readJsonBody, BODY_MAX, SECURITY_HEADERS } from "../http.mjs";
 
 const GRANT_ID = /^[0-9a-f]{8}$/;
 const TAB_ID = /^[0-9a-f]{8}$/;
@@ -39,6 +40,15 @@ export function createTurnRoutes(gate) {
     { method: "POST", path: "turn-options", right: "turn", needs: () => gate.on, handler: async ({ req, res, invite }) => {
       if ((await body(req, res)) === undefined) return;
       await gate.options(res, invite);
+    } },
+    // The part of the tab the phone shows now, zoomed in ({ x, y, w, h, px }: liveview/zoomstill.mjs):
+    // a sharper still of it once the page settles, to this hand-off's own stream.
+    { method: "POST", path: "turn-view", right: "turn", needs: () => gate.on, handler: async ({ req, res, invite }) => {
+      const op = await body(req, res);
+      if (op === undefined) return;
+      if (!gate.view(invite, op)) return json(res, 409, { error: "Send x, y, w and h, the part of the picture on screen in page pixels, and px, the screen's pixels for one of them." });
+      res.writeHead(204, SECURITY_HEADERS);
+      res.end();
     } },
     { method: "POST", path: "turn-pick", right: "turn", needs: () => gate.on, handler: async ({ req, res, invite }) => {
       const op = await body(req, res);

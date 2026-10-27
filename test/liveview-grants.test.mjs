@@ -19,6 +19,8 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const until = async (fn, ms = 2000) => { for (const end = Date.now() + ms; Date.now() < end; await wait(10)) if (await fn()) return true; return false; };
 const eventsIn = (text, name) => text.split("\n\n").filter((b) => b.startsWith(`event: ${name}\n`)).map((b) => JSON.parse(b.slice(b.indexOf("data: ") + 6)));
 
+// An 800x600 tab scrolled down 100, one device pixel each (a server's screen), as the engine reports it.
+const METRICS = { cssVisualViewport: { pageX: 0, pageY: 100, clientWidth: 800, clientHeight: 600, scale: 1, zoom: 1 }, cssLayoutViewport: { clientWidth: 800, clientHeight: 600 }, layoutViewport: { clientWidth: 800, clientHeight: 600 } };
 // Tabs with addresses, openers and CDP sessions that answer stills and count what they're asked.
 function fakeTabs(urls) {
   const sessions = [];
@@ -33,7 +35,12 @@ function fakeTabs(urls) {
   const pages = urls.map((u) => tab(u));
   ctx.newCDPSession = async (page) => {
     const cdp = Object.assign(new EventEmitter(), { calls: [], detached: false, page });
-    cdp.send = async (method, params) => { cdp.calls.push([method, params]); return method === "Page.captureScreenshot" ? { data: Buffer.from(`STILL ${page.url()}`).toString("base64") } : {}; };
+    cdp.send = async (method, params) => {
+      cdp.calls.push([method, params]);
+      if (method === "Page.getLayoutMetrics") return METRICS;
+      if (method !== "Page.captureScreenshot") return {};
+      return { data: Buffer.from(params?.clip ? `CLIP ${page.url()} ${JSON.stringify(params.clip)}` : `STILL ${page.url()}`).toString("base64") };
+    };
     cdp.detach = async () => { cdp.detached = true; };
     sessions.push(cdp);
     return cdp;
@@ -492,5 +499,73 @@ test("the payment methods tab's frames reach the owner's streams only: never an 
     await wait(80);
     for (const x of [guest, turn]) assert.equal(/CARD-/.test(x.text()), false);
     assert.equal(s.sessions.filter((c) => c.page === cardTab).some((c) => c.calls.some(([m]) => m === "Input.dispatchKeyEvent")), false, "no input reached it");
+  } finally { for (const x of streams) x.close(); s.view.close(); }
+});
+
+// A phone zoomed in (liveview/zoomstill.mjs): once the page settles, its own stream gets a sharper
+// still of the part it shows, clipped at the phone's pixels; nobody else does, and nothing when
+// another tab is on screen. A screenshot's echo frame (the same bytes again) is no move: one sharp
+// still per rest, not five a second.
+test("a zoomed-in hand-off viewer gets a sharper still of the part it shows, alone, of its own tab only; a screenshot's echo is no move", async () => {
+  const s = await setup();
+  const w = s.invites.create({ role: "watch", label: "W" });
+  const streams = [];
+  const frame = (page, img) => s.sessionOf(page).emit("Page.screencastFrame", { data: img, metadata: { deviceWidth: 800, deviceHeight: 600 }, sessionId: 1 });
+  const shots = (page) => s.sessions.filter((c) => c.page === page).flatMap((c) => c.calls).filter(([m]) => m === "Page.captureScreenshot");
+  try {
+    const t = await s.taken(s.pages[0]);
+    const turn = await readStream(s.port, `/${t.viewKey}/events`);
+    const guest = await readStream(s.port, `/${w.key}/events`);
+    const owner = await readStream(s.port, `/${s.key}/events`);
+    streams.push(turn, guest, owner);
+    assert.ok(await until(() => s.sessionOf(s.pages[0]) && eventsIn(turn.text(), "turn").at(-1)?.state === "on"));
+    // Bad reports are refused; the phone at 3x on the left half of the top.
+    for (const body of [{}, { x: -1, y: 0, w: 10, h: 10, px: 2 }, { x: 0, y: 0, w: 10, h: 10, px: 99 }, { x: "0", y: 0, w: 10, h: 10, px: 2 }, [1]]) {
+      const r = await request(s.port, "POST", `/${t.viewKey}/turn-view`, { body });
+      assert.ok(r.status === 409 || r.status === 400, `${JSON.stringify(body)}: ${r.status}`);
+    }
+    assert.equal((await request(s.port, "POST", `/${w.key}/turn-view`, { body: { x: 0, y: 0, w: 400, h: 300, px: 2.7 } })).status, 403, "never a watch link's");
+    assert.equal((await request(s.port, "POST", `/${t.viewKey}/turn-view`, { body: { x: 0, y: 0, w: 400, h: 300, px: 2.7 } })).status, 204);
+    frame(s.pages[0], "SCOPE-1");
+    assert.ok(await until(() => eventsIn(turn.text(), "sharp").length, 3000), "the zoomed still came");
+    const [sharp] = eventsIn(turn.text(), "sharp");
+    assert.deepEqual({ x: sharp.x, y: sharp.y, w: sharp.w, h: sharp.h, fw: sharp.fw, fh: sharp.fh }, { x: 0, y: 0, w: 400, h: 300, fw: 800, fh: 600 });
+    assert.equal(Buffer.from(sharp.img, "base64").toString(), `CLIP https://shop.example/pay ${JSON.stringify({ x: 0, y: 100, width: 400, height: 300, scale: 2.7 })}`, "the part on screen, in page coordinates, at the phone's pixels");
+    assert.equal(eventsIn(turn.text(), "frame").at(-1).img, Buffer.from("STILL https://shop.example/pay").toString("base64"), "the whole tab's sharp still went first");
+    for (const x of [guest, owner]) assert.equal(eventsIn(x.text(), "sharp").length, 0, "the phone's own stream alone");
+    // The whole tab's sharp still reaches every stream that shows the picture: a watch link's covered.
+    const whole = Buffer.from("STILL https://shop.example/pay").toString("base64");
+    assert.ok(await until(() => eventsIn(guest.text(), "frame").some((f) => f.img === `COVERED-${whole}`)), "a watch link's phone gets it, covered");
+    assert.ok(eventsIn(owner.text(), "frame").some((f) => f.img === whole));
+    // The screencast sends the same picture again after each screenshot: no move, no new still.
+    const n = shots(s.pages[0]).length;
+    frame(s.pages[0], "SCOPE-1");
+    frame(s.pages[0], "SCOPE-1");
+    await wait(500);
+    assert.equal(shots(s.pages[0]).length, n, "no still after an echo");
+    assert.equal(eventsIn(turn.text(), "frame").filter((f) => f.img === "SCOPE-1").length, 1, "an echo isn't sent again");
+    // Panned: one more still of the new part, once it rests.
+    assert.equal((await request(s.port, "POST", `/${t.viewKey}/turn-view`, { body: { x: 400, y: 300, w: 400, h: 300, px: 2.7 } })).status, 204);
+    assert.ok(await until(() => eventsIn(turn.text(), "sharp").length === 2, 3000));
+    assert.equal(eventsIn(turn.text(), "sharp")[1].x, 400);
+    // At the phone's 1x the tab's own pixels are enough: no clip.
+    assert.equal((await request(s.port, "POST", `/${t.viewKey}/turn-view`, { body: { x: 0, y: 0, w: 800, h: 600, px: 0.9 } })).status, 204);
+    const stills = () => eventsIn(turn.text(), "frame").filter((f) => f.img === whole).length;
+    const before = stills();
+    frame(s.pages[0], "SCOPE-2");
+    assert.ok(await until(() => stills() > before, 3000), "the whole tab's still again");
+    await wait(400);
+    assert.equal(eventsIn(turn.text(), "sharp").length, 2, "no zoomed still at 1x");
+    // Zoomed in again (a still of its own tab), then another tab on screen: nothing of it reaches the phone.
+    assert.equal((await request(s.port, "POST", `/${t.viewKey}/turn-view`, { body: { x: 0, y: 0, w: 400, h: 300, px: 2.7 } })).status, 204);
+    assert.ok(await until(() => eventsIn(turn.text(), "sharp").length === 3, 3000));
+    assert.equal((await request(s.port, "POST", `/${s.key}/tab`, { body: { i: 1 } })).status, 204);
+    await until(() => s.sessionOf(s.pages[1]));
+    frame(s.pages[1], "OTHER-1");
+    await wait(800);
+    assert.equal(eventsIn(turn.text(), "sharp").length, 3, "no still of a tab outside the hand-off");
+    assert.equal(eventsIn(turn.text(), "sharp").some((x) => Buffer.from(x.img, "base64").toString().includes("other.example")), false);
+    assert.equal(s.sessions.filter((c) => c.page === s.pages[1]).flatMap((c) => c.calls).some(([m, p]) => m === "Page.captureScreenshot" && p?.clip), false, "not even taken");
+    assert.equal(s.sessions.flatMap((c) => c.calls).some(([m]) => m === "Emulation.setDeviceMetricsOverride"), false, "the page is never resized");
   } finally { for (const x of streams) x.close(); s.view.close(); }
 });

@@ -168,7 +168,7 @@ export async function startLiveView({ sessionName = null, grants = null, publicH
   const cast = createCast({ getContext, currentUrl, personTab: (p) => personTab(p), replayer, broadcast: (e, d) => broadcast(e, d), tabsInfo: () => tabsInfo(), viewers, watching: () => watching(), isClosed: () => closed, log, pinned: () => turnGate.pinned() });
   const { show, follow, stopIfIdle } = cast;
   // Hand-off grants' keys, landing page and stream (liveview/grants.mjs).
-  const turnGate = createTurnGate({ grants, sessionName: () => (sessionName ? sessionName() : sessionInfo.name), idOf: (p) => idOf(p), getContext, cast, linkGuests, clients, viewers, inviteOrigin, invites, onChanged: () => collaborationChanged(), log, savedCard: () => !!tools?.savedCard?.()?.on, humanPost: (...a) => humanPost(...a) }); // a saved card: Fill saved card (B12)
+  const turnGate = createTurnGate({ grants, sessionName: () => (sessionName ? sessionName() : sessionInfo.name), idOf: (p) => idOf(p), getContext, cast, linkGuests, clients, viewers, inviteOrigin, invites, onChanged: () => collaborationChanged(), log, personTab: (p) => personTab(p), savedCard: () => !!tools?.savedCard?.()?.on, humanPost: (...a) => humanPost(...a) }); // a saved card: Fill saved card (B12)
   const iconFor = createIcons();
   const kinds = new Map(); // event stream -> the browser page's kind (?page=), owner streams only
   const tabOrder = { sig: "", order: null }; // the tab strip's last report (POST tab-order); gone with this live view

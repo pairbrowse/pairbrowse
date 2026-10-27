@@ -2,7 +2,7 @@
 // address of the hand-off's own tunnel reaches the live view's guest port (joiner-server.mjs hands
 // each request here first), and there it serves a grant's routes and nothing else: the landing page
 // and its files, "Take over" (role redeem), and the turn viewer with its files, its one stream,
-// stills, state, input, Done, the tab switch and the option list (role turn). Every other route,
+// stills, state, input, Done, the tab switch, the option list and the zoomed view (role turn). Every other route,
 // key or name answers 404, as a key never made: the owner's key, the browser's pages' key, invite
 // links and join codes never work there (join codes keep their own tunnel's names). The one
 // exception is the user's own tunnel shared by both (one address: tunnel-pool.mjs handoffShared):
@@ -35,7 +35,7 @@ import { TURN_ROLES } from "./grants.mjs";
 // What the public address serves, by role, as "METHOD route".
 export const PUBLIC_ROUTES = {
   redeem: new Set(["GET ", "GET assets", "GET thumb.jpg", "POST redeem"]),
-  turn: new Set(["GET ", "GET assets", "GET events", "GET thumb.jpg", "GET state.json", "POST input", "POST turn", "POST turn-done", "POST turn-options", "POST turn-pick", "POST turn-fill-card"]),
+  turn: new Set(["GET ", "GET assets", "GET events", "GET thumb.jpg", "GET state.json", "POST input", "POST turn", "POST turn-done", "POST turn-options", "POST turn-pick", "POST turn-fill-card", "POST turn-view"]),
   watch: new Set(["GET ", "GET assets", "GET events"]),
 };
 

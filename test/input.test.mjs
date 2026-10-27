@@ -116,13 +116,13 @@ test("Fit to pane takes the viewer's size within limits, and a new tab gets it t
   await r.replay(tab, { type: "viewport", on: true, w: 100, h: 99999, dpr: 9 });
   assert.deepEqual(tab.cdp.sent[0], ["Emulation.setDeviceMetricsOverride", { width: 320, height: 3000, deviceScaleFactor: 3, mobile: false }]);
   assert.deepEqual(tab.cdp.sent.slice(1).map(([m]) => m), ["Page.stopScreencast", "Page.startScreencast"]);
-  assert.deepEqual(tab.cdp.sent[2][1], { format: "jpeg", quality: 60, maxWidth: 320, maxHeight: 1920 });
+  assert.deepEqual(tab.cdp.sent[2][1], { format: "jpeg", quality: 70, maxWidth: 320, maxHeight: 1920 });
   const next = shownTab();
   await r.attach(next.cdp);
   assert.equal(next.cdp.sent[0][0], "Emulation.setDeviceMetricsOverride");
   await r.replay(tab, { type: "viewport", on: false });
   assert.equal(tab.cdp.sent.at(-3)[0], "Emulation.clearDeviceMetricsOverride");
-  assert.deepEqual(tab.cdp.sent.at(-1)[1], { format: "jpeg", quality: 60, maxWidth: 1600, maxHeight: 1600 });
+  assert.deepEqual(tab.cdp.sent.at(-1)[1], { format: "jpeg", quality: 70, maxWidth: 1600, maxHeight: 1600 });
   r.resetFit();
   const after = shownTab();
   await r.attach(after.cdp);

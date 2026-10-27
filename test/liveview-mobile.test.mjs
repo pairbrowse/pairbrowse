@@ -27,6 +27,8 @@ const PHONE = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch:
 const FRAME = { w: 1280, h: 800 };
 // A 1x1 picture: the page's frames (the viewer sizes the picture from the frame's w and h).
 const PIXEL = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+// The tab's size as the engine reports it: the frame's, one device pixel each (a server's screen).
+const METRICS = { cssVisualViewport: { pageX: 0, pageY: 0, clientWidth: FRAME.w, clientHeight: FRAME.h, scale: 1, zoom: 1 }, cssLayoutViewport: { clientWidth: FRAME.w, clientHeight: FRAME.h }, layoutViewport: { clientWidth: FRAME.w, clientHeight: FRAME.h } };
 
 // ---- the files (no browser) ----
 
@@ -63,6 +65,7 @@ function fakeTabs(urls) {
     cdp.send = async (method, params) => {
       cdp.calls.push({ method, params, at: Date.now() });
       if (slow && method.startsWith("Input.dispatch")) await wait(slow);
+      if (method === "Page.getLayoutMetrics") return METRICS;
       return method === "Page.captureScreenshot" ? { data: PIXEL } : {};
     };
     cdp.detach = async () => {};
@@ -130,7 +133,7 @@ async function phone(t, { action = "payment", publicHost = null } = {}) {
   page.on("pageerror", (e) => errors.push(String(e)));
   t.after(async () => { clearInterval(frames); await browser.close().catch(() => {}); link.close(); view.close(); });
   // Opens the link and takes over: the viewer, live, with its first picture.
-  const takeOver = async () => {
+  const takeOver = async ({ keepZoom = false } = {}) => {
     await page.goto(`http://127.0.0.1:${link.port}/${g.redeemKey}/`);
     await page.tap("#take");
     await page.waitForURL(/\/[0-9a-f]{64}\/$/);
@@ -143,7 +146,7 @@ async function phone(t, { action = "payment", publicHost = null } = {}) {
     // opens larger. These tests then work at 1x (the zoom level button), as a person may.
     await until(() => page.evaluate(() => document.getElementById("zoom-level").textContent !== ""));
     firstZoom = await page.evaluate(() => { const st = document.getElementById("stage").getBoundingClientRect(), r = document.getElementById("screen").getBoundingClientRect(); return { level: document.getElementById("zoom-level").textContent, filled: r.height / st.height }; });
-    if (firstZoom.level !== "1x") await page.tap("#zoom-level");
+    if (firstZoom.level !== "1x" && !keepZoom) await page.tap("#zoom-level");
   };
   let firstZoom = null;
   // Where a page point is on the phone's screen now (zoom included).
@@ -225,12 +228,12 @@ test("tap posts mouse press and release; drag posts wheel; a hold stays pressed;
   // A hold: pressed while the finger stays, released when it lifts.
   const h0 = s.input().length;
   await s.touch("touchStart", [p]);
-  await wait(1000);
+  await wait(1300);
   await s.touch("touchEnd", []);
   assert.ok(await until(() => s.input().slice(h0).some((c) => c.params.type === "mouseReleased")));
   const hold = s.input().slice(h0).filter((c) => /mouse(Pressed|Released)/.test(c.params.type));
   assert.deepEqual(hold.map((c) => c.params.type), ["mousePressed", "mouseReleased"]);
-  assert.ok(hold[1].at - hold[0].at >= 700, `held ${hold[1].at - hold[0].at} ms`);
+  assert.ok(hold[1].at - hold[0].at >= 700, `held ${hold[1].at - hold[0].at} ms`); // pressed after HOLD_MS (450)
   // Zoom on the phone: + scales the picture, and a tap on the same page point lands there.
   await s.page.tap("#zoom-in");
   await s.page.tap("#zoom-in");
@@ -249,6 +252,83 @@ test("tap posts mouse press and release; drag posts wheel; a hold stays pressed;
   assert.equal(s.sessions.flatMap((c) => c.calls).some((c) => c.method === "Emulation.setDeviceMetricsOverride"), false, "no resize on the page");
   await s.page.tap("#zoom-level");
   assert.equal(await s.page.textContent("#zoom-level"), "1x");
+  assert.deepEqual(s.errors, []);
+});
+
+// A pinch as a person's hands make it: the second finger often lands a moment after the first
+// (past the 200 ms a held finger took to start a press before), and a pinch in from the first zoom
+// goes back to the whole page. Nothing of it reaches the page.
+test("pinch in and out however the fingers land, from the first zoom: back to 1x and in again, two fingers pan, nothing reaches the page", { skip: !runtime, timeout: 60_000 }, async (t) => {
+  const s = await phone(t);
+  await s.takeOver({ keepZoom: true });
+  const level = () => s.page.textContent("#zoom-level").then((x) => Number.parseFloat(x));
+  const start = await level();
+  assert.ok(start > 1.5, `the first zoom is in: ${start}x`);
+  const n0 = s.input().length;
+  const mid = { x: 195, y: 400 };
+  // Pinch in: one finger down, the other 300 ms later, then together.
+  await s.touch("touchStart", [{ x: mid.x - 120, y: mid.y }]);
+  await wait(300);
+  await s.touch("touchStart", [{ x: mid.x - 120, y: mid.y }, { x: mid.x + 120, y: mid.y }]);
+  for (let i = 1; i <= 10; i++) { await s.touch("touchMove", [{ x: mid.x - 120 + i * 10, y: mid.y }, { x: mid.x + 120 - i * 10, y: mid.y }]); await wait(16); }
+  await s.touch("touchEnd", [{ x: mid.x + 20, y: mid.y }]);
+  await s.touch("touchEnd", []);
+  assert.equal(await level(), 1, "pinched back to the whole page");
+  // Pinch out with both fingers at once: in again.
+  await s.touch("touchStart", [{ x: mid.x - 20, y: mid.y }, { x: mid.x + 20, y: mid.y }]);
+  for (let i = 1; i <= 5; i++) { await s.touch("touchMove", [{ x: mid.x - 20 - i * 10, y: mid.y }, { x: mid.x + 20 + i * 10, y: mid.y }]); await wait(16); }
+  await s.touch("touchEnd", []);
+  const z = await level();
+  assert.ok(z >= 2.5, `pinched in: ${z}x`);
+  // Two fingers moving together move the picture with them.
+  const box = () => s.page.evaluate(() => document.getElementById("screen").getBoundingClientRect().left);
+  const x0 = await box();
+  await s.touch("touchStart", [{ x: mid.x - 40, y: mid.y }, { x: mid.x + 40, y: mid.y }]);
+  for (let i = 1; i <= 5; i++) { await s.touch("touchMove", [{ x: mid.x - 40 + i * 10, y: mid.y }, { x: mid.x + 40 + i * 10, y: mid.y }]); await wait(16); }
+  await s.touch("touchEnd", []);
+  assert.ok(Math.abs((await box()) - x0 - 50) <= 2, `panned 50 px: ${(await box()) - x0}`);
+  assert.equal(await level(), z, "a pan keeps the zoom");
+  await wait(300);
+  assert.deepEqual(s.input().slice(n0).map((c) => c.params.type), [], "a pinch never reaches the page");
+  // One finger still scrolls the page.
+  const p = await s.at(640, 400);
+  await s.touch("touchStart", [p]);
+  for (let i = 1; i <= 6; i++) { await s.touch("touchMove", [{ x: p.x, y: p.y - i * 15 }]); await wait(20); }
+  await s.touch("touchEnd", []);
+  assert.ok(await until(() => s.input().slice(n0).some((c) => c.params.type === "mouseWheel")));
+  assert.equal(s.input().slice(n0).filter((c) => /mouse(Pressed|Released)/.test(c.params.type)).length, 0, "a drag never clicks");
+  assert.equal(s.sessions.flatMap((c) => c.calls).some((c) => c.method === "Emulation.setDeviceMetricsOverride"), false, "no resize on the page");
+  assert.deepEqual(s.errors, []);
+});
+
+// Zoomed in, the phone reports the part on screen, and the sharper still of it the helper takes
+// once the page rests is drawn over exactly that part, until the next moving frame.
+test("zoomed in, the sharper still of the part on screen is drawn over it until the page moves", { skip: !runtime, timeout: 60_000 }, async (t) => {
+  const s = await phone(t);
+  await s.takeOver({ keepZoom: true });
+  const clips = () => s.sessions.flatMap((c) => c.calls).filter((c) => c.method === "Page.captureScreenshot" && c.params?.clip).map((c) => c.params.clip);
+  assert.ok(await until(() => s.page.evaluate(() => !document.getElementById("sharp").hidden), 8000), "the still came and is drawn");
+  const clip = clips().at(-1);
+  // The still covers the part on screen, and that part is what was asked: the phone's pixels for it.
+  const b = await s.page.evaluate(() => {
+    const r = (id) => document.getElementById(id).getBoundingClientRect();
+    return { sharp: r("sharp"), screen: r("screen"), stage: r("stage"), dpr: devicePixelRatio };
+  });
+  const kx = FRAME.w / b.screen.width, ky = FRAME.h / b.screen.height;
+  assert.ok(Math.abs((b.sharp.left - b.screen.left) * kx - clip.x) <= 3 && Math.abs((b.sharp.top - b.screen.top) * ky - clip.y) <= 3, `drawn where it was taken: ${JSON.stringify(clip)}`);
+  assert.ok(Math.abs(b.sharp.width * kx - clip.width) <= 3 && Math.abs(b.sharp.height * ky - clip.height) <= 3, JSON.stringify({ b, clip }));
+  assert.ok(b.sharp.left <= b.stage.left + 1 && b.sharp.right >= b.stage.right - 1, "across the screen's width");
+  assert.ok(clip.scale > 1.5 && clip.scale <= 3, `at the phone's pixels: ${clip.scale}`);
+  assert.ok(clip.width * clip.height * clip.scale ** 2 <= 2_500_000);
+  // The page moves: the still goes, the moving frame shows.
+  s.sessions.at(-1).emit("Page.screencastFrame", { data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", metadata: { deviceWidth: FRAME.w, deviceHeight: FRAME.h }, sessionId: 1 });
+  assert.ok(await until(() => s.page.evaluate(() => document.getElementById("sharp").hidden)), "gone with the moving frame");
+  // Back at 1x the tab's own still is enough: no new clip.
+  await s.page.tap("#zoom-level");
+  const n = clips().length;
+  await wait(1200);
+  assert.equal(clips().length, n);
+  assert.equal(s.sessions.flatMap((c) => c.calls).some((c) => c.method === "Emulation.setDeviceMetricsOverride"), false, "no resize on the page");
   assert.deepEqual(s.errors, []);
 });
 

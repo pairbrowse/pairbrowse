@@ -448,8 +448,9 @@ body:not([data-role="owner"]) #fit { display: none; }
 /* ---------- the hand-off viewer (role turn, liveview-turn.js), phone first ---------- */
 /* The step's header, the handed-over tab and the type box, edge to edge in the visible height:
    none of the desktop's column, strip, toolbar or activity. Controls a finger can hit (44 px), the
-   type box at 1rem so a phone doesn't zoom the page when it takes focus. */
-body[data-role="turn"] { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100vh; height: 100dvh; }
+   type box at 1rem so a phone doesn't zoom the page when it takes focus, and no double tap that
+   zooms the page (only the picture zooms: liveview-zoom.js). */
+body[data-role="turn"] { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100vh; height: 100dvh; touch-action: manipulation; }
 body[data-role="turn"] .side, body[data-role="turn"] .strip, body[data-role="turn"] .toolbar, body[data-role="turn"] #turn,
 body[data-role="turn"] .joins, body[data-role="turn"] .activity, body[data-role="turn"] #hint { display: none; }
 body[data-role="turn"] .window { grid-column: 1; grid-row: 1; border-left: 0; }
@@ -457,6 +458,9 @@ body[data-role="turn"] .window { grid-column: 1; grid-row: 1; border-left: 0; }
    lays it out (liveview-zoom.js keeps it there zoomed in while it is shorter than the area). */
 body[data-role="turn"] .stage { touch-action: none; box-shadow: none; align-items: flex-start; }
 body[data-role="turn"] .frame { transform-origin: 0 0; }
+/* A sharper still of the part on screen, zoomed in (liveview-turn.js), over the picture until it moves. */
+.frame .sharp { position: absolute; z-index: 1; display: block; pointer-events: none; user-select: none; }
+.frame .sharp[hidden] { display: none; }
 .turnbar { display: grid; gap: 6px; padding: 8px 12px; background: var(--elevated); color: var(--ink); border-bottom: 1px solid var(--edge); }
 .turn-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .turn-step { display: grid; flex: 1; min-width: 0; margin: 0; font-size: var(--fs-3); line-height: 1.25; }
@@ -513,6 +517,8 @@ body[data-ended="true"] .turn-tabs, body[data-ended="true"] .turn-away { display
 .watchkeys { display: flex; flex: none; align-items: center; gap: 2px; }
 .watchkeys .mini { min-width: 32px; height: 32px; padding: 0 6px; border-radius: var(--r-2); color: var(--ink); font-size: var(--fs-4); }
 .watchkeys .watch-level { min-width: 40px; font-variant-numeric: tabular-nums; font-size: var(--fs-2); color: var(--ink-2); }
+/* No page zoom by a double tap outside the picture (the picture zooms itself: liveview-zoom.js). */
+body[data-role="watch"][data-stream="ws"] { touch-action: manipulation; }
 body[data-role="watch"][data-stream="ws"] .stage { touch-action: none; overflow: hidden; }
 body[data-role="watch"][data-stream="ws"] .frame { transform-origin: 0 0; }
 body[data-role="watch"][data-stream="ws"] #state, body[data-role="watch"][data-stream="ws"][data-s="closed"] .watchkeys { display: none; }

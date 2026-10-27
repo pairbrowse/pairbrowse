@@ -48,6 +48,7 @@ export const SERVER_EVENTS = Object.freeze({
   "overlay-pointers": { to: "pages", pages: "shared", delta: true },
   turn: { to: "turn" },
   "turn-ended": { to: "turn" },
+  sharp: { to: "turn" }, // a sharper still of the part a zoomed-in phone shows (liveview/zoomstill.mjs)
 });
 
 const names = (keep) => Object.freeze(Object.keys(SERVER_EVENTS).filter((n) => keep(SERVER_EVENTS[n])));

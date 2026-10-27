@@ -361,7 +361,7 @@ test("making a watch link starts the public tunnel to the guest port; it stays w
     assert.equal(made.length, 1);
     assert.equal(made[0].port, 4999, "the guest port, never the owner's");
     assert.equal(opts().publicHost(), "t0.trycloudflare.com");
-    assert.equal(opts().grantsPublic(), false, "hand-offs stay off it while the public hand-off link is off");
+    assert.equal(opts().grantsPublic(), true, "hand-offs use it too (public by default, no private route)");
     assert.ok(!logs.some((l) => l.includes(key)), "the key is never logged");
     // A second link: the same tunnel. Listing shows them, without keys.
     const second = await sharing.inviteCommand({ action: "create", share: "watch", hours: 4 });

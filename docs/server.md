@@ -235,12 +235,13 @@ hands it back; one reminder comes, and the agent stops safely if nobody finishes
 To just look at what the browser is doing, send `/watch` to your linked Telegram or Discord bot:
 it answers with a view-only watch link for an hour ([Watch live by link](sharing.md#watch-live-by-link)).
 
-The link reaches the live view over a private route by default: a name in `liveViewHosts` with
-`inviteBaseUrl` (a tailnet works on a phone with its app) or an SSH tunnel. Only when you may be
-on another network with neither, turn on the public link (`handoff.publicLink`, or the line under
-the Away switch): while a hand-off is open its link then goes through a tunnel of its own (a free
-Cloudflare Quick Tunnel, or your own `sharing.tunnel`) that serves that hand-off's page and
-viewer and nothing else, and stops a few seconds after the last hand-off ends. What that exposes:
+The link works from anywhere by default: while a hand-off is open it goes through a tunnel of its
+own (a free Cloudflare Quick Tunnel, or your own `sharing.tunnel`) that serves that hand-off's page
+and viewer and nothing else, and stops a few seconds after the last hand-off ends. With a private
+route set (a name in `liveViewHosts` with `inviteBaseUrl`; a tailnet works on a phone with its
+app) the link goes there instead and no tunnel starts. There is no switch: unlinking the app on
+the Handoff page stops phone hand-offs (`handoff.away` and `handoff.publicLink` of 0.17 and before
+are no longer read). What that exposes:
 anyone who has the link while the hand-off is open can open it, and the first to tap Take over
 gets that one tab until the hand-off ends; never your own live view, invite links or the rest of
 this computer. [Working together](sharing.md) has the routes, and the

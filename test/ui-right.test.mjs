@@ -683,45 +683,35 @@ describe("tools order and reads", () => pageTest("right", opts(), async ({ page,
   assert.deepEqual(errors, []);
 }));
 
-// The Away switch (spec server-mode decision 8) under Hand-offs: read with the list (config.json),
-// written by a click (POST config { away }), kept current by the config event; off and disabled
-// without a ready channel; on and not a switch on a server; gone with an older helper.
-describe("away switch", () => pageTest("right", opts({ config: { away: { on: false, server: false, ready: true } } }), async ({ page, helper, inPage, until, errors }) => {
-  assert.equal(await inPage(() => document.getElementById("away-row").checkVisibility()), false, "nothing before the Tools tab");
+// No Away switch: once a hand-off channel is linked (config.json's phone, read with the list and
+// kept current by the config event), each hand-off row says "Sent to your phone" with the channel;
+// nothing is posted, and an older helper's config (no phone) says nothing.
+describe("sent to your phone", () => pageTest("right", opts({ handoffs: { items: HANDOFFS }, config: { phone: { ready: true, server: false, privateRoute: false, via: ["telegram", "discord-dm"] } } }), async ({ page, helper, inPage, until, errors }) => {
   await page.click("#tab-tools");
-  await until("the switch", () => document.getElementById("away-row").checkVisibility() && !document.getElementById("away-on").disabled);
-  assert.equal(await inPage(text, "away-state"), "Off: steps handed to you stay in this window.");
-  await inPage(synthetic, "#away-on");
-  await sleep(200);
-  assert.equal((await posted(helper, "config", 0)).length, 0, "a page script's click does nothing");
-  await page.click("#away-on");
-  assert.deepEqual((await posted(helper, "config")).map((p) => p.body), [{ away: true }]);
-  await until("on", () => document.getElementById("away-on").getAttribute("aria-checked") === "true");
-  assert.equal(await inPage(text, "away-state"), "On: steps handed to you also go to your phone. They stay here too.");
-  helper.push("config", { ...helper.fixtures.config, away: { on: false, server: false, ready: false } });
-  await until("no channel", () => document.getElementById("away-on").disabled && document.getElementById("away-on").getAttribute("aria-checked") === "false");
-  assert.equal(await inPage(text, "away-state"), "Set up a hand-off channel first (handoff in config.json), then turn this on.");
-  helper.push("config", { ...helper.fixtures.config, away: { on: false, server: true, ready: true } });
-  await until("server", () => document.getElementById("away-on").disabled && document.getElementById("away-on").getAttribute("aria-checked") === "true");
-  const { away: _a, ...old } = helper.fixtures.config;
-  helper.push("config", old);
-  await sleep(200);
-  assert.equal(await inPage(() => document.getElementById("away-row").checkVisibility()), true, "a config event without away (an older helper's) leaves the row as it is");
+  await until("the hint", () => [...document.querySelectorAll("#handoffs .ho-phone")].length === 2 && [...document.querySelectorAll("#handoffs .ho-phone")].every((h) => h.checkVisibility()));
+  assert.deepEqual(await inPage(() => [...document.querySelectorAll("#handoffs .ho-phone")].map((h) => h.textContent)), ["Sent to your phone · Telegram, Discord", "Sent to your phone · Telegram, Discord"]);
+  assert.equal(await inPage(() => document.querySelectorAll("#away-row, #away-on, [role=switch]").length), 0, "no switch");
+  helper.push("config", { ...helper.fixtures.config, phone: { ready: false, server: false, privateRoute: false, via: [] } });
+  await until("unlinked", () => [...document.querySelectorAll("#handoffs .ho-phone")].every((h) => !h.checkVisibility()));
+  helper.push("config", { ...helper.fixtures.config, phone: { ready: true, server: false, privateRoute: false, via: ["telegram"] } });
+  await until("linked again", () => [...document.querySelectorAll("#handoffs .ho-phone")].every((h) => h.checkVisibility() && h.textContent === "Sent to your phone · Telegram"));
+  assert.equal((await posted(helper, "config", 0)).length, 0, "nothing posted");
   assert.deepEqual(errors, []);
 }));
 
 describe("hand-offs", () => pageTest("right", opts({ handoffs: { items: HANDOFFS } }), async ({ page, helper, inPage, until, errors }) => {
   await page.click("#tab-tools");
   await until("the rows", () => document.querySelectorAll("#handoffs li").length === 2);
-  const rows = () => inPage(() => [...document.querySelectorAll("#handoffs li")].map((li) => {
-    const a = li.querySelector(".avatar");
-    return { kind: li.querySelector(".kind").textContent, label: a?.getAttribute("aria-label"), bg: a && getComputedStyle(a).backgroundColor, text: li.querySelector(".text").textContent,
-      meta: li.querySelector(".meta").textContent, show: li.querySelector("button").getAttribute("aria-label") };
-  }));
+  const rows = () => inPage(() => [...document.querySelectorAll("#handoffs li")].map((li) => ({
+    kind: li.querySelector(".meta").textContent.split(" · ")[0], text: li.querySelector(".text").textContent, meta: li.querySelector(".meta").textContent,
+    who: li.querySelector(".meta").title, mark: !!li.querySelector(".ho-mark svg"), show: li.querySelector("button").getAttribute("aria-label"), phone: li.querySelector(".ho-phone").checkVisibility() })));
   assert.deepEqual(await rows(), [
-    { kind: "Two-step code", label: "Claude", bg: "rgb(233, 118, 63)", text: "Enter the code sent to your phone", meta: "shop.example · Claude", show: "Show the tab on shop.example" },
-    { kind: "CAPTCHA", label: "Alice", bg: "rgb(112, 136, 240)", text: "Solve the CAPTCHA on the cart page", meta: "cart.example · Alice · Codex", show: "Show the tab on cart.example" },
-  ], "oldest first, the kind in words, who in their color");
+    { kind: "Two-step code", text: "Enter the code sent to your phone", meta: "Two-step code · shop.example", who: "Shop · from Claude", mark: true, show: "Show the tab on shop.example", phone: false },
+    { kind: "CAPTCHA", text: "Solve the CAPTCHA on the cart page", meta: "CAPTCHA · cart.example", who: "Cart · from Alice", mark: true, show: "Show the tab on cart.example", phone: false },
+  ], "oldest first: what to do as the main line, the kind and site small, one Show; no phone hint without a linked channel");
+  const one = await inPage(() => { const li = document.querySelector("#handoffs li"); const r = li.getBoundingClientRect(); return { h: Math.round(r.height), buttons: li.querySelectorAll("button").length }; });
+  assert.equal(one.buttons, 1, "one action");
+  assert.ok(one.h <= 80, `a compact row: ${one.h} px`);
   assert.equal(await inPage(text, "handoffs-count"), "2");
   assert.equal(await inPage(visible, "#handoffs-count"), true);
   assert.equal(await inPage(text, "handoffs-said"), "2 steps waiting for you");

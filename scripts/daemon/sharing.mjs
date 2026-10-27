@@ -155,8 +155,8 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
       onPagesKey: view.onPagesKey || (() => {}), onPersonInput: view.onPersonInput || (() => {}), activityLog: view.activityLog || null,
       // The open session's own name (a clean session's is clean-<n>; its shown name, "Clean session", is no session's): hand-off grants are matched against it.
       sessionName: view.sessionName, grants: view.grants || null, publicHost: () => tun.handoffHost(), publicShared: () => tun.handoffShared(),
-      // Hand-offs on the public address only while its link is on (a tunnel kept for watch links never carries them).
-      grantsPublic: () => config.handoff?.publicLink === true,
+      // Hand-offs on the public address unless a private route is set (a tunnel kept for watch links then never carries them).
+      grantsPublic: () => publicOn(),
     });
     await restoring;
     // Keep the sharing tunnel's port when the live view restarts with the browser.
@@ -184,7 +184,8 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
   // invite links reach it (inviteBaseUrl on a liveViewHosts name, else loopback, which a phone
   // reaches through the person's SSH tunnel), never the join-code port. Its new tabs are watched
   // from now on (a sign-in pop-up joins the hand-off). null when the live view can't start.
-  // With handoff.publicLink (step 21b, U2): the hand-off tunnel's public address instead, started
+  // Without a private route (inviteBaseUrl), always (step 21b, U2; handoff.publicLink of 0.17 is no
+  // longer read): the hand-off tunnel's public address instead, started
   // now if it isn't up (at most HANDOFF_TUNNEL_MS), which serves the grant's routes alone
   // (liveview/public-turn.mjs). Answers the link, or { link, privateOnly: true } when the public
   // address couldn't start, so the message says the link works only on the private route (the step
@@ -195,7 +196,7 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
     try { lv = await ensureLiveView(); } catch (e) { log(`hand-off link: ${e?.message || e}`); return null; }
     lv.watchGrants?.();
     const link = `${inviteBase || `http://127.0.0.1:${new URL(lv.url).port}`}/${key}/`;
-    if (config.handoff?.publicLink !== true) return link;
+    if (!publicOn()) return link;
     let t = null, failed = false;
     try { t = await within(HANDOFF_TUNNEL_MS, tun.ensureHandoff(lv.guestPort)); } catch (e) { failed = true; log(`hand-off link: the public address didn't start (${e?.message || e})`); }
     // Not up: a start still under way is called off (it stops as soon as it is up), so no public
@@ -212,22 +213,8 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
     handoffStop.unref?.();
   }
   // The public tunnel is needed while a hand-off (on the public link) or a watch link is open.
-  const publicNeeded = () => (config.handoff?.publicLink === true && view.grants?.open().length > 0) || watchOpen();
+  const publicNeeded = () => (publicOn() && view.grants?.open().length > 0) || watchOpen();
   view.grants?.onEnd?.(() => { if (!publicNeeded()) stopHandoffSoon(); });
-  // The public link turned off (Settings: "Stop the public link", config.handoff.publicLink false):
-  // its tunnel stops now, open hand-offs or not, so the public address is gone at once; an open
-  // hand-off stays doable in the window (and on the private route), and its reminder carries the
-  // private link.
-  // A watch link open keeps the address up for itself: the grants are no longer served on it then
-  // (grantsPublic), so hand-offs go on the private route alone, as with the address gone.
-  function publicLinkChanged() {
-    if (config.handoff?.publicLink === true) return;
-    if (watchOpen()) { log("hand-off link: the public link was turned off; hand-offs leave its address (a watch link keeps it up)"); return; }
-    clearTimeout(handoffStop); handoffStop = null;
-    if (tun.handoffHost()) log("hand-off link: the public link was turned off; its address stops now");
-    tun.stopHandoff();
-  }
-
   // pairbrowse_liveview. Returns { text }.
   async function liveViewCommand() {
     const { url } = await ensureLiveView();
@@ -536,8 +523,10 @@ export function createSharing({ config, log, host, view, notify, hostNote, joinA
   // Whether hand-off links have a private route of their own (inviteBaseUrl on a liveViewHosts
   // name): without one the Away switch offers the public link (step 21b).
   const privateRoute = () => !!inviteBase;
+  // Hand-off links go through the public tunnel unless a private route is set.
+  const publicOn = () => !privateRoute();
   // Whether text holds a live link's key (a watch link, a live view link): agents never type one
   // into a page (daemon/serve/refuse.mjs).
   const linkIn = (text) => invites.keyIn(text);
-  return { approvals, liveView: () => liveView, ensureLiveView, closeLiveView, liveViewCommand, handoffLink, publicLinkChanged, privateRoute, handoffHost: () => tun.handoffHost(), inviteCommand, stopTunnel: stopAll, suspend, endAll, devPanel, chatWatchLink, linkIn, watchOpen };
+  return { approvals, liveView: () => liveView, ensureLiveView, closeLiveView, liveViewCommand, handoffLink, privateRoute, handoffHost: () => tun.handoffHost(), inviteCommand, stopTunnel: stopAll, suspend, endAll, devPanel, chatWatchLink, linkIn, watchOpen };
 }

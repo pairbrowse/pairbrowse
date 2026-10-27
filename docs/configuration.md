@@ -156,23 +156,21 @@
   `acceptMsCoreFontsEula` `true` records that you, the owner, accepted Microsoft's licence for the
   core fonts for the web, so the server's font setup installs them without asking (see
   [server.md](server.md), Fonts); it stands in for your typed `yes` and nothing else.
-- `handoff`: hand-off messages to your phone, for when the browser runs on a server or you are away
-  from it: `{ "enabled": false, "away": false, "publicLink": false, "grantMinutes": 15,
-  "remindMinutes": 10, "channels": [] }` (default). On a computer you sit at, a step handed to you
-  stays in the PairBrowse window as before; messages go only with `enabled` `true`, and then always
-  in server mode, or on a desktop while `away` is `true`. `away` is the Away switch in the side
-  panel's Tools tab (Hand-offs), Settings and the live view's Profile panel: off by default, saved
-  here when you flip it (only `away` changes), and it turns on only with `enabled` and a channel
-  that can be used; on a server it isn't a switch (messages always go). With a channel the step
-  still shows in the window too, and whichever you use first does it. `grantMinutes` (1 to 120) is how long a
+- `handoff`: hand-off messages to your phone: `{ "enabled": false, "grantMinutes": 15,
+  "remindMinutes": 10, "channels": [] }` (default). Linking Telegram or Discord on the Handoff page
+  (or setting up a channel here with `enabled` `true`) is all it takes: from then on every step
+  handed to you goes to your phone too, on a desktop as in server mode, and still shows in the
+  PairBrowse window; whichever you use first does it. There is no switch: unlink the app (or set
+  `enabled` to `false`) to stop it. `away` and `publicLink`, the Away switch and the public link's
+  switch of 0.17 and before, are still read without error and no longer used. `grantMinutes` (1 to 120) is how long a
   link works; `remindMinutes` (1 or more) when the one reminder comes (at or after `grantMinutes` it falls back
-  to two thirds of it, with a warning). `publicLink` (`false` by default) sends hand-off links through a
-  public address of their own, so the phone reaches them from any network: while a hand-off is open a
-  tunnel (a Cloudflare Quick Tunnel, or your own `sharing.tunnel`) reaches the live view's join-code
-  port, which then serves that hand-off's landing page and viewer and nothing else (with your own
-  `sharing.tunnel`, one address, join codes keep working on it too); it stops once no hand-off is
-  open, and at once when the public link is turned off. Use it when no private route is set (`inviteBaseUrl` on your tailnet): the line
-  under the Away switch offers it then, and turns it off again; in server mode it is the same opt-in.
+  to two thirds of it, with a warning). Hand-off links go through a public address of their own,
+  so the phone reaches them from any network, unless you set a private route (`inviteBaseUrl` on
+  a `liveViewHosts` name, such as your tailnet): while a hand-off is open a tunnel (a Cloudflare
+  Quick Tunnel, or your own `sharing.tunnel`) reaches the live view's join-code port, which then
+  serves that hand-off's landing page and viewer and nothing else (with your own `sharing.tunnel`,
+  one address, join codes keep working on it too); it stops once no hand-off is open. The Handoff
+  page says this in one sentence next to the linked app.
   Anyone who has the link while the hand-off is open can open it once, through Cloudflare. When the
   tunnel can't start within 45 seconds the message goes with the private-route link and says it works
   only there; the step stays doable in the PairBrowse window (docs/security.md). `channels` lists where messages go, each
@@ -201,7 +199,7 @@
   `PAIRBROWSE_HANDOFF_DISCORD_TOKEN`, `_CHANNEL` and `_USER`, in `secrets.env`, the channel entry
   is added here with `enabled` `true`, and the bot replies "Linked to PairBrowse.". The token is
   never shown again. Unlink removes that app's secrets and its entry (`enabled` goes `false` when no
-  channel is left). The page's top switch is the Away switch. If the Telegram bot has a webhook set
+  channel is left), which stops phone hand-offs. If the Telegram bot has a webhook set
   the page says so: PairBrowse never removes it. `send` (the page's "What goes to your phone"):
   `{ "approvals": true, "checks": true, "submits": true, "runs": false }` (default; a box left
   out keeps its default): `approvals` an approval card ("Approve a final click on example.com?
@@ -209,8 +207,8 @@
   button's words), `checks` the hand-off messages for a sign-in, a CAPTCHA or a 2FA code, `submits`
   those for a payment or another final step left to you, `runs` a fast-mode run that finished (the
   site's host, done, stopped or failed, and the steps done). A step whose box is off stays in the
-  window as with hand-offs off. All of it goes only under the gate above (`enabled`, and a server or
-  Away); "Send a test" always sends. `answer` (`false` by default, the page's "Answer approvals
+  window as with hand-offs off. All of it goes only under the gate above (`enabled` with a channel
+  that can be used); "Send a test" always sends. `answer` (`false` by default, the page's "Answer approvals
   from chat"): the linked chat answers approval cards (Telegram's Approve and Deny buttons, or a typed
   `approve K7Q2` / `deny K7Q2`; on Discord typed only), only from you in that chat, only for a card
   of your own agents on a tab it knows (held to that tab and site, as a joiner's answer is), each code
@@ -339,7 +337,7 @@
   `"notify"` only tells you, and `"ignore"` lets an address change pass (a rotating proxy, kept in
   bounds by its `expectEgress` countries) but pauses on a failure all the same. You get a
   notification, `pairbrowse_status` warns until a recheck passes, and where hand-off messages go
-  to your channels (`handoff`, above: on a server, or while you are Away) they get a message too,
+  to your channels (`handoff`, above: once a channel is linked) they get a message too,
   naming only the proxy's id, whether its exit changed or its check failed, whether agents were
   paused, and the time. Each recheck is kept in `network.json` as kind `recheck` (the helper's
   read only). Traffic never goes around the proxy meanwhile: a proxy that stops answering stops

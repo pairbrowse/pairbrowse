@@ -56,7 +56,7 @@ async function berlinBehindUs() {
 
 // Hand-offs on a server (they go to the channels: a webhook through a stub post), reading the
 // session's open compatibility items as the helper does (context.compatibility).
-function handoffs({ compatibility, server = true }) {
+function handoffs({ compatibility, server = true, usable = null }) {
   const clock = { t: 1_800_000_000_000, m: 9_000 };
   const grants = createGrants({ now: () => clock.t, mono: () => clock.m, timers: { set: () => null, clear: () => {} } });
   const channels = [{ type: "webhook", urlSecret: "PAIRBROWSE_WEBHOOK_URL" }];
@@ -67,7 +67,7 @@ function handoffs({ compatibility, server = true }) {
   const notes = [];
   const hud = { page: null, async setBadge() {}, async setBadgeFor() {}, badge: () => ({ text: "", kind: "clear" }), sparkPage() { return this.page; }, sparkColor: () => "" };
   const yt = createYourTurn({ config, grants, notifier, handoffs: createHandoffs(), hud, hostNote: (x) => notes.push(x), journal: { flushNow: async () => {}, status: () => {} },
-    sessionName: () => "default", linkFor: async (key) => `http://127.0.0.1:4100/${key}/`, sends: () => handoffSends(config, { server }),
+    sessionName: () => "default", linkFor: async (key) => `http://127.0.0.1:4100/${key}/`, sends: () => handoffSends(config, { server, usable }),
     timers: { set: () => null, clear: () => {} }, now: () => clock.t, turnMs: () => 0, compatibility });
   return { yt, grants, sent, notes, hud };
 }
@@ -144,8 +144,8 @@ test("a compatibility problem alone mints no grant and sends no your-turn messag
   await tick();
   assert.deepEqual([s.grants.open().length, s.sent.length, s.notes.length], [0, 0, 0]);
   assert.equal(page.retries, 0);
-  // On a desktop without Away a hand-off stays in the window (decision 8): no grant, no report.
-  const desk = handoffs({ compatibility: () => net.part.compatibility("default"), server: false });
+  // On a desktop with no channel that can be used a hand-off stays in the window: no grant, no report.
+  const desk = handoffs({ compatibility: () => net.part.compatibility("default"), server: false, usable: 0 });
   desk.hud.page = page;
   assert.equal(await desk.yt.onStatus("p1", { kind: "you", text: "Sign in", step: "login" }, page), "");
   assert.deepEqual([desk.grants.open().length, desk.sent.length], [0, 0]);

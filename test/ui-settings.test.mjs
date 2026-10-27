@@ -678,45 +678,23 @@ pageTest("settings", { fixtures, viewport: VIEW, frame: true, native: false }, a
   assert.deepEqual(errors, []);
 });
 
-// 13. Away (spec server-mode decision 8): the switch writes POST config { away } on a click; it
-// can't be turned on without a ready channel (the line says so) and isn't a switch on a server;
-// an older helper without it keeps the item off the page.
-both({ fixtures: { ...fixtures, config: { ...fixtures.config, away: { on: false, server: false, ready: true } } }, viewport: VIEW }, async ({ page, helper, until, inPage, errors }) => {
-  await until("the switch", () => !document.getElementById("away").hidden && !document.getElementById("away-on").disabled);
-  assert.equal(await inPage(() => document.getElementById("away-on").getAttribute("aria-checked")), "false");
-  assert.match(await inPage(text, "away-state"), /^Off: steps handed to you stay in this window\.$/);
-  await page.click("#away-on");
-  await posted(helper, page, "away", "config", { away: true });
-  await until("on", () => document.getElementById("away-on").getAttribute("aria-checked") === "true" && /^On: steps handed to you also go to your phone/.test(document.getElementById("away-state").textContent));
-  assert.equal(helper.fixtures.config.away.on, true);
-  // Without a channel: on can't be chosen, and the line says why.
-  helper.push("config", { ...helper.fixtures.config, away: { on: false, server: false, ready: false } });
-  await until("not ready", () => document.getElementById("away-on").disabled && /hand-off channel first/.test(document.getElementById("away-state").textContent));
-  // On a server: always on, not a switch.
-  helper.push("config", { ...helper.fixtures.config, away: { on: false, server: true, ready: true } });
-  await until("server", () => document.getElementById("away-on").disabled && document.getElementById("away-on").getAttribute("aria-checked") === "true" && /runs on a server/.test(document.getElementById("away-state").textContent));
-  // An older helper: no away in its config, the item leaves.
-  const { away: _away, ...old } = helper.fixtures.config;
+// 13. Steps on your phone: no switch. The Agents item says in one sentence whether steps go to the
+// phone too and what the link exposes (config.json's phone: ready, server, privateRoute); nothing
+// posts. Linked with no private route: through Cloudflare; a private route: your own address; on a
+// server: always; nothing linked: the window only; an older helper (no phone): nothing said.
+both({ fixtures: { ...fixtures, config: { ...fixtures.config, phone: { ready: true, server: false, privateRoute: false, via: ["telegram"] } } }, viewport: VIEW }, async ({ helper, until, inPage, errors }) => {
+  await until("the line", () => /works from anywhere \(via Cloudflare\) while the step is open/.test(document.getElementById("phone-state").textContent));
+  assert.equal(await inPage(() => document.querySelectorAll("#phone [role=switch], #away-on, #ho-away").length), 0, "no switch");
+  helper.push("config", { ...helper.fixtures.config, phone: { ready: true, server: false, privateRoute: true, via: ["telegram"] } });
+  await until("private route", () => /link on your own address/.test(document.getElementById("phone-state").textContent));
+  helper.push("config", { ...helper.fixtures.config, phone: { ready: true, server: true, privateRoute: false, via: [] } });
+  await until("server", () => /runs on a server/.test(document.getElementById("phone-state").textContent));
+  helper.push("config", { ...helper.fixtures.config, phone: { ready: false, server: false, privateRoute: false, via: [] } });
+  await until("none linked", () => /No app is linked/.test(document.getElementById("phone-state").textContent));
+  const { phone: _phone, ...old } = helper.fixtures.config;
   helper.push("config", old);
-  await until("hidden", () => document.getElementById("away").hidden);
-  assert.deepEqual(errors, []);
-});
-
-// 13b. The public hand-off link (spec server-mode step 21b): with a ready channel and no private
-// route, a line under the switch offers it, its exposure in one sentence; a click writes POST
-// config { publicLink: true }, and the line then turns it off. A private route keeps it out of sight.
-both({ fixtures: { ...fixtures, config: { ...fixtures.config, away: { on: true, server: false, ready: true, publicLink: false, privateRoute: false } } }, viewport: VIEW }, async ({ page, helper, until, inPage, errors }) => {
-  await until("the offer", () => document.querySelector("#away .away-offer") && !document.querySelector("#away .away-offer").hidden);
-  assert.match(await inPage(() => document.querySelector("#away .away-offer").textContent), /free relay \(Cloudflare\) carries that one tab to whoever opens the link first/);
-  await page.click("#away .away-offer button");
-  await posted(helper, page, "the public link", "config", { publicLink: true });
-  await until("on", () => /^Public link on/.test(document.querySelector("#away .away-offer").textContent) && /Stop the public link/.test(document.querySelector("#away .away-offer button").textContent));
-  // A private route set, the link off: no offer.
-  helper.push("config", { ...helper.fixtures.config, away: { on: true, server: false, ready: true, publicLink: false, privateRoute: true } });
-  await until("no offer", () => document.querySelector("#away .away-offer").hidden);
-  // On a server, without a private route: the same offer.
-  helper.push("config", { ...helper.fixtures.config, away: { on: false, server: true, ready: true, publicLink: false, privateRoute: false } });
-  await until("offered on a server", () => !document.querySelector("#away .away-offer").hidden);
+  await until("older helper", () => document.getElementById("phone-state").textContent === "");
+  assert.equal(helper.posts.filter((p) => p.route === "config").length, 0, "nothing posted");
   assert.deepEqual(errors, []);
 });
 
@@ -842,17 +820,18 @@ pageTest("settings", { fixtures: { ...fixtures, network: NET, networkTest: TEST 
 // Link posts the token once (the field empties), the code shows with its countdown, Cancel, Send a
 // test and Unlink (asked in place) post their ops; each answer is said in that app's card; what
 // goes and answering from chat post { op: "set" } with only what changed; the switch on top is
-// Away (POST config { away }). A helper without the route: no section, no nav link; the Handoff
+// no switch (steps go to the phone once an app is linked). A helper without the route: no section, no nav link; the Handoff
 // page (view=handoff) shows the section alone and says the helper has none.
 const NONE = { state: "none", bot: "", chat: "" };
 const HO = { on: false, server: false, ready: false, send: { approvals: true, checks: true, submits: true, runs: false }, answer: false, telegram: NONE, discord: NONE };
 const TG_LINKED = { state: "linked", bot: "@pb_handoff_bot", chat: "Dion" };
+const PHONE = { ready: true, server: false, privateRoute: false, via: ["telegram"] };
 const TOKEN = "123456789:AAFabcdefghijklmnopqrstuvwxyz012";
 const card = (app) => { const c = document.getElementById(`ho-${app}`); return { state: c.dataset.state, pill: c.querySelector(".ho-pill").textContent, msg: c.querySelector(".ho-msg").textContent, kind: c.querySelector(".ho-msg").dataset.kind || "" }; };
-both({ fixtures: { ...fixtures, handoff: HO, config: { ...fixtures.config, away: { on: false, server: false, ready: false } } }, viewport: VIEW }, async ({ page, helper, until, inPage, errors }) => {
+both({ fixtures: { ...fixtures, handoff: HO, config: { ...fixtures.config, phone: { ready: false, server: false, privateRoute: false, via: [] } } }, viewport: VIEW }, async ({ page, helper, until, inPage, errors }) => {
   await until("the section", () => !document.getElementById("handoff").hidden && !document.getElementById("nav-handoff").hidden && document.querySelectorAll(".ho-card").length === 2);
   assert.deepEqual(await inPage(card, "telegram"), { state: "none", pill: "Not linked", msg: "", kind: "" });
-  assert.deepEqual(await inPage(() => [document.getElementById("ho-away").disabled, document.getElementById("ho-away-state").textContent]), [true, "Link Telegram or Discord below first."]);
+  assert.equal(await inPage(() => document.getElementById("ho-away")), null, "no switch");
   assert.deepEqual(await inPage(() => [...document.querySelectorAll("#ho-send .ho-check")].map((b) => [b.dataset.send, b.checked])), [["approvals", true], ["checks", true], ["submits", true], ["runs", false]]);
   assert.deepEqual(await inPage(() => [document.getElementById("ho-telegram-token").type, document.getElementById("ho-telegram-token").autocomplete, document.getElementById("ho-telegram-token").spellcheck]), ["password", "off", false]);
   // Link without a token: said in the card, nothing posted.
@@ -879,6 +858,27 @@ both({ fixtures: { ...fixtures, handoff: HO, config: { ...fixtures.config, away:
   assert.match(pending.left, /^(10:00|9:5\d) left$/);
   assert.equal(pending.msg, "Send PB-K7Q2XM to @pb_handoff_bot within 10 minutes.");
   assert.doesNotMatch(await inPage(() => document.body.innerText), /AAFabcdefghij/, "the token is never shown");
+  // Copy in a framed page where the clipboard API is refused: the page's own copy command on a real
+  // click; when that fails too, the one shortcut for this computer, and the code selected.
+  await inPage(() => {
+    window.__cmd = [];
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async () => { throw new DOMException("denied", "NotAllowedError"); } } });
+    document.execCommand = (c) => { window.__cmd.push([c, document.activeElement?.value]); return window.__cmdOk !== false; };
+  });
+  await page.click("#ho-telegram-copy");
+  await until("copied by the fallback", () => document.querySelector("#ho-telegram .ho-msg").textContent === "Copied the code.");
+  assert.deepEqual(await inPage(() => window.__cmd), [["copy", "PB-K7Q2XM"]]);
+  await inPage(() => { window.__cmdOk = false; });
+  await page.click("#ho-telegram-copy");
+  await until("the shortcut", () => /^Couldn't copy: select the code and press (Cmd|Ctrl)\+C\.$/.test(document.querySelector("#ho-telegram .ho-msg").textContent));
+  const keys = await inPage(() => (/mac/i.test(navigator.userAgentData?.platform || navigator.platform || "") ? "Cmd+C" : "Ctrl+C"));
+  assert.match(await inPage(() => document.querySelector("#ho-telegram .ho-msg").textContent), new RegExp(`press ${keys.replace("+", "\\+")}\\.$`), "one shortcut, this computer's");
+  assert.equal(await inPage(() => String(getSelection())), "PB-K7Q2XM", "the code selected for the shortcut");
+  // Linked meanwhile (the helper's event): the copy error goes with the state it was about.
+  helper.push("handoff", { ...helper.fixtures.handoff, telegram: TG_LINKED });
+  await until("linked, message cleared", () => document.getElementById("ho-telegram").dataset.state === "linked" && document.querySelector("#ho-telegram .ho-msg").textContent === "");
+  helper.push("handoff", { ...helper.fixtures.handoff });
+  await until("pending again", () => document.getElementById("ho-telegram").dataset.state === "pending");
   // Cancel.
   await page.click("#ho-telegram-cancel");
   await posted(helper, page, "the cancel", "handoff", { op: "cancel", app: "telegram" });
@@ -893,11 +893,12 @@ both({ fixtures: { ...fixtures, handoff: HO, config: { ...fixtures.config, away:
   assert.equal(helper.fixtures.handoff.answer, true);
   assert.deepEqual(errors, []);
 });
-pageTest("settings", { fixtures: { ...fixtures, handoff: { ...HO, on: true, ready: true, telegram: TG_LINKED, discord: { ...NONE, error: "This bot has a webhook set." } }, config: { ...fixtures.config, away: { on: true, server: false, ready: true } } }, viewport: VIEW }, async ({ page, helper, until, inPage, errors }) => {
+pageTest("settings", { fixtures: { ...fixtures, handoff: { ...HO, on: true, ready: true, telegram: TG_LINKED, discord: { ...NONE, error: "This bot has a webhook set." } }, config: { ...fixtures.config, phone: PHONE } }, viewport: VIEW }, async ({ page, helper, until, inPage, errors }) => {
   await until("linked", () => document.getElementById("ho-telegram")?.dataset.state === "linked");
   assert.equal(await inPage(() => document.querySelector("#ho-telegram .ho-linked").textContent), "Linked to Dion via @pb_handoff_bot");
   assert.deepEqual(await inPage(() => [document.getElementById("ho-discord-err").hidden, document.getElementById("ho-discord-err").textContent]), [false, "This bot has a webhook set."]);
-  assert.deepEqual(await inPage(() => [document.getElementById("ho-away").getAttribute("aria-checked"), document.getElementById("ho-away").disabled]), ["true", false]);
+  // The linked card says once that steps go to the phone too, and what the link exposes.
+  assert.match(await inPage(() => document.getElementById("ho-telegram-phone").textContent), /also go to your phone through a private link that works from anywhere \(via Cloudflare\) while the step is open/);
   await page.click("#ho-telegram-test");
   await posted(helper, page, "the test", "handoff", { op: "test", app: "telegram" });
   await until("sent", () => document.querySelector("#ho-telegram .ho-msg").textContent === "Sent. Check Telegram.");
@@ -910,19 +911,14 @@ pageTest("settings", { fixtures: { ...fixtures, handoff: { ...HO, on: true, read
   await page.click("#ho-telegram-unlink-yes");
   await posted(helper, page, "the unlink", "handoff", { op: "unlink", app: "telegram" });
   await until("unlinked", () => document.getElementById("ho-telegram").dataset.state === "none" && document.querySelector("#ho-telegram .ho-msg").textContent === "Unlinked Telegram.");
-  // Nothing linked any more: Send to your phone goes off and can't come back on.
-  await until("away off", () => document.getElementById("ho-away").getAttribute("aria-checked") === "false" && document.getElementById("ho-away").disabled);
   assert.deepEqual(errors, []);
 });
-// The switch on top is Away: POST config { away }.
-pageTest("settings", { fixtures: { ...fixtures, handoff: { ...HO, on: true, ready: true, telegram: TG_LINKED }, config: { ...fixtures.config, away: { on: true, server: false, ready: true } } }, viewport: VIEW, frame: "view=handoff" }, async ({ page, frame, helper, until, inPage, errors }) => {
+// The Handoff page alone (view=handoff): its section only; the helper's handoff event redraws it.
+pageTest("settings", { fixtures: { ...fixtures, handoff: { ...HO, on: true, ready: true, telegram: TG_LINKED }, config: { ...fixtures.config, phone: PHONE } }, viewport: VIEW, frame: "view=handoff" }, async ({ helper, until, inPage, errors }) => {
   await until("linked", () => document.getElementById("ho-telegram")?.dataset.state === "linked");
   const c = await inPage(chromeOf);
   assert.deepEqual([c.embedded, c.header, c.nav, c.sections], [true, false, false, ["handoff"]]);
   assert.equal(await inPage(() => document.documentElement.dataset.view), "handoff");
-  await frame.click("#ho-away");
-  await posted(helper, page, "away", "config", { away: false });
-  await until("off", () => document.getElementById("ho-away").getAttribute("aria-checked") === "false" && document.getElementById("ho-away-state").textContent === "Off: steps handed to you stay in this window.");
   // The helper's handoff event redraws the page (listed in ui/events.js for the pages' stream).
   if (SHARED_STREAM_EVENTS.includes("handoff")) {
     helper.push("handoff", { ...helper.fixtures.handoff, discord: { state: "pending", bot: "PairBrowse Handoff", chat: "", code: "PB-ABCDEF", expiresAt: Date.now() + 60_000 } });
@@ -942,7 +938,7 @@ pageTest("settings", { fixtures, viewport: VIEW }, async ({ helper, until, inPag
 pageTest("settings", { fixtures, viewport: VIEW, frame: "view=handoff" }, async ({ until, inPage, errors }) => {
   await until("the note", () => !document.getElementById("ho-missing").hidden);
   assert.deepEqual((await inPage(chromeOf)).sections, ["handoff"]);
-  assert.deepEqual(await inPage(() => ["handoff-away", "handoff-send"].map((id) => document.getElementById(id).hidden)), [true, true]);
+  assert.deepEqual(await inPage(() => ["handoff-send"].map((id) => document.getElementById(id).hidden)), [true]);
   assert.deepEqual(errors, []);
 });
 pageTest("settings", { fixtures: { ...fixtures, handoff: HO }, viewport: VIEW, frame: "view=pairbrowse" }, async ({ helper, until, inPage, errors }) => {
@@ -998,7 +994,7 @@ pageTest("settings", { fixtures: { ...fixtures, network: { ...SAVED, recent: [{ 
 // Handoff's two app cards, side by side, are one height, and their last rows (the token and Link,
 // the code's buttons, Send a test) line up on one line, in every pair of states; stacked when narrow.
 for (const [name, tg, dc] of [["both not linked", NONE, NONE], ["linked and not", TG_LINKED, NONE], ["waiting and error", { state: "pending", bot: "@pb_handoff_bot", chat: "", code: "PB-K7Q2XM", expiresAt: Date.now() + 600_000 }, { ...NONE, error: "This bot has a webhook set." }]]) {
-  pageTest("settings", { fixtures: { ...fixtures, handoff: { ...HO, on: true, ready: true, telegram: tg, discord: dc }, config: { ...fixtures.config, away: { on: true, server: false, ready: true } } }, viewport: VIEW, frame: "view=handoff" }, async ({ until, inPage, errors }) => {
+  pageTest("settings", { fixtures: { ...fixtures, handoff: { ...HO, on: true, ready: true, telegram: tg, discord: dc }, config: { ...fixtures.config, phone: PHONE } }, viewport: VIEW, frame: "view=handoff" }, async ({ until, inPage, errors }) => {
     await until("cards", () => document.querySelectorAll(".ho-card").length === 2);
     const m = await inPage(() => [...document.querySelectorAll(".ho-card")].map((c) => { const r = c.getBoundingClientRect(); const last = c.querySelector(".ho-body").lastElementChild.getBoundingClientRect(); return { top: Math.round(r.top), h: Math.round(r.height), lastBottom: Math.round(last.bottom) }; }));
     assert.equal(m[0].top, m[1].top, `${name}: side by side`);
@@ -1007,7 +1003,7 @@ for (const [name, tg, dc] of [["both not linked", NONE, NONE], ["linked and not"
     assert.deepEqual(errors, []);
   });
 }
-pageTest("settings", { fixtures: { ...fixtures, handoff: { ...HO, on: true, ready: true }, config: { ...fixtures.config, away: { on: true, server: false, ready: true } } }, viewport: { width: 420, height: 900 } }, async ({ until, inPage, errors }) => {
+pageTest("settings", { fixtures: { ...fixtures, handoff: { ...HO, on: true, ready: true }, config: { ...fixtures.config, phone: PHONE } }, viewport: { width: 420, height: 900 } }, async ({ until, inPage, errors }) => {
   await until("cards", () => document.querySelectorAll(".ho-card").length === 2);
   const tops = await inPage(() => [...document.querySelectorAll(".ho-card")].map((c) => Math.round(c.getBoundingClientRect().top)));
   assert.ok(tops[1] > tops[0], "stacked when narrow");

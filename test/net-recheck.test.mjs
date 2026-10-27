@@ -317,29 +317,30 @@ test("a browser closing, or a launch failing, after the rechecks start but befor
 });
 
 // Decision 8: the network message goes where hand-offs go, through the notifier, and nowhere else.
-test("sendWhereHandoffsGo: a desktop with Away off sends nothing; Away on, or a server, sends once", async () => {
+test("sendWhereHandoffsGo: a desktop with a usable channel or a server sends once; no usable channel on a desktop, or handoff not enabled, sends nothing", async () => {
   const message = { kind: "network", network: "us-east", change: "changed", paused: true, at: 1_700_000_000_000 };
   const cases = [
-    { name: "desktop, Away off", config: { handoff: { enabled: true, away: false } }, server: false, sends: 0 },
-    { name: "desktop, Away on", config: { handoff: { enabled: true, away: true } }, server: false, sends: 1 },
+    { name: "desktop, no usable channel", config: { handoff: { enabled: true } }, server: false, usable: 0, sends: 0 },
+    { name: "desktop, a channel (Away off is ignored)", config: { handoff: { enabled: true, away: false } }, server: false, usable: 1, sends: 1 },
     { name: "server", config: { handoff: { enabled: true, away: false } }, server: true, sends: 1 },
     { name: "handoff not enabled", config: { handoff: { enabled: false, away: true } }, server: true, sends: 0 },
   ];
   for (const c of cases) {
     const sent = [];
-    const notifier = { send: async (m) => { sent.push(m); return { sent: ["webhook"], failed: [], withheld: [] }; } };
+    const notifier = { send: async (m) => { sent.push(m); return { sent: ["webhook"], failed: [], withheld: [] }; }, usable: () => Array.from({ length: c.usable ?? 1 }, () => ({ type: "webhook" })) };
     const channels = sendWhereHandoffsGo(c.config, { server: () => c.server, notifier });
     const r = await channels(message);
     assert.equal(sent.length, c.sends, c.name);
     if (c.sends) assert.deepEqual([sent[0], r.sent], [message, ["webhook"]], c.name);
     else assert.equal(r, null, c.name);
   }
-  // Read at each send: turning Away on counts at once.
-  const config = { handoff: { enabled: true, away: false } };
+  // Read at each send: a channel linked counts at once.
+  const config = { handoff: { enabled: true } };
   const sent = [];
-  const channels = sendWhereHandoffsGo(config, { server: () => false, notifier: { send: async (m) => { sent.push(m); return {}; } } });
+  let usable = 0;
+  const channels = sendWhereHandoffsGo(config, { server: () => false, notifier: { send: async (m) => { sent.push(m); return {}; }, usable: () => Array.from({ length: usable }, () => ({ type: "telegram" })) } });
   await channels(message);
-  config.handoff.away = true;
+  usable = 1;
   await channels(message);
   assert.equal(sent.length, 1);
 });

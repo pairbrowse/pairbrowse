@@ -34,6 +34,18 @@ browser live from wherever they are.
   someone watching. An agent asks you before making a watch link, gives it only to you, and is
   stopped if it tries to type one into a web page.
 
+- **Steps go to your phone, no switch:** once Telegram or Discord (or another hand-off channel)
+  is linked, every step handed to you (a CAPTCHA, a sign-in, a code, a payment) goes to your phone
+  and stays in the PairBrowse window; whichever you use first finishes it. The Away switch and the
+  "public link" switch are gone: the phone's link works from anywhere through a private Cloudflare
+  link that exists only while the step is open (or through your own address if you set one up), and
+  the Handoff page says so in one sentence next to the linked app. To stop phone hand-offs, unlink
+  the app. Old `handoff.away` and `handoff.publicLink` settings are read without error and ignored.
+- **A tidier hand-off list in the side panel:** each step waiting for you is one compact row: what
+  to do, the step and site underneath, "Sent to your phone" with the app when one is linked, and a
+  single Show button. A step that ended (Done on the phone, the agent moved on) leaves the list at
+  once.
+
 **Fixed**
 
 - **Hand-off links open in a clean session:** when the agent handed you a step (a CAPTCHA, a
@@ -45,6 +57,13 @@ browser live from wherever they are.
   the first message's link (often the one you tapped) showed "404". The same step on the same tab
   now stays one hand-off with one message, and a link that ended opens a page saying it ended and
   to open the newest one, instead of a bare "404".
+- **Copying the Telegram code works in the browser's own pages:** Copy on the Handoff page failed
+  in the PairBrowse browser's settings ("Couldn't copy") and the message stayed even after linking
+  worked. Copy now falls back to the page's own copy command, the message names the one shortcut
+  for your computer (Cmd+C on a Mac) with the code selected, and it goes away once the state changes.
+- **PairBrowse's bar and badge look right on strict sites:** on pages that forbid inline styles
+  (such as Google's reCAPTCHA demo), the bottom bar showed as plain text ("Claude is driving") and
+  the agent's spark was drawn huge over the page. They now keep their look on every page.
 - **No early timer in the helper:** a wait meant to have no limit (saving the open tabs' titles)
   ran out after one millisecond, which the helper's log showed as a "TimeoutOverflowWarning" after
   hand-off notifications. Such a wait now waits as meant.

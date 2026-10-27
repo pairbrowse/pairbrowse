@@ -68,7 +68,7 @@ export function startTurn({ base, img, stage, on, frame, reopen, end }) {
   const problem = el("p", { className: "turn-problem", id: "turn-problem", hidden: true });
   problem.setAttribute("role", "alert");
   const bar = el("header", { className: "turnbar", id: "turnbar" },
-    el("div", { className: "turn-row" }, el("p", { className: "turn-step", id: "turn-step" }, what, where), el("span", { className: "turn-meta" }, left, conn), done),
+    el("div", { className: "turn-row" }, el("p", { className: "turn-step", id: "turn-step" }, what, el("span", { className: "sr", textContent: " · " }), where), el("span", { className: "turn-meta" }, left, conn), done),
     tabs, away, problem);
 
   // ---- the keys row: the type box and zoom ----

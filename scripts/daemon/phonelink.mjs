@@ -87,7 +87,7 @@ export function createPhoneLink({ config, secrets, notifier, approvals = () => n
     ? TELEGRAM_TOKEN.test(saved(TELEGRAM.token)) && /^-?\d{1,20}$/.test(saved(TELEGRAM.chat)) && channels().some(linkedTelegram)
     : DISCORD_TOKEN.test(saved(DISCORD.token)) && DISCORD_ID.test(saved(DISCORD.channel)) && DISCORD_ID.test(saved(DISCORD.user)) && channels().some(linkedDiscord));
   const shown = () => { const r = readJson(linksFile, {}); return plain(r) ? r : {}; };
-  const sends = () => handoffSends(config, { server: server() === true });
+  const sends = () => handoffSends(config, { server: server() === true, usable: (() => { try { return notifier.usable().length; } catch { return 0; } })() });
   const answerOn = () => config.handoff?.answer === true;
   // /watch answered in the linked chat: on unless turned off, and only with a way to make the link.
   const watchOn = () => config.handoff?.watchCommand !== false && typeof watchLink === "function";
@@ -107,7 +107,7 @@ export function createPhoneLink({ config, secrets, notifier, approvals = () => n
     let usable = 0;
     try { usable = notifier.usable().length; } catch {}
     return {
-      on: h.away === true, server: server() === true, ready: h.enabled === true && usable > 0,
+      on: h.enabled === true && usable > 0, server: server() === true, ready: h.enabled === true && usable > 0,
       send: Object.fromEntries(SEND_GROUPS.map((g) => [g, handoffWants(config, g)])), answer: answerOn(),
       watchCommand: config.handoff?.watchCommand !== false, watchInMessages: config.handoff?.watchInMessages === true,
       telegram: appSummary("telegram"), discord: appSummary("discord"),

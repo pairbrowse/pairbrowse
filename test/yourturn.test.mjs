@@ -71,8 +71,8 @@ test("the step kinds are one list: pairbrowse_status step, the messages' actions
   assert.deepEqual([...STATUS_STEPS], ACTIONS);
 });
 
-test("a desktop without Away: the step stays in the window; no grant, no message", async () => {
-  const s = setup({ away: false });
+test("a desktop with no hand-off channel: the step stays in the window; no grant, no message", async () => {
+  const s = setup({ enabled: false });
   const page = pageAt("https://shop.example/login");
   s.hud.page = page;
   assert.equal(await s.yt.onStatus("p1", { kind: "you", text: "Please sign in", step: "login" }, page), "");
@@ -841,6 +841,7 @@ test("the check, then the agent's status on the same tab and step: one grant, on
   // The agent's next status ends it, as its own would.
   await s.yt.onStatus("p1", { kind: "working", text: "Going on" }, page);
   assert.equal(s.grants.open().length, 0);
+  assert.deepEqual(s.handoffs.list().map((h) => h.kind), [], "its Tools tab entries (the check's too) are gone at once");
 });
 
 test("a hand-off that ends while its link is starting sends nothing (its link would be dead)", async () => {
@@ -857,4 +858,15 @@ test("a hand-off that ends while its link is starting sends nothing (its link wo
   assert.match(line, /ended before its message went out/, line);
   await tick();
   assert.equal(s.sent.filter((m) => m.event === "pairbrowse.turn").length, 0);
+});
+
+// No Away switch any more: once a channel is linked, a desktop's steps go to the phone too, whatever
+// an old config.json's handoff.away says; the window keeps the step as well.
+test("a desktop with a linked channel sends every step to the phone too; handoff.away false (0.17's switch) is no longer read", async () => {
+  const s = setup({ away: false });
+  const page = pageAt("https://shop.example/login");
+  s.hud.page = page;
+  assert.match(await s.yt.onStatus("p1", { kind: "you", text: "Please sign in", step: "login" }, page), /^Your turn sent \(webhook\)/);
+  assert.equal(s.grants.open().length, 1);
+  assert.equal(s.sent.filter((m) => m.event === "pairbrowse.turn").length, 1);
 });

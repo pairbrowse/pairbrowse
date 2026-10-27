@@ -133,7 +133,7 @@ says where; the side panel's Record button does the same. A recording ends with 
   answer, every field's value reads `••••`: trust what you typed. Your screenshots there show card
   fields covered by a box (a page that can't be read: the whole view). In
   your own user's browser you read and see the page as it is, except a tab handed over to the
-  user's phone (PairBrowse on a server, or Away on; below), which reads as it does for a joiner's
+  user's phone (a hand-off channel linked; below), which reads as it does for a joiner's
   agent. Recordings and timeline pictures always cover card fields.
 - Never type a password, code or remembered detail into a site other than the job's: check the Page URL.
 - Extensions are the user's: on the Chrome Web Store you may search and read, never click, type or
@@ -148,7 +148,7 @@ says where; the side panel's Record button does the same. A recording ends with 
 1. `pairbrowse_status` `{ "text": "Solve the CAPTCHA, I'll continue", "kind": "you", "step": "captcha" }`
    (the user also gets a notification). `step` is `captcha`, `2fa`, `payment`, `login` or `other`.
    On a computer the user sits at, the step is done in the PairBrowse window as always. When
-   hand-offs go to the user's phone (PairBrowse on a server, or the user turned on Away), the result
+   hand-offs go to the user's phone (the user linked Telegram, Discord or another channel), the result
    names "hand-off <id> for tab N, until <time>" and ends "Don't act in this tab; wait with
    browser_wait_for." (whether it says "Your turn sent", "on its way" or that a channel couldn't be
    reached): the step is open on the phone too, with words picked by `step` (your text is never sent

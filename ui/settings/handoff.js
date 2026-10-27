@@ -1,15 +1,18 @@
 // Settings' Handoff section (spec Handoff; the engine settings' Handoff page frames the settings page
 // with ?view=handoff, 580): link Telegram or Discord to your phone with a bot of your own and a
-// one-time code, choose what goes there, answer approvals from chat, and the Away switch on top.
+// one-time code, choose what goes there, answer approvals from chat. Once an app is linked, every
+// step handed to you goes to your phone too (no switch: unlinking stops it), and the linked card
+// says so in one sentence with what the link exposes (panels.js phoneLine, config.json's phone).
 // Reads GET handoff.json, writes POST handoff { op: link | cancel | unlink | test | set } (owner
 // only), redraws from each answer's summary and from the helper's `handoff` event. The summary
 // never holds a token, a chat id or a user id; a token typed here leaves the field as it is posted.
-// The Away switch is the one in Agents and approvals (POST config { away }, panels.js awaySwitch's
-// semantics) with this page's words. Real clicks only. The one timer: a pending code's countdown,
+// Real clicks only. The one timer: a pending code's countdown,
 // once a second while a code waits and the page shows; nothing is polled.
 import { el } from "../dom.js";
+import { phoneLine } from "../panels.js";
 import { postReply, UNREACHABLE } from "../helper.js";
 import { watchLinks } from "../watch.js";
+import { copyText, copyFailed } from "../clipboard.js";
 
 const SVG = "http://www.w3.org/2000/svg";
 const real = (fn) => (ev) => { if (ev.isTrusted) fn(ev); };
@@ -61,12 +64,6 @@ export const APPS = {
 };
 const STATES = new Set(["none", "pending", "linked"]);
 const PILL = { none: "Not linked", pending: "Waiting for your message", linked: "Linked" };
-export const AWAY = {
-  server: "This browser runs on a server: steps handed to you always go to your phone.",
-  none: "Link Telegram or Discord below first.",
-  on: "On: steps handed to you also go to your phone. They stay here too.",
-  off: "Off: steps handed to you stay in this window.",
-};
 const SEND_KEYS = ["approvals", "checks", "submits", "runs"];
 
 // "9:42 left" for a code that ends at `at` (epoch ms), "" once it has ended.
@@ -97,7 +94,7 @@ export function summaryOf(raw) {
 // every draw; missing(): the helper answered 404 (an older one).
 export function handoffPanel({ $, base, live, shown = () => {}, missing = () => {} }) {
   let state = null; // the summary drawn last
-  let away = null; // { on, server, ready } drawn last
+  let phone = null; // config.json's phone ({ ready, server, privateRoute, via }) drawn last
   const cards = {};
   const say = (node, text, kind = "") => { node.textContent = text; node.dataset.kind = kind; };
 
@@ -169,12 +166,14 @@ export function handoffPanel({ $, base, live, shown = () => {}, missing = () => 
     const code = el("code", { className: "ho-code-text", id: `ho-${c.app}-code`, textContent: a.code });
     const copy = el("button", { className: "mini ho-copy", type: "button", id: `ho-${c.app}-copy`, textContent: "Copy", ariaLabel: `Copy the code ${a.code}` });
     copy.addEventListener("click", real(async () => {
-      try {
-        await navigator.clipboard.writeText(a.code);
+      if (await copyText(a.code)) {
         copy.textContent = "Copied";
         say(c.msg, "Copied the code.", "ok");
         setTimeout(() => { if (copy.isConnected) copy.textContent = "Copy"; }, 1600);
-      } catch { say(c.msg, "Couldn't copy: select the code and press Ctrl or Cmd+C.", "error"); }
+      } else {
+        say(c.msg, copyFailed("the code"), "error");
+        try { getSelection()?.selectAllChildren(code); } catch {} // selected, ready for the shortcut
+      }
     }));
     const left = el("span", { className: "ho-left", id: `ho-${c.app}-left` });
     const wait = el("p", { className: "ho-wait" }, el("span", { className: "ho-dot", ariaHidden: "true" }), el("span", { className: "ho-wait-text", textContent: "Listening for the code" }), left);
@@ -212,7 +211,10 @@ export function handoffPanel({ $, base, live, shown = () => {}, missing = () => 
       acts.replaceChildren(el("span", { className: "ask", textContent: `Unlink ${c.A.name}?` }), yes, keep);
       keep.focus();
     }));
-    return [who, acts];
+    // What linking means, once, next to the linked app: steps go to the phone too, through a link
+    // that works from anywhere (or on your own address), while the step is open.
+    const line = el("p", { className: "ho-phone-line", id: `ho-${c.app}-phone`, textContent: phoneLine(phone) || phoneLine({ ready: true }) });
+    return [who, line, acts];
   }
 
   function drawCard(c, a) {
@@ -225,6 +227,9 @@ export function handoffPanel({ $, base, live, shown = () => {}, missing = () => 
     // The body is built again only when what it shows changed (an event mid-typing keeps the field).
     const sig = JSON.stringify([a.state, a.bot, a.chat, a.code]);
     if (sig !== c.sig) {
+      // A new state (linked, a new code, cancelled): an earlier message about the old one goes.
+      if (c.shownState !== undefined && c.shownState !== a.state) say(c.msg, "");
+      c.shownState = a.state;
       const had = c.root.contains(document.activeElement);
       c.sig = sig;
       c.left = null;
@@ -259,27 +264,13 @@ export function handoffPanel({ $, base, live, shown = () => {}, missing = () => 
   }
   document.addEventListener("visibilitychange", () => { for (const c of Object.values(cards)) tickCard(c); clock(); });
 
-  // ---- the Away switch, what goes, answering ----
-  const awayBtn = $("ho-away"), awayNote = $("ho-away-state"), answerBtn = $("ho-answer"), setMsg = $("ho-set-msg");
+  // ---- what goes, answering; the phone line ----
+  const answerBtn = $("ho-answer"), setMsg = $("ho-set-msg");
   const checks = [...document.querySelectorAll("#ho-send .ho-check")];
-  function drawAway(a) {
-    if (a && typeof a === "object" && typeof a.on === "boolean") away = { on: a.on, server: a.server === true, ready: a.ready === true };
-    const st = away;
-    const on = !!st && (st.server || st.on);
-    awayBtn.setAttribute("aria-checked", String(on));
-    awayBtn.disabled = !live() || !st || st.server || (!st.on && !st.ready);
-    say(awayNote, !st ? "" : st.server ? AWAY.server : !st.ready ? AWAY.none : on ? AWAY.on : AWAY.off);
+  function drawPhone(p) {
+    if (p && typeof p === "object") phone = p;
+    for (const n of document.querySelectorAll(".ho-phone-line")) n.textContent = phoneLine(phone) || phoneLine({ ready: true });
   }
-  awayBtn.addEventListener("click", real(async () => {
-    if (!away || awayBtn.disabled || !base()) return;
-    const was = away;
-    awayBtn.disabled = true;
-    awayBtn.setAttribute("aria-checked", String(!was.on)); // at once; the answer settles it
-    const r = await postReply(base() + "config", { away: !was.on });
-    if (r.status === 200 && r.body?.away) return drawAway(r.body.away);
-    drawAway(was);
-    say(awayNote, r.body?.error ? String(r.body.error) : `${UNREACHABLE} Try again.`, "error");
-  }));
 
   async function set(body, node) {
     node?.setAttribute("aria-busy", "true");
@@ -330,7 +321,6 @@ export function handoffPanel({ $, base, live, shown = () => {}, missing = () => 
     if (!apps.children.length) apps.append(card("telegram").root, card("discord").root);
     $("ho-none").hidden = true;
     for (const app of ["telegram", "discord"]) drawCard(cards[app], s[app]);
-    drawAway({ on: s.on, server: s.server, ready: s.ready });
     drawOptions();
     clock();
     try { shown(true); } catch {}
@@ -339,7 +329,6 @@ export function handoffPanel({ $, base, live, shown = () => {}, missing = () => 
   function setLive() {
     if (!state) $("ho-none").textContent = live() ? "Reading your apps…" : "Not connected to PairBrowse yet. Your apps show here once it is.";
     if (state) for (const app of ["telegram", "discord"]) drawCard(cards[app], state[app]);
-    drawAway(null);
     drawOptions();
   }
   async function load() {
@@ -351,5 +340,5 @@ export function handoffPanel({ $, base, live, shown = () => {}, missing = () => 
     draw(r.body);
     return true;
   }
-  return { load, draw, drawAway, setLive, drawWatch: (items) => watch.draw(items) };
+  return { load, draw, drawPhone, setLive, drawWatch: (items) => watch.draw(items) };
 }

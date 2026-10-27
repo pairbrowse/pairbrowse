@@ -358,6 +358,8 @@ export function createYourTurn({ config, grants, notifier, sends, handoffs, jour
     if (k && KEEP.has(reason)) { k.entry.url = urlOf(t.page) || k.entry.url; k.waiting = reason; } else kept.delete(t.id);
     persist(t.session);
     if (reason === "expired") { timedOut(t).catch((e) => log(`hand-off timeout: ${e?.message || e}`)); return; }
+    // Its Tools tab entries go at once (the agent moved on, Done, the window): nothing waits any more.
+    if (!KEEP.has(reason)) for (const key of [t.key, ...(t.also || [])]) handoffs.clear(key);
     hostNote(endNote(t, reason));
     // The browser comes back by itself: recover() sends the new link, or the ended message then.
     if (reason === "browser-restarted" && k && keptAlive()) { k.deferred = true; return; }

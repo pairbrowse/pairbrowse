@@ -342,11 +342,12 @@ test("a channel that can't be used is skipped with a warning naming it, never a 
   assert.ok(lines.every((l) => l.startsWith("hand-off: ")));
 });
 
-test("hand-offs go to channels only in server mode or with Away on, and only when enabled (decision 8)", () => {
+test("hand-offs go to channels whenever enabled: on a desktop while a channel can be used, on a server always; handoff.away is no longer read", () => {
   assert.equal(handoffSends({ handoff: { enabled: false, away: true } }, { server: true }), false);
-  assert.equal(handoffSends({ handoff: { enabled: true, away: false } }, { server: false }), false, "a desktop: the window, as before");
-  assert.equal(handoffSends({ handoff: { enabled: true, away: true } }, { server: false }), true, "Away on");
-  assert.equal(handoffSends({ handoff: { enabled: true, away: false } }, { server: true }), true, "server mode: always");
+  assert.equal(handoffSends({ handoff: { enabled: true, away: false } }, { server: false }), true, "a desktop with a channel: the phone too (Away off is ignored)");
+  assert.equal(handoffSends({ handoff: { enabled: true, away: false } }, { server: false, usable: 1 }), true);
+  assert.equal(handoffSends({ handoff: { enabled: true } }, { server: false, usable: 0 }), false, "a desktop with no usable channel: the window only");
+  assert.equal(handoffSends({ handoff: { enabled: true } }, { server: true, usable: 0 }), true, "server mode: always (the result says no channel could be used)");
   assert.equal(handoffSends({}, { server: true }), false);
   assert.equal(handoffSends(undefined), false);
 });

@@ -69,6 +69,7 @@ export const CONFIG_SCHEMA = {
   handoff: {
     type: "object", fields: {
       enabled: { type: "boolean" },
+      // No longer used (the Away switch and the public link's switch of 0.17): read without error.
       away: { type: "boolean" },
       publicLink: { type: "boolean" },
       grantMinutes: { type: "integer", min: 1, max: 120 },

@@ -136,17 +136,23 @@ async function phone(t, { action = "payment", publicHost = null } = {}) {
     await page.waitForURL(/\/[0-9a-f]{64}\/$/);
     await page.waitForSelector('#turn-conn[data-s="live"]');
     // The stream is up before its first turn event names the step and its site.
-    await page.waitForFunction(() => (document.querySelector("#turn-step span")?.textContent || "") !== "");
+    await page.waitForFunction(() => (document.getElementById("turn-site")?.textContent || "") !== "");
     await page.waitForSelector("#screen:not([hidden])");
     await until(() => page.evaluate(() => document.getElementById("screen").getBoundingClientRect().width > 100));
+    // The first zoom (liveview-turn.js fitFocus): a picture that would leave most of the screen empty
+    // opens larger. These tests then work at 1x (the zoom level button), as a person may.
+    await until(() => page.evaluate(() => document.getElementById("zoom-level").textContent !== ""));
+    firstZoom = await page.evaluate(() => { const st = document.getElementById("stage").getBoundingClientRect(), r = document.getElementById("screen").getBoundingClientRect(); return { level: document.getElementById("zoom-level").textContent, filled: r.height / st.height }; });
+    if (firstZoom.level !== "1x") await page.tap("#zoom-level");
   };
+  let firstZoom = null;
   // Where a page point is on the phone's screen now (zoom included).
   const at = (x, y) => page.evaluate(([x, y, w, h]) => { const r = document.getElementById("screen").getBoundingClientRect(); return { x: r.left + (x * r.width) / w, y: r.top + (y * r.height) / h }; }, [x, y, FRAME.w, FRAME.h]);
   const cdp = await context.newCDPSession(page);
   const touch = (type, points) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: points.map((p, id) => ({ x: p.x, y: p.y, id })) });
   // Runs in the page's own world (a page.evaluate runs in an isolated one: what it defines there the page never sees).
   const inPage = (expression) => cdp.send("Runtime.evaluate", { expression });
-  return { ...tabs, view, grants, g, browser, context, page, errors, takeOver, at, touch, inPage, cut: link.cut };
+  return { ...tabs, view, grants, g, browser, context, page, errors, takeOver, at, touch, inPage, cut: link.cut, firstZoom: () => firstZoom };
 }
 
 const mouseCalls = (calls) => calls.filter((c) => c.method === "Input.dispatchMouseEvent");
@@ -162,6 +168,7 @@ test("landing page and Take over fit the screen with no horizontal scroll", { sk
   await s.takeOver();
   assert.ok(await fits(), "the viewer");
   assert.equal(await s.page.evaluate(() => document.body.dataset.role), "turn");
+  assert.ok(s.firstZoom().filled >= 0.49, `the first zoom leaves no more than half the screen empty: ${JSON.stringify(s.firstZoom())}`);
   for (const sel of ["#turnbar", "#turn-done", "#type-box", "#zoom-in", "#zoom-out", "#stage"]) {
     const b = await s.page.locator(sel).boundingBox();
     assert.ok(b && b.x >= 0 && b.x + b.width <= 390.5 && b.y >= 0 && b.y + b.height <= 844.5, `${sel} is on screen`);
@@ -361,7 +368,7 @@ test("on the public address the viewer's stream is a WebSocket: live, a tap reac
   assert.ok(await until(() => mouseCalls(s.input()).length >= before + 3, 10_000), "input after the reconnect");
   await s.page.tap("#turn-done");
   assert.ok(await until(() => !s.grants.open().length, 10_000), "Done ended the hand-off");
-  await s.page.waitForFunction(() => document.getElementById("overlay-title")?.textContent === "This hand-off ended", null, { timeout: 10_000 });
+  await s.page.waitForFunction(() => document.getElementById("overlay-title")?.textContent === "Done. The agent continues.", null, { timeout: 10_000 });
   assert.deepEqual(s.errors, []);
 });
 
@@ -378,7 +385,8 @@ test("a pop-up joins the switcher; Done ends the hand-off and the viewer stops",
   assert.ok(await until(() => s.grants.open().length === 0), "the grant ended");
   await s.page.waitForSelector('#turn-conn[data-s="closed"]');
   assert.equal(await s.page.isDisabled("#type-box"), true);
-  assert.match(await s.page.textContent("#overlay-title"), /This hand-off ended/);
+  assert.equal(await s.page.textContent("#overlay-title"), "Done. The agent continues.", "pressed Done here: says so");
+  for (const sel of ["#turn-left", "#turn-done", "#turnkeys"]) assert.equal(await s.page.isVisible(sel), false, `${sel} gone once it ended`);
   assert.deepEqual(s.errors, []);
 });
 

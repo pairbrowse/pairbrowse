@@ -291,7 +291,7 @@ button:disabled { opacity: 0.5; cursor: default; }
    item is wide enough, stacked below that), what goes to your phone, answering from chat, and the
    privacy line. Every color is a token; the cards sit on --panel in both schemes. */
 .ho-top { margin-top: 0; }
-.ho-away-label { font-weight: var(--fw-name); }
+.ho-phone-line { margin: var(--sp-2) 0 0; font-size: var(--fs-2); line-height: 1.45; color: var(--ink-2); }
 .ho-missing { margin: var(--sp-2) 0 0; font-size: var(--fs-2); color: var(--ink-2); }
 .ho-none { margin: var(--sp-3) 0 0; }
 .ho-apps-wrap { container-type: inline-size; }

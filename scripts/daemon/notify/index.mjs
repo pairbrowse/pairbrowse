@@ -25,12 +25,14 @@ export const SENDERS = { webhook, ntfy, telegram, discord, slack, "discord-dm": 
 // A sender's whole send, its retry included (post.mjs: 2 tries of 10 s and the 5 s between).
 export const SEND_MAX_MS = 30_000;
 
-// Whether hand-offs go to the channels (decision 8): only with handoff.enabled, and then in server
-// mode (always) or on a desktop while the person has turned Away on. Otherwise the step stays in
-// the PairBrowse window, as before; a channel never takes it away from the window.
-export function handoffSends(config, { server = false } = {}) {
+// Whether hand-offs go to the channels: with handoff.enabled (a channel linked or set up), always,
+// on a desktop as in server mode; on a desktop only while a channel can be used (usable: how many,
+// when the caller knows). The step stays in the PairBrowse window too: whichever the person uses
+// first completes it. handoff.away (the Away switch of 0.17 and before) is no longer read.
+export function handoffSends(config, { server = false, usable = null } = {}) {
   const h = config?.handoff || {};
-  return h.enabled === true && (server === true || h.away === true);
+  if (h.enabled !== true) return false;
+  return server === true || usable === null || Number(usable) > 0;
 }
 
 // What goes to the phone (handoff.send, the Handoff page's checkboxes): approvals (approval
@@ -50,7 +52,7 @@ export function handoffWants(config, group) {
 // hand-offs go (handoffSends), never elsewhere: notifier.send's result, or null with nothing sent.
 // config and server() are read at each send, so Away and Settings changes count at once.
 export function sendWhereHandoffsGo(config, { server = () => false, notifier }) {
-  return (message) => (handoffSends(config, { server: server() }) ? notifier.send(message) : null);
+  return (message) => (handoffSends(config, { server: server(), usable: notifier.usable?.().length ?? null }) ? notifier.send(message) : null);
 }
 
 // The usable senders for channels: { senders, warnings }. secret(name): a saved secret's value.

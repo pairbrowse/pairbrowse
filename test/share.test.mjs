@@ -136,7 +136,7 @@ test("an invite made before the capture page's hello waits for it", async () => 
 // A hand-off link (spec server-mode B5): the live view's own address, never the join-code port;
 // inviteBaseUrl when set; refused for anything but a redeem key's shape; null when the live view
 // can't start. Its tabs are watched for the hand-off from then on.
-test("sharing.handoffLink: the live view's address (inviteBaseUrl, else loopback on its own port), never the join-code port", async () => {
+test("sharing.handoffLink: inviteBaseUrl's address when a private route is set, else the hand-off tunnel's public address (the test switch's stand-in: the guest port)", async () => {
   const key = "ab".repeat(32);
   const watched = [];
   const live = (url) => ({ url, port: Number(new URL(url).port), guestPort: 4999, setStatus() {}, setSession() {}, setCollaboration() {}, setDev() {}, close() {}, watchGrants() { watched.push(url); } });
@@ -147,9 +147,8 @@ test("sharing.handoffLink: the live view's address (inviteBaseUrl, else loopback
 
   const loop = make({}, async () => live("http://127.0.0.1:4123/ownerkey/"));
   try {
-    assert.equal(await loop.handoffLink(key), `http://127.0.0.1:4123/${key}/`);
-    assert.ok(!(await loop.handoffLink(key)).includes(":4999"), "never the join-code port");
-    assert.deepEqual(watched, ["http://127.0.0.1:4123/ownerkey/", "http://127.0.0.1:4123/ownerkey/"], "its tabs watched for hand-offs");
+    assert.equal(await loop.handoffLink(key), `http://127.0.0.1:4999/${key}/`, "public by default: the hand-off tunnel to the guest port");
+    assert.deepEqual(watched, ["http://127.0.0.1:4123/ownerkey/"], "its tabs watched for hand-offs");
     for (const bad of [null, "", "AB".repeat(32), "ab".repeat(31), `${key}/../x`, "ab".repeat(33), 42]) assert.equal(await loop.handoffLink(bad), null, String(bad));
   } finally { loop.endAll(); }
 

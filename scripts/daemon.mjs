@@ -479,7 +479,7 @@ const sharing = createSharing({
     // The browser's Settings page: which browser runs, the timeline, the docks' default layout
     // (liveview/settings.mjs; written into config.json and the running config).
     settings: createSettings({ config, choiceConfig: () => context.choiceConfig(), native: !!pinnedAsset(), settingsSection: () => !!context.nextShell().settingsSection, browserInUse: () => context.browserInUse(),
-      away: () => ({ server: context.isServer(), enabled: config.handoff?.enabled === true, channels: notifier.usable().length, privateRoute: sharing.privateRoute() }), secrets, log, onChange: () => { sharing.publicLinkChanged(); phonelink.changed(); } }), // the Away switch (decision 8) and its public link offer (step 21b; turned off, its tunnel stops at once); secrets: the Network section's (liveview/network.mjs)
+      phone: () => { const u = notifier.usable(); return { server: context.isServer(), enabled: config.handoff?.enabled === true, channels: u.length, kinds: u.map((s) => s.type), privateRoute: sharing.privateRoute() }; }, secrets, log, onChange: () => phonelink.changed() }), // whether steps go to your phone too (read only: the Handoff page links channels); secrets: the Network section's (liveview/network.mjs)
     // Report a problem: relayed to config.json's reportUrl on the person's click (liveview/report.mjs).
     reporter: createReporter({ url: () => config.reportUrl, mask: output.mask, log }),
     // Refs go stale when a person there did something (elsewhere() says so) or a tab changed there;
@@ -633,7 +633,7 @@ const journal = createJournal({ session: () => context.sessionName(), openPages:
 const outlines = createOutlines({ mask: output.mask });
 // Hand-offs to the person: the badge and the Tools tab as before, and their channels when hand-offs go there (daemon/yourturn.mjs).
 const yourTurn = createYourTurn({ config, grants, notifier, audit, handoffs, journal, hud, log, hostNote, agentBy, saveTabs: () => context.saveTabs(), sessionName: () => context.sessionName(),
-  linkFor: (key) => sharing.handoffLink(key), sends: () => handoffSends(config, { server: context.isServer() }), actionsIn: (p) => presence.didIn(p), // what the person did there: names only (B15)
+  linkFor: (key) => sharing.handoffLink(key), sends: () => handoffSends(config, { server: context.isServer(), usable: notifier.usable().length }), actionsIn: (p) => presence.didIn(p), // what the person did there: names only (B15)
   turnFile: (s) => sessionFile(s, "turn.json"), keptAlive: () => context.keepAlive(), successorOf: (p) => context.successorOf(p), pagesNow: () => context.openPages(), compatibility: () => context.compatibility(), savedCard: () => !!context.savedCard()?.on, personActedAt: (p) => presence.actedAt(p), wants: (a) => phonelink.wantsAction(a), watchLink: () => sharing.chatWatchLink() }); // a restart's hand-offs come back (B16); setup problems reported apart (B14); a saved card masks every tab (B12); a step done in the window ends its hand-off (decision 8)
 const timeline = createTimeline({ dir: () => timelineDir(context.sessionName()), enabled: () => config.timeline !== false, cap: () => config.timelineCap, mask: output.mask, step: () => journal.step(), onNote: (text) => hud.addActivity(`Note: ${text}`, HOST, null), log });
 const serve = createServe({

@@ -15,10 +15,11 @@
 // page never calls another interface. Nothing ticks but a pending Handoff code's countdown (once a
 // second while one waits and the page shows): no other timer, no observer (framed, one
 // ResizeObserver while it shows); one shared event stream.
-import { $, el, avatar, hostPanel, profilePanel, helperConnection, reportPayload, sendReport, NO_AGENT, noAgentLine, awaySwitch, networkPanel } from "../common.js";
+import { $, el, avatar, hostPanel, profilePanel, helperConnection, reportPayload, sendReport, NO_AGENT, noAgentLine, phoneLine, networkPanel } from "../common.js";
 import { hostKind, followHelper, postReply, UNREACHABLE } from "../helper.js";
 import { servedByBrowser, settingsHomeFor, viewOf, ENGINE_SETTINGS_ORIGIN } from "../urls.js";
 import { handoffPanel } from "./handoff.js";
+import { copyText, copyFailed } from "../clipboard.js";
 
 const NATIVE = hostKind() === "native";
 // ---- at home in the engine's settings (580) -----------------------------------------------------
@@ -76,8 +77,8 @@ let base = null;
 let conn = "connecting";
 let config = null; // GET config.json, null until read (or the helper has no such route)
 let diag = null; // GET diagnostics.json
-// Agents and approvals: Away (hand-offs to your phone; panels.js awaySwitch posts it, drawConfig draws it).
-const away = awaySwitch($("away-on"), $("away-state"), () => base);
+// Agents and approvals: whether steps go to your phone too (config.json's phone; no switch).
+const drawPhone = (p) => { $("phone-state").textContent = phoneLine(p) || (p && typeof p === "object" ? "No app is linked: steps handed to you stay in this window." : ""); };
 // Network (ui/network.js): its section and nav link show once the helper answers network.json.
 // Out of this view (the PairBrowse section, 580), both stay hidden.
 const network = networkPanel($("network-panel"), () => base, { shown: (on) => { const show = on && !outOfView($("network")); $("network").hidden = !show; $("nav-network").hidden = !show; applySearch(); } });
@@ -86,7 +87,7 @@ const network = networkPanel($("network-panel"), () => base, { shown: (on) => { 
 const showHandoff = (on) => { const show = on && !outOfView($("handoff")); $("handoff").hidden = !show; $("nav-handoff").hidden = !show; applySearch(); };
 const handoff = handoffPanel({ $, base: () => base, live: () => conn === "live",
   shown: (on) => { $("ho-missing").hidden = true; showHandoff(on); },
-  missing: () => { $("ho-missing").hidden = VIEW !== "handoff"; $("ho-none").hidden = true; for (const id of ["handoff-away", "handoff-send", "handoff-watch", "handoff-privacy"]) $(id).hidden = VIEW === "handoff"; showHandoff(VIEW === "handoff"); } });
+  missing: () => { $("ho-missing").hidden = VIEW !== "handoff"; $("ho-none").hidden = true; for (const id of ["handoff-send", "handoff-watch", "handoff-privacy"]) $(id).hidden = VIEW === "handoff"; showHandoff(VIEW === "handoff"); } });
 // (applySearch is not defined yet here: the section and its link only.)
 if (VIEW === "handoff") { $("handoff").hidden = false; $("nav-handoff").hidden = false; }
 
@@ -168,8 +169,8 @@ function drawConfig(c) {
   $("dl-acts").hidden = !dl;
   if (document.activeElement !== $("dl-path")) $("dl-path").value = dl || "";
   $("pics-on").setAttribute("aria-checked", String(config.pictures !== false));
-  away.draw(config.away);
-  handoff.drawAway(config.away);
+  drawPhone(config.phone);
+  handoff.drawPhone(config.phone);
   for (const r of document.querySelectorAll("input[name=cookies]")) r.checked = r.value === (config.cookies === "reject" ? "reject" : "accept");
   if (document.activeElement !== $("max-tabs")) $("max-tabs").value = String(config.maxTabs ?? 20);
   $("tabs-save").hidden = true;
@@ -463,14 +464,12 @@ async function reportText() {
   return r.status === 200 && typeof r.body?.text === "string" ? r.body.text : null;
 }
 async function copy(text, msg, done) {
-  try {
-    await navigator.clipboard.writeText(text);
+  if (await copyText(text)) {
     say(msg, done, "ok");
     return true;
-  } catch {
-    say(msg, "Couldn't copy: select the text and press Ctrl or Cmd+C.", "error");
-    return false;
   }
+  say(msg, copyFailed("the text"), "error");
+  return false;
 }
 $("diag-copy").addEventListener("click", async () => {
   const text = await reportText();

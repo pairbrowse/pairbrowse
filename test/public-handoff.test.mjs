@@ -252,9 +252,13 @@ test("the hand-off tunnel starts with the first public link, serves the reminder
     sharing.endAll();
     assert.equal(tunnels[1].stopped, true, "the window closing stops it too");
   } finally { sharing.endAll(); }
-  // Off: the private route, no tunnel.
-  const off = sharingFor({}, async () => { throw new Error("never started"); }, createGrants({}));
-  try { assert.equal(await off.sharing.handoffLink("ab".repeat(32)), `http://127.0.0.1:4123/${"ab".repeat(32)}/`); } finally { off.sharing.endAll(); }
+  // A private route set (inviteBaseUrl): its address, no tunnel.
+  const off = sharingFor({ liveViewHosts: ["myhost.tail1234.ts.net"], inviteBaseUrl: "https://myhost.tail1234.ts.net" }, async () => { throw new Error("never started"); }, createGrants({}));
+  try {
+    assert.equal(await off.sharing.handoffLink("ab".repeat(32)), `https://myhost.tail1234.ts.net/${"ab".repeat(32)}/`);
+    await off.sharing.ensureLiveView();
+    assert.equal(off.opts().grantsPublic(), false, "grants are never served on a public name then");
+  } finally { off.sharing.endAll(); }
 });
 
 // The user's own tunnel taken into the pool while a hand-off uses it: the pool's stop (the idle keep
@@ -287,26 +291,17 @@ test("the user's own tunnel shared with join codes: the pool's stop keeps it whi
   assert.equal(u.stopped, true);
 });
 
-// "Stop the public link": the setting turned off stops the hand-off tunnel at once, with a hand-off
-// still open; its next link (the reminder) is the private one.
-test("the public link turned off with a hand-off open: its tunnel stops at once and the next link is the private one", async () => {
+// The public link is the default: an old config.json's handoff.publicLink false (0.17's switch)
+// is no longer read; only a private route keeps hand-off links off the public tunnel.
+test("public by default: handoff.publicLink false in an old config.json changes nothing", async () => {
   const tunnels = [];
   const start = async (port) => { const t = { url: `https://t${tunnels.length}.trycloudflare.com`, host: `t${tunnels.length}.trycloudflare.com`, port, stopped: false, stop() { t.stopped = true; } }; tunnels.push(t); return t; };
   const grants = createGrants({});
-  const config = { handoff: { publicLink: true } };
-  const { sharing, opts } = sharingFor(config, start, grants);
+  const { sharing, opts } = sharingFor({ handoff: { enabled: true, away: false, publicLink: false } }, start, grants);
   try {
-    const a = grants.mint({ session: "default", page: { url: () => "https://shop.example/" }, action: "login" });
+    const a = grants.mint({ session: "default", page: { url: () => "https://shop.example/" }, action: "captcha" });
     assert.equal(await sharing.handoffLink(a.redeemKey), `https://t0.trycloudflare.com/${a.redeemKey}/`);
-    sharing.publicLinkChanged(); // still on: nothing changes
-    assert.equal(tunnels[0].stopped, false);
-    config.handoff.publicLink = false;
-    sharing.publicLinkChanged();
-    assert.equal(tunnels[0].stopped, true, "stopped while the hand-off is still open");
-    assert.equal(opts().publicHost(), null, "nothing served on the public name");
-    assert.equal(grants.open().length, 1, "the hand-off itself stays open (the window, the private route)");
-    assert.equal(await sharing.handoffLink(a.redeemKey), `http://127.0.0.1:4123/${a.redeemKey}/`);
-    assert.equal(tunnels.length, 1, "no new tunnel");
+    assert.equal(opts().grantsPublic(), true);
   } finally { sharing.endAll(); }
 });
 

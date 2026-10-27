@@ -196,15 +196,17 @@ export const DEFAULT_CONFIG = {
   // screen of its own.
   server: { keepAlive: false },
   // Hand-off links to a person away from the window (spec server-mode B1, decision 8): enabled
-  // turns them on; they are sent in server mode, or on a desktop while away is true; publicLink
-  // lets them go through the sharing tunnel (decision U2); grantMinutes (1 to 120) is a link's
+  // turns them on (linking a channel on the Handoff page does); then every step handed to you goes
+  // to the window and your phone, whichever you use first, through a public tunnel unless
+  // inviteBaseUrl gives a private route (decision U2). away and publicLink (0.17 and before) are
+  // read without error and no longer used. grantMinutes (1 to 120) is a link's
   // life, remindMinutes the one reminder; channels where messages go (scripts/daemon/notify/), their
   // credentials only in secrets.env under PAIRBROWSE_ names.
   // send: what goes to the phone (the Handoff page: approval cards, sign-ins and checks, payments
   // and final submits, finished runs); answer: approvals answered from a linked chat (off).
   // watchCommand: /watch in the linked chat answers with a watch link (on); watchInMessages: hand-off
   // messages carry a watch link (off).
-  handoff: { enabled: false, away: false, publicLink: false, grantMinutes: 15, remindMinutes: 10, channels: [], send: { approvals: true, checks: true, submits: true, runs: false }, answer: false, watchCommand: true, watchInMessages: false },
+  handoff: { enabled: false, grantMinutes: 15, remindMinutes: 10, channels: [], send: { approvals: true, checks: true, submits: true, runs: false }, answer: false, watchCommand: true, watchInMessages: false },
   // Per-session proxies (spec server-mode C4, net/config.mjs): { proxies: { <id>: { server, auth,
   // bypass, expectEgress, onEgressChange } }, default, sessions: { <session>: <id> | null }, strict,
   // checkUrl, recheckMinutes }, credentials only in secrets.env. null: every session direct.

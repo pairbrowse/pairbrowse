@@ -134,13 +134,10 @@
           <h3 class="item-h">Stopping agents</h3>
           <p class="help" id="agents-who-text">Pause stops every agent at once; Take control stops one. Both are on the agent panel.</p>
         </div>
-        <div class="item cfg-item" id="away" data-field="away" data-k="away phone hand-off handoff your turn telegram discord slack ntfy webhook message away from computer">
-          <h3 class="item-h">When you're away</h3>
-          <div class="sw-row">
-            <span class="sw-text"><span id="away-label">Send steps handed to you to your phone</span><small id="away-state" role="status" aria-live="polite"></small></span>
-            <button class="switch" id="away-on" type="button" role="switch" aria-checked="false" aria-labelledby="away-label" aria-describedby="away-state" disabled><i aria-hidden="true"></i></button>
-          </div>
-          <p class="help">A sign-in, code, CAPTCHA or payment an agent hands to you goes to your hand-off channel (Telegram or Discord, linked under Handoff; Slack, ntfy or a webhook, set in config.json) with a link to take over from your phone. Only the step's kind, the site and the expiry go, never what the agent wrote.</p>
+        <div class="item" id="phone" data-k="away phone hand-off handoff your turn telegram discord slack ntfy webhook message away from computer">
+          <h3 class="item-h">Steps on your phone</h3>
+          <p class="help" id="phone-state" role="status" aria-live="polite"></p>
+          <p class="help">Once Telegram or Discord is linked under Handoff (or Slack, ntfy or a webhook is set in config.json), a sign-in, code, CAPTCHA or payment an agent hands to you shows here and goes to your phone too, with a link to take over; whichever you use first completes it. Only the step's kind, the site and the expiry go, never what the agent wrote. Unlink the app to stop it.</p>
         </div>
         <div class="item cfg-item" id="results" data-field="pictures" data-k="pictures picture screenshot screenshots result image see text only">
           <h3 class="item-h">What agents see</h3>
@@ -180,16 +177,9 @@
            draws every part, hidden until the helper answers (a helper without the route: 404). -->
       <section class="sec" id="handoff" aria-labelledby="handoff-h" hidden>
         <h2 class="sec-h" id="handoff-h">Handoff</h2>
-        <div class="item" id="handoff-away" data-k="handoff away phone send hand-off telegram discord switch on off">
-          <div class="sw-row ho-top">
-            <span class="sw-text"><span id="ho-away-label" class="ho-away-label">Send to your phone</span><small id="ho-away-state" role="status" aria-live="polite"></small></span>
-            <button class="switch" id="ho-away" type="button" role="switch" aria-checked="false" aria-labelledby="ho-away-label" aria-describedby="ho-away-state" disabled><i aria-hidden="true"></i></button>
-          </div>
-          <p class="help">When an agent hands you a sign-in, a code, a CAPTCHA or a payment, or waits for your yes on a final click, a short message reaches the app you link below, with a link to take over from your phone.</p>
-        </div>
         <div class="item" id="handoff-apps" data-k="handoff telegram discord link unlink bot token code test message phone app">
           <h3 class="item-h">Apps</h3>
-          <p class="help">Link an app with a bot of your own: paste its token, then send it the one-time code PairBrowse shows. Only that chat is ever written to or read.</p>
+          <p class="help">Link an app with a bot of your own: paste its token, then send it the one-time code PairBrowse shows. Only that chat is ever written to or read. Once linked, when an agent hands you a sign-in, a code, a CAPTCHA or a payment, or waits for your yes on a final click, a short message reaches it with a link to take over from your phone; the step stays in this window too.</p>
           <p class="ho-missing" id="ho-missing" hidden>This PairBrowse helper has no Handoff yet. Update PairBrowse to link Telegram or Discord here.</p>
           <p class="empty ho-none" id="ho-none">Connecting to PairBrowse…</p>
           <div class="ho-apps-wrap"><div class="ho-apps" id="ho-apps"></div></div>
@@ -197,7 +187,7 @@
         <div class="item" id="handoff-send" data-k="handoff what goes phone approvals approval cards sign-in sign-ins codes captcha 2fa payments submits runs finished answer approve deny chat reply">
           <fieldset class="group ho-send" id="ho-send">
             <legend class="item-h">What goes to your phone</legend>
-            <p class="help">Each kind goes only while Send to your phone is on.</p>
+            <p class="help">Each kind goes once an app is linked.</p>
             <ul class="ho-opts" role="list">
               <li><label class="ho-opt"><input type="checkbox" class="ho-check" data-send="approvals"><span><b>Approval cards</b><small>A final click waiting for your yes: pay, delete, publish, send or submit.</small></span></label></li>
               <li><label class="ho-opt"><input type="checkbox" class="ho-check" data-send="checks"><span><b>Sign-ins, codes and CAPTCHAs</b><small>A login, a two-factor code or a CAPTCHA an agent hands to you.</small></span></label></li>

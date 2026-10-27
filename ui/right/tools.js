@@ -9,15 +9,16 @@
 // Refresh, and again whenever the Tools tab comes back into view (or the stream reconnects) with
 // Diagnostics open; never while it is folded or the tab is not shown. Rows are patched in place by id, never rebuilt. Open, Open in app,
 // Show in Finder, Show (a hand-off's tab) and a confirmed Delete count only for a person's click or key press.
-// Hand-offs carries the Away switch (panels.js awaySwitch): config.json's away, read with the
-// hand-offs list and kept current by the config event; it changes only on a person's click.
+// Each hand-off row: what to do (the main line), the step and its site small, one Show, and while a
+// hand-off channel is linked (config.json's phone, read with the hand-offs list and kept current by
+// the config event) "Sent to your phone" with the channel: steps go to the phone too, no switch.
 // A download's Open (POST downloads/<id>/open) and Open in app (Word-type names only, POST
 // downloads/<id>/open-app: the original in its default app) are answered { ok, opened: tab |
 // preview | app }; the row's status line says where only as the helper answered (nothing for an
 // answer without `opened`), one line across the list, emptied when the next Downloads action starts.
 // Nothing is sent anywhere: Prepare report shows the helper's text, Copy uses the clipboard and
 // Save is a download made in the page. No timer, observer or frame loop here; no markup strings.
-import { $, el, avatar, splitLabel, shortClock, enter, leave, revealed, awaySwitch } from "../common.js";
+import { $, el, avatar, splitLabel, shortClock, enter, leave, revealed, channelName } from "../common.js";
 import { UNREACHABLE } from "../helper.js";
 
 const MAC = /mac/i.test(navigator.userAgentData?.platform || navigator.platform || "");
@@ -35,6 +36,28 @@ const PREVIEW_HINT = "Opens as a read-only preview in a new tab";
 const OPENED = { tab: "Opened in a new tab", preview: "Opened as a read-only preview", app: "Opened in its app" };
 const openHint = (name) => (IN_TAB.test(name) ? "Opens in a new tab" : TEXT.test(name) ? PREVIEW_HINT : WORD.test(name) ? (MAC ? PREVIEW_HINT : "Opens in its app") : "");
 const idOf = (x) => ((typeof x === "string" || typeof x === "number") && ID.test(String(x)) ? String(x) : null);
+// Stroked 16 px icons, built without markup: each hand-off's kind, and the phone.
+const SVG_NS = "http://www.w3.org/2000/svg";
+function strokes(paths) {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("aria-hidden", "true");
+  for (const d of paths) {
+    const p = document.createElementNS(SVG_NS, "path");
+    for (const [k, v] of [["d", d], ["fill", "none"], ["stroke", "currentColor"], ["stroke-width", "1.5"], ["stroke-linecap", "round"], ["stroke-linejoin", "round"]]) p.setAttribute(k, v);
+    svg.append(p);
+  }
+  return svg;
+}
+const KIND_ICONS = {
+  login: ["M6 3h6.5v10H6", "M2.5 8h6.5", "M7 5.5 9.5 8 7 10.5"], // into a door
+  "2fa": ["M3 5.5h10v6H3z", "M5.5 8.5h.01", "M8 8.5h.01", "M10.5 8.5h.01"], // a code
+  captcha: ["M8 2 13 4v4c0 3-2.2 5.2-5 6-2.8-.8-5-3-5-6V4z", "M5.8 8.1 7.3 9.6 10.3 6.6"], // a shield
+  payment: ["M2.5 4.5h11v7h-11z", "M2.5 7h11", "M4.5 9.5h2"], // a card
+  other: ["M8 2.5v6", "M8 11.5h.01", "M8 14.5a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13"], // your turn
+};
+const kindIcon = (kind) => strokes(KIND_ICONS[kind] || KIND_ICONS.other);
+const phoneGlyph = () => strokes(["M5 1.8h6v12.4H5z", "M7.2 12h1.6"]);
 const str = (v) => (typeof v === "string" ? v : typeof v === "number" && Number.isFinite(v) ? String(v) : "");
 // at: epoch ms, or an ISO string; null when it is neither.
 const timeOf = (at) => { const t = typeof at === "number" ? at : typeof at === "string" ? Date.parse(at) : NaN; return Number.isFinite(t) ? t : null; };
@@ -159,6 +182,18 @@ export function toolsPanel({ base, shown, onRecording = () => {} }) {
 
   // ---- Hand-offs ----
   let saidN = 0;
+  // Whether steps go to the phone too (config.json's phone): the rows' hint, redrawn on a change.
+  let phone = null;
+  const phoneText = () => (phone?.ready === true ? `Sent to your phone${Array.isArray(phone.via) && phone.via.length ? ` · ${[...new Set(phone.via.map(channelName))].join(", ")}` : ""}` : "");
+  function phoneHint() {
+    const t = phoneText();
+    return el("small", { className: "ho-phone", hidden: !t }, phoneGlyph(), el("span", { textContent: t }));
+  }
+  function drawPhone(p) {
+    phone = p && typeof p === "object" ? p : null;
+    const t = phoneText();
+    for (const row of handoffs.rows.values()) { const h = row.li.querySelector(".ho-phone"); if (h) { h.hidden = !t; h.lastChild.textContent = t; } }
+  }
   const handoffs = makeList({
     ul: $("handoffs"),
     newest: false,
@@ -169,14 +204,6 @@ export function toolsPanel({ base, shown, onRecording = () => {} }) {
       li.dataset.kind = it.kind;
       const host = str(it.tab?.host);
       const label = str(it.by?.label);
-      const kids = [];
-      if (label) {
-        const name = splitLabel(label).name;
-        const face = avatar(name, it.by?.color);
-        face.setAttribute("aria-hidden", "true");
-        face.title = name;
-        kids.push(face);
-      } else li.classList.add("bare");
       const show = button("Show", host ? `Show the tab on ${host}` : "Show the tab", "act go");
       show.addEventListener("click", real(async () => {
         say("handoffs-msg", "");
@@ -184,16 +211,21 @@ export function toolsPanel({ base, shown, onRecording = () => {} }) {
         if (r.status === 404) { handoffs.remove(id); return say("handoffs-msg", "That step is no longer waiting."); }
         if (!ok(r)) say("handoffs-msg", r.body?.error || UNREACHABLE, "error");
       }));
-      li.append(...kids,
-        el("div", { className: "head" }, el("strong", { className: "kind", textContent: KIND[it.kind] }), el("small", { className: "meta", textContent: [host, label].filter(Boolean).join(" · "), title: str(it.tab?.title) })),
-        el("span", { className: "acts" }, show),
-        el("p", { className: "text", textContent: it.text }));
+      const by = label ? splitLabel(label).name : "";
+      li.append(
+        el("span", { className: "ho-mark", ariaHidden: "true" }, kindIcon(it.kind)),
+        el("div", { className: "head" },
+          el("strong", { className: "text", textContent: it.text }),
+          el("small", { className: "meta", textContent: [KIND[it.kind], host].filter(Boolean).join(" · "), title: [str(it.tab?.title), by && `from ${by}`].filter(Boolean).join(" · ") }),
+          phoneHint()),
+        el("span", { className: "acts" }, show));
       return li;
     },
     update: (row, it) => {
       row.li.dataset.kind = it.kind;
-      row.li.querySelector(".kind").textContent = KIND[it.kind];
+      row.li.querySelector(".ho-mark").replaceChildren(kindIcon(it.kind));
       row.li.querySelector(".text").textContent = it.text;
+      row.li.querySelector(".meta").textContent = [KIND[it.kind], str(it.tab?.host)].filter(Boolean).join(" · ");
     },
     changed: () => {
       const n = handoffs ? handoffs.rows.size : 0;
@@ -375,12 +407,10 @@ export function toolsPanel({ base, shown, onRecording = () => {} }) {
     changed: () => { if (recordings) $("recordings-empty").hidden = !recordings.loaded || recordings.rows.size > 0; },
   });
 
-  // The Away switch: shown once the helper answers with it (an older one doesn't).
-  const away = awaySwitch($("away-on"), $("away-state"), base);
-  const drawAway = (a) => { $("away-row").hidden = !(a && typeof a === "object"); away.draw(a); };
-  async function loadAway(from) {
+  // Whether steps go to the phone too: read with the hand-offs list.
+  async function loadPhone(from) {
     const r = await getJson(from, "config.json");
-    if (base() === from && r.status === 200) drawAway(r.body?.away);
+    if (base() === from && r.status === 200) drawPhone(r.body?.phone);
   }
 
   // ---- reading the lists ----
@@ -388,7 +418,7 @@ export function toolsPanel({ base, shown, onRecording = () => {} }) {
     { L: handoffs, route: "handoffs.json",
       // A section the helper has: shown with its folds as they are (common.js revealed); the read
       // lands within the pane's own fade-in (a local route), so nothing grows after it.
-      found: () => { $("sec-handoffs").hidden = false; revealed($("sec-handoffs")); const from = base(); if (from) loadAway(from).catch(() => {}); },
+      found: () => { $("sec-handoffs").hidden = false; revealed($("sec-handoffs")); const from = base(); if (from) loadPhone(from).catch(() => {}); },
       absent: () => { $("sec-handoffs").hidden = true; } },
     { L: downloads, route: "downloads.json",
       found: () => { $("sec-downloads").hidden = false; revealed($("sec-downloads")); },
@@ -549,7 +579,7 @@ export function toolsPanel({ base, shown, onRecording = () => {} }) {
     stale = true;
     for (const s of LISTS) s.L.clear();
     $("sec-handoffs").hidden = true;
-    drawAway(null);
+    drawPhone(null);
     $("sec-downloads").hidden = true;
     $("recordings").hidden = true;
     $("recordings-empty").hidden = true;
@@ -577,7 +607,7 @@ export function toolsPanel({ base, shown, onRecording = () => {} }) {
       else if (ev?.op === "remove" && idOf(ev.item?.id)) handoffs.event(() => handoffs.remove(idOf(ev.item.id)));
     },
     // Settings changed (config): the Away switch as it is now.
-    config: (c) => { if (c && typeof c === "object" && "away" in c) drawAway(c.away); },
+    config: (c) => { if (c && typeof c === "object" && "phone" in c) drawPhone(c.phone); },
     // A recording just saved (record { op: "saved", item }): first in the list.
     saved: (item) => recordings.event(() => recordings.upsert(item, true)),
     diagnostics,

@@ -353,8 +353,17 @@ body[data-recording="true"] #record-btn::before { border-radius: 2px; background
 .tool .acts { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-2); }
 .tool .acts .said { margin: 0; align-self: center; min-width: 0; font-size: var(--fs-2); line-height: 17px; color: var(--ink-2); overflow-wrap: anywhere; }
 .tool .text { grid-column: 1 / -1; margin: var(--sp-1) 0 0; font-size: var(--fs-3); color: var(--ink); overflow-wrap: anywhere; }
-.handoff { box-shadow: inset 3px 0 0 var(--warn), inset 0 1px 0 var(--edge-light), var(--shadow-raised); }
-.handoff .acts { grid-column: -2; grid-row: 1; margin-top: 0; }
+/* A hand-off: its kind's mark, what to do as the main line (two lines at most), the step and site
+   small, "Sent to your phone" when a channel is linked, and one Show. */
+.handoff { grid-template-columns: 28px minmax(0, 1fr) auto; align-items: start; gap: 0 var(--sp-3); padding-block: var(--sp-2); }
+.handoff .ho-mark { grid-column: 1; grid-row: 1; display: grid; place-items: center; width: 28px; height: 28px; margin-top: 1px; border-radius: var(--r-2); background: var(--accent-soft); color: var(--accent-ink); }
+.handoff .ho-mark svg { width: 16px; height: 16px; }
+.handoff .head { gap: 1px; }
+.handoff .text { margin: 0; font-size: var(--fs-3); line-height: 18px; font-weight: var(--fw-name); color: var(--ink); white-space: normal; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.handoff .ho-phone { display: inline-flex; align-items: center; gap: 4px; margin-top: 2px; font-size: var(--fs-2); line-height: 17px; color: var(--ink-2); }
+.handoff .ho-phone[hidden] { display: none; }
+.handoff .ho-phone svg { width: 12px; height: 12px; flex: none; }
+.handoff .acts { grid-column: 3; grid-row: 1; margin-top: 0; align-self: center; }
 .act { display: inline-flex; align-items: center; height: var(--ctl); padding: 0 var(--sp-3); border: 1px solid var(--edge); border-radius: var(--r-2); background-color: var(--elevated); color: var(--ink); font-size: var(--fs-2); font-weight: 500; white-space: nowrap; cursor: pointer; transition: background-color var(--t-hover); }
 .act:hover { background-color: var(--hover); }
 .act.go { border-color: var(--accent); background-color: var(--accent); color: var(--bg); }

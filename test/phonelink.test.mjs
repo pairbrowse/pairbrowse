@@ -273,8 +273,8 @@ test("what goes to the phone: send groups gate approvals, checks, submits and ru
     await link.runDone({ url: "https://shop.example/cart", outcome: "stopped", steps: 3 });
     assert.deepEqual(sent.at(-1), { kind: "run", host: "shop.example", outcome: "stopped", steps: 3 });
     assert.equal(link.runDone({ url: "about:blank", outcome: "done", steps: 1 }), null, "no site: nothing");
-    config.handoff.away = false;
-    assert.equal(link.runDone({ url: "https://shop.example/", outcome: "done", steps: 1 }), null, "the hand-off gate holds (not away, not a server)");
+    config.handoff.enabled = false;
+    assert.equal(link.runDone({ url: "https://shop.example/", outcome: "done", steps: 1 }), null, "the hand-off gate holds (hand-offs not enabled)");
     assert.equal(handoffWants({ handoff: {} }, "runs"), false);
   } finally { link.stop(); }
 });

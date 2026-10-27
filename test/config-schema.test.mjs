@@ -197,7 +197,7 @@ test("browserSandbox \"required\" is kept by loadConfig; other strings are refus
 });
 
 test("handoff: types and defaults; a field left out takes its default; remindMinutes at or after grantMinutes falls back", () => {
-  assert.deepEqual(DEFAULT_CONFIG.handoff, { enabled: false, away: false, publicLink: false, grantMinutes: 15, remindMinutes: 10, channels: [], send: { approvals: true, checks: true, submits: true, runs: false }, answer: false, watchCommand: true, watchInMessages: false });
+  assert.deepEqual(DEFAULT_CONFIG.handoff, { enabled: false, grantMinutes: 15, remindMinutes: 10, channels: [], send: { approvals: true, checks: true, submits: true, runs: false }, answer: false, watchCommand: true, watchInMessages: false });
   let config = loadConfig(file({ handoff: { enabled: true, channels: [{ type: "ntfy", topicSecret: "PAIRBROWSE_NTFY_TOPIC" }] } }));
   assert.deepEqual(CONFIG_WARNINGS, []);
   assert.deepEqual(config.handoff, { ...DEFAULT_CONFIG.handoff, enabled: true, channels: [{ type: "ntfy", topicSecret: "PAIRBROWSE_NTFY_TOPIC" }] });

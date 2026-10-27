@@ -5,7 +5,7 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
-## Unreleased
+## 0.18.3 (2026-10-28)
 
 PairBrowse is a plugin for Claude Code and Codex: the agent fills in forms, signs up for services
 and clicks through websites in a visible browser window on your computer, while you watch every

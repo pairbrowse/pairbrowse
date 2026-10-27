@@ -378,7 +378,10 @@ test("on a phone: the owner adds, tests and assigns a proxy in the live view's P
     const page = await context.newPage();
     page.on("pageerror", (e) => errors.push(e.message));
     await page.goto(v.url);
-    // On a phone the workspace column opens over the toolbar; the person folds it first.
+    // On a phone the workspace column starts as the rail (a narrow pane keeps the page wide); opened
+    // from it, the column lies over the toolbar, and the person folds it again before the drawer.
+    await page.waitForSelector('#side[data-state="rail"]');
+    await page.tap("#side-collapse");
     await page.waitForSelector('#side[data-state="open"]');
     await page.tap("#side-collapse");
     await page.waitForSelector('#side[data-state="rail"]');

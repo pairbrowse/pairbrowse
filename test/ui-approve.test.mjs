@@ -631,7 +631,8 @@ test("approve bubble: its own stream (page=approve) beside the strip's shared on
     await strip.goto(`http://${TOP}/strip/index.html`, { waitUntil: "load" });
     const approve = await context.newPage();
     await approve.goto(`http://${TOP}/approve/index.html`, { waitUntil: "load" });
-    const until = async (what, fn) => { for (let i = 0; i < 120; i++) { if (await fn()) return; await sleep(50); } assert.fail(`timed out waiting for ${what}`); };
+    // Up to 20 s: the full engine on a loaded runner takes seconds to open both streams and draw the card.
+    const until = async (what, fn) => { for (let i = 0; i < 400; i++) { if (await fn()) return; await sleep(50); } assert.fail(`timed out waiting for ${what}`); };
     for (const p of [strip, approve]) await until("live", () => evalIn(p, () => document.body.dataset.s === "live"));
     assert.equal(await evalIn(strip, () => typeof navigator.locks?.request === "function" && typeof BroadcastChannel === "function"), true, "the host can share a stream");
     await until("two streams", () => helper.streams.size === 2);

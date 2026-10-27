@@ -784,7 +784,9 @@ both({ fixtures: { ...fixtures, network: NET, networkTest: TEST }, viewport: VIE
   await page.click("#net-save");
   await posted(helper, page, "the add", "network", { op: "add", id: "socks-a", type: "socks5", host: "198.51.100.4", port: null, auth: false });
   await until("two rows", () => document.querySelectorAll("#net-list li").length === 2);
-  assert.equal(await inPage(() => document.getElementById("net-add-row").hidden), false, "the button is back once the form closes");
+  // The list follows the helper's network event; the form closes (and the button comes back) on the
+  // post's own answer, which may land after the event: wait for it rather than read it at once.
+  await until("the button back once the form closes", () => !document.getElementById("net-add-row").hidden);
 
   // The default and a session's choice.
   await page.selectOption("#net-default", "us-east");

@@ -45,6 +45,9 @@ browser live from wherever they are.
   the first message's link (often the one you tapped) showed "404". The same step on the same tab
   now stays one hand-off with one message, and a link that ended opens a page saying it ended and
   to open the newest one, instead of a bare "404".
+- **No early timer in the helper:** a wait meant to have no limit (saving the open tabs' titles)
+  ran out after one millisecond, which the helper's log showed as a "TimeoutOverflowWarning" after
+  hand-off notifications. Such a wait now waits as meant.
 - **The hand-off page on your phone shows the tab first:** the page a hand-off link opens now
   shows the handed-over tab as it is, refreshed about once a second, above **Take over** (view
   only, card fields covered), and its title reads in light and dark mode (it was dark on dark).

@@ -115,9 +115,13 @@ export async function downloadPinned(url, dest, sha256Hex, { timeoutMs = 30 * 60
 // `promise`'s value, or null once `ms` have passed (for checks that give up quietly).
 // The timer goes as soon as the promise settles: no timer outlives the wait (thousands of bounded
 // awaits would otherwise keep theirs running, and a process waiting to exit on them).
+// ms past what a timer holds (Infinity, over 24.8 days) waits the longest a timer can: Node would
+// otherwise fire it after 1 ms (TimeoutOverflowWarning).
+const TIMER_MAX = 2 ** 31 - 1;
 export function within(ms, promise) {
   let timer;
-  const up = new Promise((resolve) => { timer = setTimeout(() => resolve(null), ms); });
+  const wait = Number.isFinite(ms) ? Math.min(Math.max(0, ms), TIMER_MAX) : ms > 0 ? TIMER_MAX : 0;
+  const up = new Promise((resolve) => { timer = setTimeout(() => resolve(null), wait); });
   return Promise.race([promise, up]).finally(() => clearTimeout(timer));
 }
 

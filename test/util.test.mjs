@@ -2,7 +2,7 @@
 import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pageLoaded, spend } from "../scripts/util.mjs";
+import { pageLoaded, spend, within } from "../scripts/util.mjs";
 
 // A stand-in page: readyState answers in turn (a function throws or hangs), load states as given.
 function fakePage(answers, states = {}) {
@@ -122,4 +122,21 @@ test("spend: a sliding window per holder, n at once, nothing counted when refuse
   assert.equal(spend(j, "ops", 5, { t: 1, n: 1, windowMs: 60_000 }), false);
   assert.equal(spend(j, "ops", 5, { t: 60_001, n: 5, windowMs: 60_000 }), true);
   assert.equal(spend({ y: "junk" }, "y", 1), true, "a field that isn't a list starts empty");
+});
+
+// A wait with no bound (tabs.mjs saveNow's default deadline, Infinity) waits; Node fired such a timer
+// after 1 ms with a TimeoutOverflowWarning, so a tab title read gave up at once.
+test("within: Infinity or a wait past a timer's range waits for the promise, never fires early; NaN or less is no wait", async () => {
+  const warned = [];
+  const onWarn = (w) => warned.push(w.name);
+  process.on("warning", onWarn);
+  try {
+    const slow = new Promise((r) => setTimeout(() => r("done"), 30));
+    assert.equal(await within(Infinity, slow), "done");
+    assert.equal(await within(2 ** 40, new Promise((r) => setTimeout(() => r("late"), 20))), "late");
+    assert.equal(await within(NaN, new Promise(() => {})), null);
+    assert.equal(await within(-5, new Promise(() => {})), null);
+    await new Promise((r) => setImmediate(r));
+    assert.ok(!warned.includes("TimeoutOverflowWarning"), warned.join(", "));
+  } finally { process.off("warning", onWarn); }
 });

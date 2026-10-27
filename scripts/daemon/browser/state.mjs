@@ -45,6 +45,7 @@ export function createBrowserState({ session, pick }) {
     resetting: false, // the helper closes the browser itself (reset(): a stalled call), never a crash
     tabTracker: null,
     restoring: null, // promise while saved tabs are being reopened
+    starting: null, // promise while the start tab's own first load finishes (browser/tabs.mjs startTabLoaded)
     restoredActiveUrl: null,
     lastCurrentUrl: null, // the tab Claude worked in last, from tool results
     // The session picker: { state: "off" | "pending" | "showing" | "done", page, text, done, resolve, reopened }.

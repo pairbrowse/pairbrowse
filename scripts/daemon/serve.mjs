@@ -13,7 +13,7 @@ import { describe } from "../log.mjs";
 import { decide, approvalAsk, handoffAsk } from "../rules/decide.mjs";
 import { keepFocus } from "../focus.mjs";
 import { within } from "../util.mjs";
-import { stopRequestMirroring } from "./browser/tabs.mjs";
+import { retryAborted, startTabLoaded, stopRequestMirroring } from "./browser/tabs.mjs";
 import { plainError } from "./output.mjs";
 import { PAIRBROWSE_TOOLS, TAB_TOOLS, PAGE_READ_TOOLS, NO_PICK_WAIT, changesPage, wellFormed, withDialogLabel, containsRef, pictureless } from "./serve/wire.mjs";
 import { arrivedAt } from "./serve/pageread.mjs";
@@ -33,6 +33,7 @@ const PICK_WAITING = "Nothing was done: the PairBrowse browser is waiting for th
 
 // Playwright MCP's own pause after each action (see createConnection): config.settleMs overrides.
 const MCP_SETTLE_DEFAULT_MS = 60;
+const NAVIGATE_AGAIN_MS = 65_000; // a browser_navigate sent again (retryAborted): the browser server's own load timeout, and a little
 const STALLED_MS = 30_000; // a disconnected participant's action may run this long
 // The most one call may hold the shared queue. Past it the browser is reset (as for a stalled
 // client that left), so one stuck call can't keep every other agent on this computer waiting.
@@ -230,11 +231,27 @@ export function createServe({ config, log, host, createConnection, clients, coll
           return;
         }
         if (msg.result?.tools) msg.result.tools = [...msg.result.tools.filter((t) => !BLOCKED_TOOLS.has(t.name) && !HIDDEN_TOOLS.has(t.name)).map(withDialogLabel), ...PAIRBROWSE_TOOLS];
+        const sentAt = conn.sentAt.get(msg.id);
+        conn.sentAt.delete(msg.id);
         if (late.delete(msg.id)) { calls.delete(msg.id); callArgs.delete(msg.id); return; }
         const tool = calls.get(msg.id);
         const args = callArgs.get(msg.id);
         calls.delete(msg.id);
         callArgs.delete(msg.id);
+        // Cut off by the start tab's own late first load (a slow machine): the tab still shows the
+        // browser's untouched new tab page (or nothing yet) and no download started (browser/tabs.mjs
+        // retryAborted).
+        // Once that load is done (bounded), the same navigation goes once more; its result stands.
+        if (tool === "browser_navigate" && msg.result?.isError) {
+          const raw = (msg.result.content || []).map((c) => c.text || "").join("\n");
+          const page = /net::ERR_ABORTED/i.test(raw) ? await within(2000, serverPage().catch(() => null)) : null;
+          if (retryAborted({ tool, raw, page, sentAt })) {
+            await startTabLoaded(page, { ms: 3000 }).catch(() => {});
+            const again = await within(NAVIGATE_AGAIN_MS, internal("browser_navigate", args)).catch(() => null);
+            log(`browser_navigate cut off on the start tab (ERR_ABORTED): sent again, ${again?.result ? (again.result.isError ? "failed again" : "arrived") : "no answer"}`);
+            if (again?.result) msg.result = again.result;
+          }
+        }
         if (submitAfter.delete(msg.id) && msg.result && !msg.result.isError) await pressEnterAfter(msg, args).catch((e) => log("enter after typing", e?.message || e));
         if (tool?.startsWith("browser_") && msg.result?.isError) {
           const raw = (msg.result.content || []).map((c) => c.text || "").join("\n");

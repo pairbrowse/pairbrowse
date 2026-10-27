@@ -7,7 +7,7 @@ import { chooseBrowser, engineConfig, serverRefusal, shellOf } from "../../brows
 import { engineProfile, launchEngine, validateEngine, SANDBOX } from "../../engine.mjs";
 import { ensureNative, nativeDirs, nativeLayout, notChosen, pinnedAsset } from "../../native/install.mjs";
 import { profileDir, createSession, sweepTemporary } from "../../sessions.mjs";
-import { within } from "../../util.mjs";
+import { sleep, within } from "../../util.mjs";
 import { setQuietTabs } from "../../focus.mjs";
 import { shippedCrx } from "../../browser/adblock.mjs";
 import { safeStorageFor, savedCardFor } from "../../browser/safe-storage.mjs";
@@ -20,7 +20,8 @@ import { createGraphics, MEASURING_BUSY, MEASURING_WAIT_MS } from "./graphics.mj
 import { probeLauncher } from "../../native/check.mjs";
 import { screenGeometry } from "../../display.mjs";
 import { paths } from "../../paths.mjs";
-import { testOn } from "../../testenv.mjs";
+import { testMs, testOn } from "../../testenv.mjs";
+import { startTabLoaded, START_LOAD_MS } from "./tabs.mjs";
 
 // A test run's NetLog (testenv.mjs NETLOG, kept only in a helper the harness started): the browser
 // writes what its network stack did, each name its own resolver was asked for among it, to
@@ -349,6 +350,7 @@ export function createLaunch(st, deps, api) {
       // script comes now, since under Patchright it isn't there until ensure adds it.
       ctx.on("page", (p) => { api.adopt(p, ctx, { opened: true }); p.waitForLoadState("domcontentloaded").then(() => { if (!isBrowserPage(p.url())) hud.onPageLoad(p); }, () => {}); setTimeout(() => api.capTabs(ctx, p).catch(() => {}), 300); });
       step(`first page (${ctx.pages().length} open)`);
+      awaitStartTab(ctx.pages()[0]);
       if (st.pick.state === "pending") api.showPicker(ctx, { own });
       else api.restore(ctx, null, { own });
     } catch (e) { if (net) network.stop(net); throw e; } // a launch that fails here: its rechecks end with it
@@ -378,6 +380,28 @@ export function createLaunch(st, deps, api) {
     log(`browser started (session ${st.session})`);
     onStarted(ctx);
     return ctx;
+  }
+
+  // The start tab's own first load (browser/tabs.mjs startTabLoaded): a build with its own pages
+  // opens its new tab page there, and the first agent call waits for that load (ready()), at most
+  // START_LOAD_MS. A browser that starts on about:blank has none to wait for. Under the test
+  // harness, START_TAB_LATE stands in for a slow machine: the start tab's own load is one that
+  // begins that many ms after the launch (the new tab page again, or, in a browser that started on
+  // about:blank, for the first time).
+  function awaitStartTab(page) {
+    const late = testMs("START_TAB_LATE", 0);
+    if (!page || !(st.ownPages || late)) return;
+    const ms = testMs("START_TAB_WAIT_MS", START_LOAD_MS), t0 = Date.now();
+    const load = !late ? startTabLoaded(page, { ms }) : sleep(late).then(async () => {
+      if (page.isClosed()) return "closed";
+      log("launch: the start tab's own load, late (START_TAB_LATE)");
+      await within(ms, page.goto("chrome://newtab/", { waitUntil: "commit" }).catch(() => {}));
+      return startTabLoaded(page, { ms });
+    });
+    const wait = within(ms, load)
+      .then((how) => log(`launch: start tab ${how || "timeout"} after ${Date.now() - t0} ms`), () => {})
+      .finally(() => { if (st.starting === wait) st.starting = null; });
+    st.starting = wait;
   }
 
   // waitMeasuring: a caller that waits through a graphics measurement rather than being told to
@@ -418,6 +442,7 @@ export function createLaunch(st, deps, api) {
   async function ready() {
     while (st.pickSwitch) await st.pickSwitch; // never the old browser after the person picked another
     const ctx = await getContext();
+    if (st.starting) await st.starting; // the start tab's own first load (awaitStartTab), bounded
     if (st.restoring) await st.restoring;
     return ctx;
   }

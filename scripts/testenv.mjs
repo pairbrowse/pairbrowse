@@ -64,6 +64,8 @@ export const SWITCHES = {
   SCREEN: "pairbrowse_test_screen: the shared browser picture page",
   SERVER_OPEN: "server mode may launch a browser other than the native build (the Phase A live tests on Playwright's build: browser/choice.mjs serverRefusal)",
   SILENT_MS: "when a joiner's stream counts as silent (liveview/push.mjs)",
+  START_TAB_LATE: "ms: the start tab's own first load comes this long after the launch, as on a slow machine (daemon/browser/launch.mjs awaitStartTab)",
+  START_TAB_WAIT_MS: "the most the first agent call waits for the start tab's own first load, in place of 5 s (daemon/browser/tabs.mjs START_LOAD_MS)",
   TAB_ORDER: "pairbrowse_test_tab_order: read and move tabs in the strip",
   TUNNEL: "\"direct\": the guest port stands in for a tunnel",
   TURN_MAX_MS: "the most one call may hold the shared queue (serve.mjs)",

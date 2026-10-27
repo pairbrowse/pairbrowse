@@ -3,9 +3,9 @@
 // st: the browser's state (browser/state.mjs); api: the other parts' functions, read when called.
 import { computerName } from "../../sharing/join.mjs";
 import { keepFocus } from "../../focus.mjs";
-import { readSavedTabs, trackTabs, restoreTabs } from "../../tabs.mjs";
+import { readSavedTabs, trackTabs, restoreTabs, isUntouchedStart } from "../../tabs.mjs";
 import { recordPerson, tabsFile } from "../../sessions.mjs";
-import { within } from "../../util.mjs";
+import { sleep, within } from "../../util.mjs";
 import { isBrowserPage } from "../../../ui/urls.js";
 
 const TRIM_EVERY_MS = 60_000;
@@ -20,6 +20,51 @@ export function stopRequestMirroring(page) {
   setTimeout(() => {
     for (const event of NETWORK_EVENTS) for (const fn of page.listeners(event)) page.off(event, fn);
   }, 1500).unref?.();
+}
+
+// The browser's own new tab page, untouched: the native build's (isUntouchedStart); in a browser
+// without PairBrowse's pages, the side panel extension's (ui/newtab, its chrome_url_overrides) or
+// the engine's own at chrome://new-tab-page/.
+export const isOwnNewTab = (url) => isUntouchedStart(url) || /^(chrome:\/\/new-tab-page\/?|chrome-extension:\/\/[a-p]{32}\/newtab\/index\.html)([?#].*)?$/i.test(String(url ?? ""));
+
+// The start tab's own first load. A build with its own pages opens its new tab page in the first
+// tab (not about:blank), and the launch counts as done once that tab exists, not once its page has
+// loaded: on a slow machine that page's late load cut off an agent's first browser_navigate
+// (net::ERR_ABORTED, the tab left on the new tab page). The first agent call waits for it (ready()):
+// until the tab shows the new tab page and that page has loaded, at most ms in all. "loaded", or
+// "elsewhere" (the tab went to another page: the picker, a person's address), "closed" (a restore
+// closed it) or "timeout". Every read of the page is bounded.
+export const START_LOAD_MS = 5000;
+export async function startTabLoaded(page, { ms = START_LOAD_MS, every = 100, now = Date.now } = {}) {
+  const until = now() + ms;
+  const url = () => { try { return page.url(); } catch { return ""; } };
+  // Not committed yet: a tab that has just opened reads about:blank (or nothing) until then.
+  while (!page.isClosed() && /^(about:blank)?$/.test(url())) {
+    if (now() >= until) return "timeout";
+    await sleep(every);
+  }
+  if (page.isClosed()) return "closed";
+  if (!isOwnNewTab(url())) return "elsewhere";
+  const loaded = await within(Math.max(0, until - now()), page.waitForLoadState("load", { timeout: Math.max(1, until - now()) }).then(() => true, () => false));
+  return loaded ? "loaded" : page.isClosed() ? "closed" : "timeout";
+}
+
+// When a download last started in each tab (adopt): a browser_navigate that ended in one is never
+// sent again (serve.mjs, retryAborted).
+const downloads = new WeakMap();
+export const downloadStartedAt = (page) => (page && downloads.get(page)) || 0;
+
+// A browser_navigate that failed with net::ERR_ABORTED goes once more only when nothing but the
+// start tab's own late load can have cut it off: the tab still shows the browser's untouched new
+// tab page, or nothing yet (that page's load cut the call off before it committed itself), so the
+// address asked for never committed and no page sent the browser anywhere; and no download started
+// in it since the call went out (sentAt, ms; unknown: never). Pure.
+export function retryAborted({ tool, raw, page, sentAt, retried = false }) {
+  if (retried || tool !== "browser_navigate" || !/net::ERR_ABORTED/i.test(String(raw ?? ""))) return false;
+  const url = page && !page.isClosed?.() ? String(page.url() ?? "") : null;
+  if (url === null || !(isOwnNewTab(url) || /^(about:blank)?$/.test(url))) return false;
+  const at = downloadStartedAt(page);
+  return Number.isFinite(sentAt) && !(at && at >= sentAt - 1000);
 }
 
 export function createTabs(st, deps, api) {
@@ -90,6 +135,7 @@ export function createTabs(st, deps, api) {
     page.on("domcontentloaded", () => { if (!isBrowserPage(page.url())) hud.onPageLoad(page); });
     popups.watchPage(page, ctx);
     api.keepDownloads(page);
+    page.on("download", () => downloads.set(page, Date.now()));
     presence.watchUser(page, { opened });
     stopRequestMirroring(page);
     page.once("close", () => onTabClosed(page)); // a closed tab's turn ends with it

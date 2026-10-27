@@ -258,6 +258,7 @@ export function createHandle(conn, api) {
     calls.set(msg.id, name);
     callArgs.set(msg.id, args);
     if (name === "browser_tabs") tabActions.set(msg.id, args.action);
+    if (name === "browser_navigate") conn.sentAt.set(msg.id, Date.now());
     // What already said "busy" before a click (a feed's lasting "Loading…"): not waited on after it.
     if (name === "browser_click") {
       const here = ownTab();

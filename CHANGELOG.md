@@ -26,6 +26,13 @@ step and take over the parts only a person can do, in the window or from your ph
   handed-off step, PairBrowse also sends the part you are looking at in full detail for your
   phone's screen, without ever changing the page's size. The picture while the page moves is a
   little sharper too.
+- **The agent's first page opens on a slow computer.** When the browser had just started, its own
+  new tab page could still be loading in the first tab. On a slow computer (a small server, for
+  example) that late load cut off the agent's first visit to a website, and the agent heard "The
+  page load was interrupted" while the tab stayed on the new tab page. The agent's first action now
+  waits a few seconds at most for that page to finish loading. If the visit is still cut off that
+  way, PairBrowse tries it once more by itself; it never does so when the site started a download
+  or sent the browser elsewhere.
 
 ## 0.18.2 (2026-10-27)
 

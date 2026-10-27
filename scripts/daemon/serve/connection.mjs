@@ -46,6 +46,7 @@ export function createConnectionState(participant, { remote = null, pauseSeen = 
     traces: new Map(), // request id -> its phase trace (PAIRBROWSE_TRACE)
     callArgs: new Map(), // request id -> the call's arguments (Claude's: secret names, never values)
     tabActions: new Map(), // request id -> browser_tabs action
+    sentAt: new Map(), // request id -> when a browser_navigate went to the browser server (serve.mjs retryAborted)
     refused: new Set(), // calls the helper itself turned down: they changed nothing in the browser
     late: new Set(), // calls answered for running too long: a result that still comes is dropped
     observedRevision: -1, // the tab revision its refs are good for

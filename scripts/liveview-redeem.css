@@ -1,16 +1,21 @@
-/* The landing page of a hand-off link: one card, phone first, no horizontal scroll. */
+/* The landing page of a hand-off link: one card, phone first, no horizontal scroll. Surfaces and
+   inks that both schemes define (--frame, --ink, --ink-2), so the card reads in light and dark. */
 * { box-sizing: border-box; }
 html, body { margin: 0; min-height: 100%; }
 body.redeem {
-  display: grid; place-items: center; padding: 16px;
+  display: grid; place-items: start center; padding: 16px;
   color: var(--ink); background: var(--bg); font: var(--fs-3)/1.45 var(--sans); -webkit-font-smoothing: antialiased;
 }
-.card { width: 100%; max-width: 420px; padding: 24px 20px; border-radius: 14px; background: var(--panel); box-shadow: var(--shadow-raised); overflow-wrap: anywhere; }
-.brand { margin: 0 0 12px; color: var(--ink-soft); font-size: var(--fs-1); font-weight: 650; letter-spacing: 0.02em; }
-h1 { margin: 0 0 12px; font-size: var(--fs-5); line-height: 1.25; }
-.why, .until { margin: 0 0 12px; color: var(--ink-soft); }
+.card { width: 100%; max-width: 480px; padding: 20px 16px; border-radius: 14px; background: var(--frame); color: var(--ink); border: 1px solid var(--edge); box-shadow: var(--shadow-raised); overflow-wrap: anywhere; }
+.brand { margin: 0 0 8px; color: var(--ink-2); font-size: var(--fs-1); font-weight: 650; letter-spacing: 0.02em; }
+h1 { margin: 0 0 12px; color: var(--ink); font-size: var(--fs-5); line-height: 1.25; }
+.peek { margin: 0 0 12px; }
+.peek img { display: block; width: 100%; min-height: 120px; border-radius: 8px; border: 1px solid var(--edge); background: var(--elevated); object-fit: contain; }
+.peek[data-ready="false"] img { aspect-ratio: 16 / 10; }
+.peek figcaption { margin-top: 6px; color: var(--ink-2); font-size: var(--fs-2); }
+.why, .until { margin: 12px 0 0; color: var(--ink-2); font-size: var(--fs-2); }
 .take {
-  width: 100%; min-height: 48px; margin-top: 8px; border: 0; border-radius: 10px;
+  width: 100%; min-height: 48px; border: 0; border-radius: 10px;
   background: var(--accent-fill); color: #fff; font: inherit; font-weight: 650; cursor: pointer;
 }
 .take:hover { background: var(--accent-fill-hover); }

@@ -161,12 +161,15 @@ function openStream() {
 }
 // A hand-off ended (done, revoked, expired): close the stream before EventSource reconnects on
 // its own with the dead key (the helper would audit that as a reused link).
-function endTurn() {
+// reason: the turn-ended event's ("done" when the person pressed Done here or the step finished).
+const TURN_ENDED = { done: "Done. The agent continues.", expired: "This hand-off timed out", window: "Finished in the browser window" };
+function endTurn(data) {
+  if (ended) return;
   ended = true;
   es?.close();
   es = null;
   setState("closed");
-  $("overlay-title").textContent = "This hand-off ended";
+  $("overlay-title").textContent = TURN_ENDED[data?.reason] || "This hand-off ended";
   $("overlay-text").textContent = "You can close this page.";
 }
 on("turn-ended", endTurn);

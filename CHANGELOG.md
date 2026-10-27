@@ -40,6 +40,16 @@ browser live from wherever they are.
   sign-in) while the browser ran a clean, throwaway session, the link sent to your phone showed
   only "404", on the first open and every one after. The link now opens its page with Take over,
   as in any other session.
+- **The hand-off page on your phone shows the tab first:** the page a hand-off link opens now
+  shows the handed-over tab as it is, refreshed about once a second, above **Take over** (view
+  only, card fields covered), and its title reads in light and dark mode (it was dark on dark).
+- **Zoomed to the step:** after Take over, the phone opens the tab zoomed to the part that matters,
+  such as the verification box or the form you fill in, instead of the whole desktop page at a
+  third of its size above an empty screen. Pinch and + and - still zoom freely, and taps land
+  where you tap at any zoom.
+- **A clear end:** once a hand-off ends, its phone page says so ("Done. The agent continues." when
+  you pressed Done) and drops the timer, Done and the typing bar. The site's name sits on its own
+  line under the step, so it is no longer cut off.
 - **The approval card names the agent clearly:** when an agent asks you to allow a final click
   (pay, send, submit), the card in the page drew what it wants on top of the agent's name. It now
   reads "Claude wants to click" on one line, and a long name is shortened instead.

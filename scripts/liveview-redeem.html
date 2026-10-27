@@ -13,10 +13,14 @@
   <main class="card">
     <p class="brand">PairBrowse</p>
     <h1 id="step">{{sentence}}</h1>
-    <p class="why">An agent working in PairBrowse handed this step to you. Take over to see the tab and finish it yourself; the agent waits until you are done.</p>
-    <p class="until">This link works until <time id="until">{{clock}}</time>, once.</p>
+    <figure class="peek" id="peek" data-ready="false">
+      <img id="peek-img" alt="The tab handed to you, as it is now">
+      <figcaption>View only until you take over</figcaption>
+    </figure>
     <button class="take" id="take" type="button">Take over</button>
     <p class="problem" id="problem" role="alert" hidden></p>
+    <p class="until">This link works once, until <time id="until">{{clock}}</time>.</p>
+    <p class="why">An agent working in PairBrowse handed this step to you. Take over to finish it on this screen; the agent waits until you are done.</p>
   </main>
   <script type="module" src="assets/liveview-redeem.js"></script>
 </body>

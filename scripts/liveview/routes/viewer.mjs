@@ -6,8 +6,10 @@ import { PAGE_KINDS as PAGE_KIND_LIST } from "../../../ui/vocab.js";
 import { serveViewer, serveAsset, json, plain, sse, readJsonBody, NOT_JSON, BODY_MAX, SECURITY_HEADERS } from "../http.mjs";
 import { withoutIcons } from "../tabs.mjs";
 import { publicCsp } from "../public-turn.mjs";
+import { within } from "../../util.mjs";
 
 const THUMB_QUALITY = { min: 20, max: 80, default: 50 };
+const STILL_MS = 5000; // a still of a tab not on screen
 const STATE_ACTIVITY = 4; // activity lines in state.json
 // The browser's own pages that open an events stream with ?page=<kind> (the owner's key only): a
 // name for counting them, nothing more; they get no frame stream.
@@ -99,13 +101,18 @@ export function createViewerRoutes(lv) {
     const shown = lv.shown;
     if (invite && lv.personTab(shown?.page)) return plain(res, 404); // a person's own tab: never to guests
     // A hand-off's still: only of its own tabs, as they are (the person sees the field they type into).
-    const turn = invite?.role === "turn";
-    const turnPage = turn ? lv.turn.stillOf(invite) : null;
+    // Before Take over (role redeem, the landing page) a still of the handed-over tab with card fields
+    // covered, view only: the link may have been opened by someone other than the person.
+    const redeem = invite?.role === "redeem";
+    const turn = invite?.role === "turn" || redeem;
+    const turnPage = redeem ? lv.turn.previewOf(invite) : turn ? lv.turn.stillOf(invite) : null;
     if (turn && !turnPage) return json(res, 409, { error: "That tab isn't on screen. Go back to the hand-off's tab." });
     if (shown && (!turn || shown.page === turnPage)) { ({ data } = await still(shown.cdp)); from = shown.page; }
     else if (turn) {
       const cdp = await turnPage.context().newCDPSession(turnPage);
-      try { ({ data } = await still(cdp)); } finally { cdp.detach().catch(() => {}); }
+      // A tab not on screen may never paint: bounded, and nothing (503) rather than a wait.
+      try { ({ data } = (await within(STILL_MS, still(cdp))) || {}); } finally { cdp.detach().catch(() => {}); }
+      if (!data) return plain(res, 503);
       from = turnPage;
     } else {
       const ctx = await lv.getContext();
@@ -119,7 +126,7 @@ export function createViewerRoutes(lv) {
       from = page;
     }
     // A guest's still with card fields covered (covers.mjs); none when they can't be.
-    if (invite && !turn) {
+    if (invite && (!turn || redeem)) {
       data = await lv.coverImage(from, data);
       if (!data) return plain(res, 503);
     }

@@ -52,7 +52,7 @@ export function startTurn({ base, img, stage, on, frame, reopen, end }) {
 
   // ---- the header ----
   const what = el("strong", { textContent: "Your turn" });
-  const where = el("span");
+  const where = el("small", { className: "turn-site", id: "turn-site" });
   const left = el("time", { className: "turn-left", id: "turn-left" });
   const dot = el("i");
   const connText = el("span", { textContent: STATE_WORDS.connecting });
@@ -68,7 +68,7 @@ export function startTurn({ base, img, stage, on, frame, reopen, end }) {
   const problem = el("p", { className: "turn-problem", id: "turn-problem", hidden: true });
   problem.setAttribute("role", "alert");
   const bar = el("header", { className: "turnbar", id: "turnbar" },
-    el("div", { className: "turn-row" }, el("p", { className: "turn-step", id: "turn-step" }, what, " · ", where), left, conn, done),
+    el("div", { className: "turn-row" }, el("p", { className: "turn-step", id: "turn-step" }, what, where), el("span", { className: "turn-meta" }, left, conn), done),
     tabs, away, problem);
 
   // ---- the keys row: the type box and zoom ----
@@ -125,6 +125,7 @@ export function startTurn({ base, img, stage, on, frame, reopen, end }) {
     tabs.hidden = scope.length < 2;
     setAway(t.state === "off");
     fill.hidden = t.savedCard !== true;
+    fitFocus();
     if (live) { ready = true; send(); }
   }
   on("turn", onTurn);
@@ -142,7 +143,7 @@ export function startTurn({ base, img, stage, on, frame, reopen, end }) {
     done.disabled = true;
     // What was typed goes first: Done waits for the queue to empty.
     for (let i = 0; i < 50 && (out || pending.length) && !stopped; i++) await new Promise((r) => setTimeout(r, 100));
-    if (await act("turn-done", {})) { stop(); end(); } else done.disabled = stopped;
+    if (await act("turn-done", {})) { stop(); end({ reason: "done" }); } else done.disabled = stopped;
   });
   // Fill saved card: what was typed goes first (the queue empties), then the helper's two keys.
   fill.addEventListener("click", async () => {
@@ -246,9 +247,32 @@ export function startTurn({ base, img, stage, on, frame, reopen, end }) {
   // a picture shorter than the page area stays at its top, right under the header (liveview.css).
   const zoomer = createZoom({ stage, box, min: ZOOM_MIN, max: ZOOM_MAX, top: true, onLevel: (z) => { level.textContent = `${Math.round(z * 10) / 10}x`; } });
   const zoom = zoomer.state, zoomAt = zoomer.at, middle = zoomer.middle;
-  zoomIn.addEventListener("click", () => zoomAt(zoom.z * ZOOM_STEP, ...middle()));
-  zoomOut.addEventListener("click", () => zoomAt(zoom.z / ZOOM_STEP, ...middle()));
-  level.addEventListener("click", () => zoomAt(1, ...middle()));
+  zoomIn.addEventListener("click", () => { zoomedByHand = true; zoomAt(zoom.z * ZOOM_STEP, ...middle()); });
+  zoomOut.addEventListener("click", () => { zoomedByHand = true; zoomAt(zoom.z / ZOOM_STEP, ...middle()); });
+  level.addEventListener("click", () => { zoomedByHand = true; zoomAt(1, ...middle()); });
+
+  // The first zoom: on the part of the tab that matters (the turn event's focus, liveview/focus.mjs:
+  // a verification frame, the focused field's form, the page's fields), large enough to read and
+  // tap, never leaving most of the screen empty under a small picture. Again when that part
+  // changes size (a challenge opened), until the person zooms or pinches themselves.
+  let zoomedByHand = false, fittedTo = null;
+  const sameFocus = (a, b) => !!a && !!b && a.kind === b.kind && Math.abs(a.w - b.w) <= a.w * 0.25 && Math.abs(a.h - b.h) <= a.h * 0.25;
+  function fitFocus(force = false) {
+    if (zoomedByHand || stopped) return;
+    const W = img.offsetWidth, H = img.offsetHeight, sw = stage.clientWidth, sh = stage.clientHeight;
+    if (img.hidden || W < 2 || H < 2 || !sw || !sh) return;
+    const f = info?.focus && Number(info.focus.vw) > 0 ? info.focus : null;
+    if (!force && fittedTo && (f ? sameFocus(fittedTo, f) : fittedTo.none)) return;
+    const s = f ? W / f.vw : 1;
+    let z = f ? Math.min((sw * 0.94) / (f.w * s), (sh * 0.9) / (f.h * s)) : sh / H;
+    z = clamp(z, ZOOM_MIN, ZOOM_MAX);
+    if (H * z < sh * 0.5) z = clamp((sh * 0.5) / H, ZOOM_MIN, ZOOM_MAX); // never half the screen empty
+    if (f) zoomer.show(z, (f.x + f.w / 2) * s, (f.y + f.h / 2) * s);
+    else zoomer.show(z, W / 2, 0);
+    fittedTo = f ? { ...f } : { none: true };
+  }
+  img.addEventListener("load", () => { if (!fittedTo) fitFocus(); });
+  addEventListener("resize", () => fitFocus(true));
 
   // One finger: wait (a tap, until it travels or holds), scroll, or press (held, then dragged).
   // Two fingers: pinch and pan the zoom; a press already down stays as it is.
@@ -280,6 +304,7 @@ export function startTurn({ base, img, stage, on, frame, reopen, end }) {
       if (g) clearTimeout(g.timer);
       g = null;
       const s = spread();
+      zoomedByHand = true;
       pinch = { d: s.d, mid: s.mid, from: { ...zoom } };
       return;
     }
@@ -389,6 +414,8 @@ export function startTurn({ base, img, stage, on, frame, reopen, end }) {
     for (const c of [type, done, tabs, back, fill]) c.disabled = true;
     opts.hidden = true;
     setAway(false);
+    say("");
+    document.body.dataset.ended = "true"; // no timer, no Done, no keys (liveview.css)
   }
 
   return {

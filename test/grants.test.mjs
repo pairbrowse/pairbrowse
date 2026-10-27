@@ -230,14 +230,15 @@ test("a held tab keeps no keys and lets go on a new grant, a release or the sess
   assert.throws(() => grants.hold(a, { session: "" }), /session/);
 });
 
-test("grant roles: turn sees and drives the scope and its own routes, redeem only the landing page", () => {
+test("grant roles: turn sees and drives the scope and its own routes, redeem only the landing page and its still", () => {
   for (const r of ["page", "events", "thumb", "state", "input", "turn"]) assert.equal(roleMay("turn", r), true, r);
   for (const r of ["tab", "profile", "approve", "invite", "tools", "session", "config", "journal", "record", "layout", "strip", "timeline", "outline", "capture", "activity"]) {
     assert.equal(roleMay("turn", r), false, `turn ${r}`);
     assert.equal(roleMay("redeem", r), false, `redeem ${r}`);
   }
   assert.equal(roleMay("redeem", "page"), true);
-  for (const r of ["events", "thumb", "state", "input", "turn"]) assert.equal(roleMay("redeem", r), false, r);
+  assert.equal(roleMay("redeem", "thumb"), true, "the landing page's still of the tab");
+  for (const r of ["events", "state", "input", "turn"]) assert.equal(roleMay("redeem", r), false, r);
   for (const role of ["owner", "drive", "watch", "approve"]) assert.equal(roleMay(role, "turn"), false, role);
 });
 

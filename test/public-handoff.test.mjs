@@ -38,9 +38,9 @@ function fakeTabs(urls) {
   return { ctx, pages };
 }
 
-function request(port, method, path, { body, host = PUB, origin } = {}) {
+function request(port, method, path, { body, host = PUB, origin, ua } = {}) {
   return new Promise((resolve, reject) => {
-    const headers = { host, ...(origin ? { origin } : {}), ...(body !== undefined ? { "content-type": "application/json" } : {}) };
+    const headers = { host, ...(origin ? { origin } : {}), ...(ua ? { "user-agent": ua } : {}), ...(body !== undefined ? { "content-type": "application/json" } : {}) };
     const req = http.request({ host: "127.0.0.1", port, method, path, headers }, (res) => {
       let text = "";
       res.setEncoding("utf8");
@@ -118,7 +118,7 @@ test("the public address serves a grant's routes alone: landing page, Take over,
       assert.equal((await request(s.port, m, `/${viewKey}/${r}`, m === "POST" ? { body: {}, origin: ORIGIN } : {})).status, 404, `${m} ${r} with the view key`);
     }
     // The list itself: nothing beyond the viewer's and the landing page's own routes.
-    assert.deepEqual([...PUBLIC_ROUTES.redeem].sort(), ["GET ", "GET assets", "POST redeem"]);
+    assert.deepEqual([...PUBLIC_ROUTES.redeem].sort(), ["GET ", "GET assets", "GET thumb.jpg", "POST redeem"]);
     for (const r of PUBLIC_ROUTES.turn) assert.doesNotMatch(r, /pause|tab$|config|revoke|invite|profile|session|tools/);
     // Done ends it; the view key is then 404 like the rest.
     assert.equal((await request(s.port, "POST", `/${viewKey}/turn-done`, { body: {}, origin: ORIGIN })).status, 200);
@@ -386,4 +386,23 @@ test("sharing hands the live view the session's own name for matching hand-off g
     await sharing.ensureLiveView();
     assert.equal(opts.sessionName(), "clean-42");
   } finally { sharing.stopTunnel?.(); }
+});
+
+// The landing page shows the handed-over tab before Take over: a still (thumb.jpg) for the redeem
+// key, of its own tab, for a browser; a link preview's fetcher (or a request naming no browser)
+// gets none, and fetching it uses nothing up.
+test("the landing page's still of the handed-over tab: for a browser on the redeem key, never a link preview, nothing used up", async () => {
+  const s = await setup();
+  try {
+    const g = s.mint();
+    const phone = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1";
+    const still = await request(s.port, "GET", `/${g.redeemKey}/thumb.jpg`, { ua: phone });
+    assert.equal(still.status, 200);
+    assert.equal(still.headers["content-type"], "image/jpeg");
+    assert.match(still.text, /STILL https:\/\/shop\.example\/pay/, "the handed-over tab's still");
+    for (const ua of ["TelegramBot (like TwitterBot)", "Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)", "facebookexternalhit/1.1", undefined]) {
+      assert.equal((await request(s.port, "GET", `/${g.redeemKey}/thumb.jpg`, { ua })).status, 404, `no still for ${ua || "no user agent"}`);
+    }
+    assert.equal(s.grants.open()[0].redeemed, false, "a still uses nothing up");
+  } finally { s.view.close(); }
 });

@@ -24,26 +24,39 @@ const skip = !runtime || process.env.PAIRBROWSE_TEST_REAL_TUNNEL !== "1";
 const shots = process.env.PAIRBROWSE_TEST_SHOTS || null;
 const IPHONE_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1";
 const TELEGRAM_BOT = "TelegramBot (like TwitterBot)";
-const TILE = 120, GRID_X = 40, GRID_Y = 120; // the grid's tiles and where it sits, in page pixels
+const TILE = 120, GRID_X = 20, GRID_Y = 60; // the grid's tiles and where they sit in the frame
 const PICK = 5; // the tile the person taps (row 1, column 2)
 
-// The check: a 3x3 grid of tiles that toggle on a click, and a field; every change reported.
+// The check: a page with text around a verification frame (same origin) holding a 3x3 grid of
+// tiles that toggle on a click and a field; every change reported with where the frame sits.
+const FRAME = { x: 440, y: 180, w: 400, h: 520 };
 async function startCheck() {
   const reports = [];
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, "http://x");
     if (url.pathname === "/ev") { reports.push(JSON.parse(url.searchParams.get("v"))); res.writeHead(204); return res.end(); }
-    const tiles = Array.from({ length: 9 }, (_, i) => `<button class=t data-i=${i} style="left:${GRID_X + (i % 3) * TILE}px;top:${GRID_Y + Math.floor(i / 3) * TILE}px">${i}</button>`).join("");
     res.writeHead(200, { "content-type": "text/html" });
-    res.end(`<!doctype html><title>Select all squares</title><style>body{margin:0;font:16px sans-serif}.t{position:absolute;width:${TILE - 4}px;height:${TILE - 4}px;border:0;background:#4a7;color:#fff;font-size:28px}.t.on{background:#14c;outline:6px solid #fc0}</style>
-<h1 style="margin:16px 40px;font-size:22px">Select all squares with tile 5</h1>${tiles}
-<input id=note aria-label=Note style="position:absolute;left:${GRID_X}px;top:${GRID_Y + 3 * TILE + 20}px;width:${3 * TILE - 10}px;height:40px;font-size:18px">
-<script>const on=new Set();const rep=()=>fetch("/ev?v="+encodeURIComponent(JSON.stringify({on:[...on].sort(),note:document.getElementById("note").value,w:innerWidth})));rep();
+    if (url.pathname === "/frame") {
+      const tiles = Array.from({ length: 9 }, (_, i) => `<button class=t data-i=${i} style="left:${GRID_X + (i % 3) * TILE}px;top:${GRID_Y + Math.floor(i / 3) * TILE}px">${i}</button>`).join("");
+      return res.end(`<!doctype html><style>body{margin:0;font:16px sans-serif;background:#fff}.t{position:absolute;width:${TILE - 4}px;height:${TILE - 4}px;border:0;background:#4a7;color:#fff;font-size:28px}.t.on{background:#14c;outline:6px solid #fc0}</style>
+<p style="margin:0;padding:14px 20px;background:#1a73e8;color:#fff;font-size:18px">Select all squares with tile 5</p>${tiles}
+<input id=note aria-label=Note style="position:absolute;left:${GRID_X}px;top:${GRID_Y + 3 * TILE + 12}px;width:${3 * TILE - 10}px;height:36px;font-size:18px">
+<script>const on=new Set();const rep=()=>fetch("/ev?v="+encodeURIComponent(JSON.stringify({on:[...on].sort(),note:document.getElementById("note").value,w:parent.innerWidth})));
 document.querySelectorAll(".t").forEach(b=>b.onclick=()=>{const i=+b.dataset.i;on.has(i)?on.delete(i):on.add(i);b.classList.toggle("on");rep();});
-let was="";setInterval(()=>{const v=document.getElementById("note").value;if(v!==was){was=v;rep();}},200);</script>`);
+let was="";setInterval(()=>{const v=document.getElementById("note").value;if(v!==was){was=v;rep();}},200);rep();</script>`);
+    }
+    res.end(`<!doctype html><title>Verify you are human</title><body style="margin:0;font:16px sans-serif">
+<h1 style="margin:24px 40px;font-size:26px">A site that wants a check</h1><p style="margin:0 40px;width:360px;color:#444">${"Some words about the site. ".repeat(30)}</p>
+<iframe src="/frame" style="position:absolute;left:${FRAME.x}px;top:${FRAME.y}px;width:${FRAME.w}px;height:${FRAME.h}px;border:1px solid #ccc"></iframe>`);
   });
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   return { port: server.address().port, last: () => reports.at(-1) ?? null, close: () => { server.closeAllConnections?.(); server.close(); } };
+}
+// WCAG contrast of two "rgb(r, g, b)" colors.
+function contrast(a, b) {
+  const lum = (c) => { const [r, g, bl] = c.match(/\d+(\.\d+)?/g).slice(0, 3).map(Number).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * bl; };
+  const [x, y] = [lum(a), lum(b)].sort((m, n) => n - m);
+  return (x + 0.05) / (y + 0.05);
 }
 async function startWebhook() {
   const got = [];
@@ -69,7 +82,7 @@ test("the phone hand-off in a clean session through a real Quick Tunnel: preview
   if (existsSync(tools)) symlinkSync(tools, join(home, "tools"), "dir");
   if (shots) mkdirSync(shots, { recursive: true });
   const log = () => { try { return readFileSync(join(home, "daemon.log"), "utf8"); } catch { return ""; } };
-  let daemon = null, agent = null, phone = null, stage = "start";
+  let daemon = null, agent = null, phone = null, page = null, stage = "start";
   const shot = async (page, name) => { if (shots) await page.screenshot({ path: join(shots, `${name}.png`) }); };
   try {
     stage = "the helper, a clean session and the agent's tab";
@@ -78,7 +91,7 @@ test("the phone hand-off in a clean session through a real Quick Tunnel: preview
     (await attachDaemon({ socketPath, daemon, home })).destroy();
     agent = await session(socketPath, "a");
     assert.match(text(await agent.tool("pairbrowse_session", { action: "new", clean: true }, 120_000)), /clean/i);
-    assert.ok(!(await agent.tool("browser_navigate", { url: "http://check.pbtest.example/grid" })).result?.isError);
+    assert.ok(!(await agent.tool("browser_navigate", { url: "http://check.pbtest.example/" })).result?.isError);
 
     stage = "the hand-off: its link is public";
     const said = text(await agent.tool("pairbrowse_status", { kind: "you", text: "Solve the check", step: "captcha" }, 120_000));
@@ -92,39 +105,52 @@ test("the phone hand-off in a clean session through a real Quick Tunnel: preview
     assert.match(await preview.text(), /Take over/);
     const pw = patchright(runtime);
     phone = await pw.chromium.launch({ executablePath: driverBrowserPath(runtime), headless: true });
-    const ctx = await phone.newContext({ viewport: { width: 393, height: 852 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, userAgent: IPHONE_UA });
-    const page = await ctx.newPage();
-    const first = await page.goto(turn.link, { timeout: 60_000 });
-    assert.equal(first.status(), 200, "the first open on the phone");
-    await page.getByRole("button", { name: "Take over" }).waitFor({ timeout: 30_000 });
-    await shot(page, "01-landing");
+    const phoneCtx = (w, h, scheme) => phone.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, userAgent: IPHONE_UA, colorScheme: scheme });
+    // The landing page on a small phone in dark mode too: readable, with the tab's picture.
+    for (const [w, h, scheme] of [[360, 800, "dark"], [393, 852, "light"]]) {
+      const ctx = await phoneCtx(w, h, scheme);
+      const p = await ctx.newPage();
+      const r = await p.goto(turn.link, { timeout: 60_000 });
+      assert.equal(r.status(), 200, `the first open on the phone (${w}x${h} ${scheme})`);
+      await p.getByRole("button", { name: "Take over" }).waitFor({ timeout: 30_000 });
+      const c = await p.evaluate(() => { const h1 = getComputedStyle(document.querySelector("h1")).color, card = getComputedStyle(document.querySelector(".card")).backgroundColor; return { h1, card }; });
+      assert.ok(contrast(c.h1, c.card) >= 4.5, `the title reads on its card (${JSON.stringify(c)}: ${contrast(c.h1, c.card).toFixed(2)})`);
+      await until("the tab's picture on the landing page", () => p.evaluate(() => document.getElementById("peek").dataset.ready === "true" && document.getElementById("peek-img").naturalWidth > 0), 30_000, 200);
+      await shot(p, `01-landing-${w}x${h}-${scheme}`);
+      if (w === 393) { page = p; break; }
+      await ctx.close();
+    }
 
-    stage = "Take over: the live picture";
+    stage = "Take over: the live picture, zoomed to the verification";
     await page.getByRole("button", { name: "Take over" }).tap();
     const img = page.locator("#screen");
     await until("the picture", () => img.evaluate((i) => !i.hidden && i.naturalWidth > 0).catch(() => false), 60_000, 200);
-    await shot(page, "02-viewer");
+    await until("the first zoom", () => page.locator("#zoom-level").textContent().then((t) => parseFloat(t) > 1), 15_000, 200);
+    await sleepMs(800);
+    await shot(page, "02-viewer-393x852");
+    const zoomed = await page.locator("#zoom-level").textContent();
+    const stageBox = await page.locator("#stage").boundingBox().catch(() => null) ?? await page.locator(".stage").boundingBox();
     const box = await img.boundingBox();
-    t.diagnostic(`picture on the phone: ${JSON.stringify(box)}`);
-    assert.ok(box.x >= 0 && box.x + box.width <= 393 + 1, "the picture fits the phone's width");
-    assert.ok(box.width > 300, "and uses it");
-    // Pictures keep coming: count the picture's changes for five seconds while the page changes.
+    t.diagnostic(`picture on the phone at ${zoomed}: ${JSON.stringify(box)}; stage ${JSON.stringify(stageBox)}`);
+    assert.ok(box.height >= stageBox.height * 0.5, "the picture fills at least half the screen");
+    // Pictures keep coming: the picture's changes are counted while the person taps and types.
     await page.evaluate(() => { window.__frames = 0; new MutationObserver(() => window.__frames++).observe(document.getElementById("screen"), { attributes: true, attributeFilter: ["src"] }); });
 
-    stage = "a tap on one tile";
-    const natural = await img.evaluate((i) => ({ w: i.naturalWidth, h: i.naturalHeight }));
-    // The picture is the page's viewport: page pixels scale by box.width / the page's own width.
+    stage = "a tap on one tile, at the first zoom";
     const scale = box.width / check.last().w;
-    const cx = GRID_X + (PICK % 3) * TILE + TILE / 2, cy = GRID_Y + Math.floor(PICK / 3) * TILE + TILE / 2;
-    await page.touchscreen.tap(box.x + cx * scale, box.y + cy * scale);
-    await until("tile 5 toggled", () => JSON.stringify(check.last()?.on) === JSON.stringify([PICK]), 30_000, 100);
-    t.diagnostic(`picture ${natural.w}x${natural.h}; tile ${PICK} on: ${JSON.stringify(check.last())}`);
+    const tileAt = (i) => ({ x: FRAME.x + 1 + GRID_X + (i % 3) * TILE + TILE / 2, y: FRAME.y + 1 + GRID_Y + Math.floor(i / 3) * TILE + TILE / 2 });
+    const visible = (pt) => { const x = box.x + pt.x * scale, y = box.y + pt.y * scale; return x > stageBox.x && x < stageBox.x + stageBox.width && y > stageBox.y && y < stageBox.y + stageBox.height ? { x, y } : null; };
+    for (let i = 0; i < 9; i++) assert.ok(visible(tileAt(i)), `tile ${i} is on screen at the first zoom`);
+    const at = visible(tileAt(PICK));
+    await page.touchscreen.tap(at.x, at.y);
+    await until("tile 5 toggled, and no other", () => JSON.stringify(check.last()?.on) === JSON.stringify([PICK]), 30_000, 100);
     await sleepMs(1500);
-    await shot(page, "03-tile-tapped");
+    await shot(page, "03-tile-tapped-393x852");
 
     stage = "typing through the type box";
-    const nx = GRID_X + 100, ny = GRID_Y + 3 * TILE + 40;
-    await page.touchscreen.tap(box.x + nx * scale, box.y + ny * scale);
+    const field = visible({ x: FRAME.x + 1 + GRID_X + 100, y: FRAME.y + 1 + GRID_Y + 3 * TILE + 30 });
+    assert.ok(field, "the field is on screen");
+    await page.touchscreen.tap(field.x, field.y);
     await sleepMs(800);
     await page.locator("#type-box").tap();
     await page.keyboard.type("from my phone");
@@ -133,7 +159,10 @@ test("the phone hand-off in a clean session through a real Quick Tunnel: preview
     const frames = await page.evaluate(() => window.__frames);
     t.diagnostic(`picture updates during the tap and typing: ${frames}`);
     assert.ok(frames >= 3, "the picture kept streaming");
-    await shot(page, "04-typed");
+    await shot(page, "04-typed-393x852");
+    await page.setViewportSize({ width: 360, height: 800 });
+    await sleepMs(1500);
+    await shot(page, "04-typed-360x800");
 
     stage = "Done hands back";
     const waiting = agent.tool("browser_wait_for", {}, 120_000);
@@ -141,7 +170,9 @@ test("the phone hand-off in a clean session through a real Quick Tunnel: preview
     const woke = text(await waiting);
     assert.match(woke, /ended \(done\)|pressed Done/, woke);
     await sleepMs(1000);
-    await shot(page, "05-done");
+    assert.equal(await page.locator("#overlay-title").textContent(), "Done. The agent continues.");
+    for (const sel of ["#turn-left", "#turn-done", "#turnkeys"]) assert.equal(await page.locator(sel).isVisible(), false, `${sel} gone after the end`);
+    await shot(page, "05-done-360x800");
   } catch (e) {
     throw new Error(`${stage}: ${e.message}\n--- daemon.log ---\n${log().slice(-4000)}`);
   } finally {

@@ -133,13 +133,13 @@ test("a preview-bot GET leaves the grant valid; the tap consumes it; a second ta
   } finally { s.view.close(); }
 });
 
-test("role turn is refused tab, pause, profile, journal, invite, tools, config and nav go; role redeem may only GET the page and POST redeem", async () => {
+test("role turn is refused tab, pause, profile, journal, invite, tools, config and nav go; role redeem may only GET the page, its still and POST redeem", async () => {
   const s = await setup();
   try {
     const g = s.mint();
     const k = g.redeemKey;
     // Before the tap: the landing page and its tap, nothing else.
-    for (const [method, path, body] of [["GET", "events"], ["GET", "thumb.jpg"], ["GET", "state.json"], ["POST", "input", { type: "char", text: "a" }], ["POST", "turn-done", {}], ["POST", "turn", { show: "00000000" }],
+    for (const [method, path, body] of [["GET", "events"], ["GET", "state.json"], ["POST", "input", { type: "char", text: "a" }], ["POST", "turn-done", {}], ["POST", "turn", { show: "00000000" }],
       ["POST", "tab", { i: 0 }], ["POST", "pause", { paused: true }], ["GET", "profile.json"], ["GET", "journal.json"], ["POST", "invite", { share: "link" }], ["GET", "downloads.json"], ["GET", "config.json"]]) {
       assert.equal((await request(s.port, method, `/${k}/${path}`, { body })).status, 403, `redeem: ${method} /${path}`);
     }
@@ -222,7 +222,7 @@ test("a second concurrent stream is 409; a reconnect after a drop works within t
     assert.equal(again.status, 200, "the same device comes back with the same key");
     await until(() => eventsIn(again.text(), "turn").length);
     const turn = eventsIn(again.text(), "turn")[0];
-    assert.deepEqual(Object.keys(turn).sort(), ["action", "expiresAt", "host", "id", "savedCard", "scope", "state"]);
+    assert.deepEqual(Object.keys(turn).sort(), ["action", "expiresAt", "focus", "host", "id", "savedCard", "scope", "state"]);
     assert.equal(turn.savedCard, false, "no saved card: the viewer offers no Fill saved card");
     assert.equal(turn.host, "shop.example");
     assert.equal(turn.action, "payment");

@@ -39,6 +39,7 @@ import { SIGNALS } from "../rules/cards.mjs";
 import { focusedSelect, chooseInPage, listOf, pickKeys, OPTION_WORDS } from "./options.mjs";
 import { sse, json, plain, originOk, pathParts, SECURITY_HEADERS, VIEWER_CSP } from "./http.mjs";
 import { hostOf, guestTabs, guestActivity } from "./tabs.mjs";
+import { focusOf } from "./focus.mjs";
 
 export const TURN_ROLES = new Set(["turn", "redeem"]);
 const OPENER_MS = 1000; // asking a new tab which tab opened it
@@ -85,11 +86,12 @@ const FOCUS_MS = 8000; // reading the focused field (its frame, value and card s
 // view's streams. inviteOrigin: inviteBaseUrl's origin, or null. invites: the invite store (its
 // revoke_all ends every grant too). onChanged(): who is watching changed. log(...): daemon.log.
 // savedCard(): whether the browser has a saved card on (B12). humanPost(route, events, role, who,
-// id): the live view's queue for a person's input (liveview.mjs). focused(page): the focused
+// id): the live view's queue for a person's input (liveview.mjs). readFocus(page): the part of the
+// tab that matters, for the phone's first zoom (liveview/focus.mjs; tests). focused(page): the focused
 // field as runner/cards.mjs focusedFillField reads it (tests). select(page): the focused select as
 // liveview/options.mjs focusedSelect reads it, choose(page, index, count): chooseInPage (tests).
 export function createTurnGate({ grants = null, sessionName, idOf, getContext, cast, linkGuests, clients, viewers, inviteOrigin = null, invites = null, onChanged = () => {}, log = () => {},
-  savedCard = () => false, humanPost = async () => {}, focused = (page) => focusedFillField(page), select = (page) => focusedSelect(page), choose = (page, index, count) => chooseInPage(page, index, count), now = Date.now }) {
+  savedCard = () => false, humanPost = async () => {}, readFocus = (page) => focusOf(page), focused = (page) => focusedFillField(page), select = (page) => focusedSelect(page), choose = (page, index, count) => chooseInPage(page, index, count), now = Date.now }) {
   const streams = new Map(); // event stream -> { guest, stream, sig }
   const watched = new WeakSet(); // browser contexts whose new tabs are checked for their opener
 
@@ -140,7 +142,11 @@ export function createTurnGate({ grants = null, sessionName, idOf, getContext, c
     if (!v) return null;
     const shown = cast.state.shown?.page;
     const scope = await Promise.all(scopeOf(guest).map(async (p) => ({ id: idOf(p), title: stripText(await ownTitle(p)), host: hostOf(p.url()), shown: p === shown })));
-    return { id: v.id, action: v.action, host: hostOf(v.page.url()), expiresAt: v.expiresAt, scope, state: onScreen(guest) ? "on" : "off", savedCard: savedCard() === true };
+    const on = onScreen(guest);
+    // The part of the tab that matters (a verification frame, the focused field's form): the phone
+    // viewer opens zoomed to it (liveview/focus.mjs). Rectangles only, never the page's text.
+    const focus = on ? await readFocus(shown) : null;
+    return { id: v.id, action: v.action, host: hostOf(v.page.url()), expiresAt: v.expiresAt, scope, state: on ? "on" : "off", savedCard: savedCard() === true, focus };
   }
   // Each turn stream hears its state again when it changed (a tab shown, a pop-up joining).
   async function changed() {
@@ -234,6 +240,7 @@ export function createTurnGate({ grants = null, sessionName, idOf, getContext, c
     const session = sessionName();
     if (validName(session)) grants.endWhere((v) => v.session !== session, "session-switched");
     await watch();
+    if (streams.size) await changed(); // the focus moved or changed (a verification's challenge opened)
   }
 
   // A grant ended: its stream hears why and closes; the picture is free to follow again, for
@@ -342,6 +349,8 @@ export function createTurnGate({ grants = null, sessionName, idOf, getContext, c
     frameTo: (res) => { const g = linkGuests.get(res); return g?.role === "turn" && inScope(cast.state.lastFrameFrom, g); },
     // The page a turn viewer's still comes from: the shown tab in scope, the grant's tab when none
     // is shown, or null when another tab is on screen.
+    // The landing page's still (role redeem): the grant's tab on screen, else its first scope tab.
+    previewOf: (guest) => (onScreen(guest) ? cast.state.shown.page : scopeOf(guest)[0] || null),
     stillOf: (guest) => (cast.state.shown ? (onScreen(guest) ? cast.state.shown.page : null) : scopeOf(guest)[0] || null),
     refused: (guest, kind, detail) => grants?.refused(grantOf(guest), kind, detail),
     end: (guest, reason) => !!grants && grants.end(grantOf(guest), reason),

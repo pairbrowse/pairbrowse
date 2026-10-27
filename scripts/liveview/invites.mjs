@@ -198,7 +198,8 @@ export function createInvites({ now = () => Date.now(), mono = () => performance
 // as is "network" (Settings' Network section: proxies, their credentials and each session's choice),
 // as is "handoff" (the Handoff page: linking Telegram or Discord, their tokens, what goes to the phone).
 // "turn" and "redeem" are a hand-off grant's (daemon/grants.mjs, spec server-mode B2), never an
-// invite's: "redeem" (the link as delivered) only reaches its landing page; "turn" (the view key
+// invite's: "redeem" (the link as delivered) only reaches its landing page and, there, a still of
+// the handed-over tab with card fields covered (thumb); "turn" (the view key
 // it gives) sees and drives the handed-over tabs and reaches the turn routes ("turn"), and never
 // tab, profile, approve, invite, tools, session or config. The live view refuses it POST pause too
 // (routes/viewer.mjs), though pause needs only input.
@@ -207,6 +208,6 @@ const RIGHTS = {
   drive: new Set(["page", "events", "thumb", "state", "input", "tab"]),
   watch: new Set(["page", "events", "thumb", "state"]),
   turn: new Set(["page", "events", "thumb", "state", "input", "turn"]),
-  redeem: new Set(["page"]),
+  redeem: new Set(["page", "thumb"]),
 };
 export const roleMay = (role, right) => Object.hasOwn(RIGHTS, role) && RIGHTS[role].has(right);

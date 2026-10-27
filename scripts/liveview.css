@@ -456,8 +456,12 @@ body[data-role="turn"] .stage { touch-action: none; box-shadow: none; align-item
 body[data-role="turn"] .frame { transform-origin: 0 0; }
 .turnbar { display: grid; gap: 6px; padding: 8px 12px; background: var(--elevated); color: var(--ink); border-bottom: 1px solid var(--edge); }
 .turn-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.turn-step { flex: 1; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-3); }
-.turn-step strong { font-weight: 650; }
+.turn-step { display: grid; flex: 1; min-width: 0; margin: 0; font-size: var(--fs-3); line-height: 1.25; }
+.turn-step strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 650; }
+.turn-site { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); font-size: var(--fs-2); }
+.turn-meta { display: grid; justify-items: end; gap: 2px; flex: none; }
+body[data-ended="true"] .turn-left, body[data-ended="true"] .turn-done, body[data-ended="true"] .turnkeys,
+body[data-ended="true"] .turn-tabs, body[data-ended="true"] .turn-away { display: none; }
 .turn-left { flex: none; font-size: var(--fs-2); font-variant-numeric: tabular-nums; color: var(--ink-2); }
 .turn-left[data-low="true"] { color: var(--bad-ink); }
 .turn-conn { display: inline-flex; align-items: center; gap: 5px; flex: none; font-size: var(--fs-2); color: var(--ink-2); }

@@ -34,7 +34,7 @@ import { TURN_ROLES } from "./grants.mjs";
 
 // What the public address serves, by role, as "METHOD route".
 export const PUBLIC_ROUTES = {
-  redeem: new Set(["GET ", "GET assets", "POST redeem"]),
+  redeem: new Set(["GET ", "GET assets", "GET thumb.jpg", "POST redeem"]),
   turn: new Set(["GET ", "GET assets", "GET events", "GET thumb.jpg", "GET state.json", "POST input", "POST turn", "POST turn-done", "POST turn-options", "POST turn-pick", "POST turn-fill-card"]),
   watch: new Set(["GET ", "GET assets", "GET events"]),
 };
@@ -104,6 +104,8 @@ export function createPublicTurn({ gate, routes, invites = null, publicHost = ()
     }
     if (!g.allowed) { plain(res, 404); return true; }
     if (otherOrigin(req, g.guest, g.route, at.pub)) { plain(res, 403); return true; }
+    // The landing page's still of the tab: for the person's browser, never a link preview's fetcher.
+    if (g.guest.role === "redeem" && g.route === "thumb.jpg" && previewBot(req)) { plain(res, 404); return true; }
     if (req.method === "GET" && g.route === "events") { plain(res, 404, g.guest.role === "watch" ? "Open this watch link's page again." : "Open this hand-off's page again."); return true; } // the stream is a WebSocket here
     // A watch link's page is nobody's to index or keep.
     if (g.guest.role === "watch") res.setHeader("x-robots-tag", "noindex, nofollow, noarchive");

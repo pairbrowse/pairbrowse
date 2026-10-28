@@ -5,6 +5,21 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## Unreleased
+
+**Fixed**
+
+- **The agent's first page opens on a slow computer, for real this time.** 0.18.3 made the agent's
+  first action wait for the browser's own new tab page, but that page turned out to be loaded
+  already: the wait ended after a few milliseconds and the agent's first visit to a website was
+  still cut off ("The page load was interrupted"), saved only by PairBrowse trying it once more.
+  The real cause is the ad blocker that comes with the PairBrowse browser. The first time a browser
+  profile starts, the browser installs it a moment after the window opens, and on a slow computer
+  (a small server, for example) that install cut off a page that was loading right then. On a
+  profile's first start the agent's first action now waits until the ad blocker is in, a second or
+  so and a few seconds at most. Later starts, where the ad blocker is already installed, wait for
+  nothing. Trying a cut off visit once more stays as the fallback.
+
 ## 0.18.3 (2026-10-28)
 
 PairBrowse is a plugin for Claude Code and Codex: the agent fills in forms, signs up for services

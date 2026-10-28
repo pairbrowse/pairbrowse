@@ -162,7 +162,7 @@ is under the temp folder with a linked runtime), so none reaches an installed he
 | `SERVER_OPEN` | knob | `integration/server-display`, `optin/server/server-run` (`test/helpers/server.mjs`, unless the home's config names the native build) | Server mode may launch Playwright's build in place of the native one (refused otherwise: `browser/choice.mjs` `serverRefusal`) |
 | `SILENT_MS` | knob | `failover`, `join` | When a joiner's stream counts as silent |
 | `START_TAB_LATE` | knob | `integration/start-tab` | The start tab's own first load comes this many ms after the launch (the engine's new tab page, in a browser that started on about:blank), as on a slow machine |
-| `START_TAB_WAIT_MS` | knob | `integration/start-tab` | The most the first agent call waits for the start tab's own first load (5 seconds otherwise) |
+| `START_TAB_WAIT_MS` | knob | `integration/start-tab` | The most the first agent call waits for the start tab's own first load and an ad blocker install (5 seconds otherwise) |
 | `TAB_ORDER` | knob | `integration/taborder` | Adds `pairbrowse_test_tab_order`: read and move tabs in the strip |
 | `TUNNEL` | knob | the sharing tests, `bench` | `direct`: the guest port stands in for a tunnel |
 | `REAL_TUNNEL` | knob | you: `1` | Real Cloudflare Quick Tunnels: `optin/failover`, `optin/public-handoff`, `optin/phone-handoff` and one `shared-mode` case. A helper the harness started never opens one without it (`testTunnel` in `scripts/testenv.mjs`): the guest port stands in for join codes and watch links, and hand-off links stay on the live view's own address (with `TUNNEL` `direct` they use the guest port too); `startQuickTunnel` refuses there |

@@ -9,7 +9,7 @@ import { ensureNative, nativeDirs, nativeLayout, notChosen, pinnedAsset } from "
 import { profileDir, createSession, sweepTemporary } from "../../sessions.mjs";
 import { sleep, within } from "../../util.mjs";
 import { setQuietTabs } from "../../focus.mjs";
-import { shippedCrx } from "../../browser/adblock.mjs";
+import { shippedCrx, adBlockerInstalling, AD_BLOCKER_ID } from "../../browser/adblock.mjs";
 import { safeStorageFor, savedCardFor } from "../../browser/safe-storage.mjs";
 import { MEASURING, nativeManifest } from "../../native-engine.mjs";
 import { NATIVE } from "../../native-pack.mjs";
@@ -21,7 +21,7 @@ import { probeLauncher } from "../../native/check.mjs";
 import { screenGeometry } from "../../display.mjs";
 import { paths } from "../../paths.mjs";
 import { testMs, testOn } from "../../testenv.mjs";
-import { startTabLoaded, START_LOAD_MS } from "./tabs.mjs";
+import { startSettled, startTabLoaded, START_LOAD_MS } from "./tabs.mjs";
 
 // A test run's NetLog (testenv.mjs NETLOG, kept only in a helper the harness started): the browser
 // writes what its network stack did, each name its own resolver was asked for among it, to
@@ -271,7 +271,11 @@ export function createLaunch(st, deps, api) {
       const storage = safeStorageFor(config, st.shell, paths.safeStorageKey);
       const card = savedCardFor({ asked: chosen.savedCard === true, native, storage });
       api.profiles.setSavedCard?.(card);
-      const firstRun = prepareProfile(profile(), undefined, { browserPages: st.ownPages, layout: config.layout, adBlocker: st.shell.adBlocker && adBlockerOn, adBlockerCrx: shippedCrx(st.shell.adBlockerCrx, next.executablePath), savedCard: card.on, colorScheme: chosen.colorScheme ?? null });
+      const crx = shippedCrx(st.shell.adBlockerCrx, next.executablePath);
+      const firstRun = prepareProfile(profile(), undefined, { browserPages: st.ownPages, layout: config.layout, adBlocker: st.shell.adBlocker && adBlockerOn, adBlockerCrx: crx, savedCard: card.on, colorScheme: chosen.colorScheme ?? null });
+      // This start installs the ad blocker (a profile's first, or a newer shipped copy): the first
+      // agent call waits for it (awaitStartTab).
+      st.adBlockerInstalling = adBlockerInstalling(profile(), { on: st.shell.adBlocker && adBlockerOn, version: crx?.version ?? null });
       step("prepare");
       // A side panel worker from another build (an update): the browser would keep running its
       // cached copy, so it's loaded anew from disk (resetPanelWorker in browser.mjs).
@@ -350,7 +354,7 @@ export function createLaunch(st, deps, api) {
       // script comes now, since under Patchright it isn't there until ensure adds it.
       ctx.on("page", (p) => { api.adopt(p, ctx, { opened: true }); p.waitForLoadState("domcontentloaded").then(() => { if (!isBrowserPage(p.url())) hud.onPageLoad(p); }, () => {}); setTimeout(() => api.capTabs(ctx, p).catch(() => {}), 300); });
       step(`first page (${ctx.pages().length} open)`);
-      awaitStartTab(ctx.pages()[0]);
+      awaitStartTab(ctx.pages()[0], ctx);
       if (st.pick.state === "pending") api.showPicker(ctx, { own });
       else api.restore(ctx, null, { own });
     } catch (e) { if (net) network.stop(net); throw e; } // a launch that fails here: its rechecks end with it
@@ -382,17 +386,19 @@ export function createLaunch(st, deps, api) {
     return ctx;
   }
 
-  // The start tab's own first load (browser/tabs.mjs startTabLoaded): a build with its own pages
-  // opens its new tab page there, and the first agent call waits for that load (ready()), at most
-  // START_LOAD_MS. A browser that starts on about:blank has none to wait for. Under the test
-  // harness, START_TAB_LATE stands in for a slow machine: the start tab's own load is one that
-  // begins that many ms after the launch (the new tab page again, or, in a browser that started on
-  // about:blank, for the first time).
-  function awaitStartTab(page) {
+  // What the first agent call waits for after a launch (ready()), at most START_LOAD_MS
+  // (browser/tabs.mjs startSettled): a build with its own pages opens its new tab page in the start
+  // tab, whose own first load it waits for, and a start that installs the ad blocker
+  // (st.adBlockerInstalling) has it wait for that install too. A browser that starts on about:blank
+  // has neither. Under the test harness, START_TAB_LATE stands in for a slow machine: the start
+  // tab's own load is one that begins that many ms after the launch (the new tab page again, or, in
+  // a browser that started on about:blank, for the first time).
+  function awaitStartTab(page, ctx) {
     const late = testMs("START_TAB_LATE", 0);
     if (!page || !(st.ownPages || late)) return;
     const ms = testMs("START_TAB_WAIT_MS", START_LOAD_MS), t0 = Date.now();
-    const load = !late ? startTabLoaded(page, { ms }) : sleep(late).then(async () => {
+    const adBlocker = st.adBlockerInstalling ? AD_BLOCKER_ID : null;
+    const load = !late ? startSettled(page, ctx, { adBlocker, ms }) : sleep(late).then(async () => {
       if (page.isClosed()) return "closed";
       log("launch: the start tab's own load, late (START_TAB_LATE)");
       await within(ms, page.goto("chrome://newtab/", { waitUntil: "commit" }).catch(() => {}));

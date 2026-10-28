@@ -6,7 +6,7 @@ import { keepFocus } from "../../focus.mjs";
 import { readSavedTabs, trackTabs, restoreTabs, isUntouchedStart } from "../../tabs.mjs";
 import { recordPerson, tabsFile } from "../../sessions.mjs";
 import { sleep, within } from "../../util.mjs";
-import { isBrowserPage } from "../../../ui/urls.js";
+import { isBrowserPage, extensionUrl } from "../../../ui/urls.js";
 
 const TRIM_EVERY_MS = 60_000;
 const KEEP_ENTRIES = 200;
@@ -28,12 +28,11 @@ export function stopRequestMirroring(page) {
 export const isOwnNewTab = (url) => isUntouchedStart(url) || /^(chrome:\/\/new-tab-page\/?|chrome-extension:\/\/[a-p]{32}\/newtab\/index\.html)([?#].*)?$/i.test(String(url ?? ""));
 
 // The start tab's own first load. A build with its own pages opens its new tab page in the first
-// tab (not about:blank), and the launch counts as done once that tab exists, not once its page has
-// loaded: on a slow machine that page's late load cut off an agent's first browser_navigate
-// (net::ERR_ABORTED, the tab left on the new tab page). The first agent call waits for it (ready()):
-// until the tab shows the new tab page and that page has loaded, at most ms in all. "loaded", or
-// "elsewhere" (the tab went to another page: the picker, a person's address), "closed" (a restore
-// closed it) or "timeout". Every read of the page is bounded.
+// tab (not about:blank); the launch counts as done once that tab exists. Most launches find that
+// page loaded already; startTabLoaded waits for it otherwise: until the tab shows the new tab page
+// and that page has loaded, at most ms in all. "loaded", or "elsewhere" (the tab went to another
+// page: the picker, a person's address), "closed" (a restore closed it) or "timeout". Every read of
+// the page is bounded.
 export const START_LOAD_MS = 5000;
 export async function startTabLoaded(page, { ms = START_LOAD_MS, every = 100, now = Date.now } = {}) {
   const until = now() + ms;
@@ -47,6 +46,38 @@ export async function startTabLoaded(page, { ms = START_LOAD_MS, every = 100, no
   if (!isOwnNewTab(url())) return "elsewhere";
   const loaded = await within(Math.max(0, until - now()), page.waitForLoadState("load", { timeout: Math.max(1, until - now()) }).then(() => true, () => false));
   return loaded ? "loaded" : page.isClosed() ? "closed" : "timeout";
+}
+
+// An extension's service worker running in ctx (its address starts with prefix), then settle ms
+// more: "up", or "timeout" once ms in all have gone by. Read every `every` ms (serviceWorkers()
+// answers from the driver's own list, never from a page).
+export const WORKER_SETTLE_MS = 400;
+export async function workerUp(ctx, prefix, { ms = START_LOAD_MS, settle = WORKER_SETTLE_MS, every = 50, now = Date.now } = {}) {
+  const until = now() + ms;
+  const running = () => { try { return ctx.serviceWorkers().some((w) => String(w.url()).startsWith(prefix)); } catch { return false; } };
+  while (!running()) {
+    if (now() >= until) return "timeout";
+    await sleep(every);
+  }
+  await sleep(Math.max(0, Math.min(settle, until - now())));
+  return "up";
+}
+
+// What the first agent call waits for after a launch (ready()), at most ms in all: the start tab's
+// own first load (startTabLoaded) and, on a start that installs the browser's ad blocker (adBlocker:
+// its extension id, browser/adblock.mjs adBlockerInstalling), that install. The install comes a
+// moment after the launch, and on a slow machine (server mode, an emulated x64 container) it cut
+// off the agent's first page load then (net::ERR_ABORTED, the tab left on the new tab page; seen
+// with Patchright, which holds each page's response for a moment). So the call waits
+// until the ad blocker's service worker runs and WORKER_SETTLE_MS more (the cut-offs came within a
+// quarter second of it). Its answer: the start tab's ("loaded", ...), and the ad blocker's after a
+// comma ("loaded, ad blocker up").
+export async function startSettled(page, ctx, { adBlocker = null, ms = START_LOAD_MS, every, settle } = {}) {
+  const [tab, blocker] = await Promise.all([
+    startTabLoaded(page, { ms, ...(every ? { every } : {}) }),
+    adBlocker ? workerUp(ctx, extensionUrl(adBlocker), { ms, ...(settle === undefined ? {} : { settle }) }) : null,
+  ]);
+  return blocker ? `${tab}, ad blocker ${blocker}` : tab;
 }
 
 // When a download last started in each tab (adopt): a browser_navigate that ended in one is never

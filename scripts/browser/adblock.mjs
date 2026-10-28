@@ -9,7 +9,7 @@
 //
 // macOS and Linux (native builds): there the browser reads the profile's own "External Extensions"
 // folder (the user data directory's), one <id>.json per extension. Not on Windows.
-import { readFileSync, rmSync, existsSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, rmSync, existsSync, statSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { writeJsonAtomic } from "../util.mjs";
 
@@ -50,5 +50,38 @@ export function adBlockerFiles(profile, on, { id = AD_BLOCKER_ID, platform = pro
   try { current = readFileSync(file, "utf8"); } catch { /* none yet */ }
   if (current === JSON.stringify(entry)) return false;
   writeJsonAtomic(file, entry, { indent: 0 });
+  return true;
+}
+
+// Whether this start of the browser installs the ad blocker (or updates it to the shipped CRX):
+// it is on (on), the browser reads the entry (macOS, Linux), the person never removed it (the
+// browser's record of removed external extensions, Default/Preferences
+// extensions.external_uninstalls), and the profile (the user data directory) holds no copy of it
+// at version or newer (none at all when version is null: the store's). That install comes a moment
+// after the launch, on a slow machine as an agent's first page is loading, and cut that load off
+// (net::ERR_ABORTED): the first agent call waits for it (daemon/browser/tabs.mjs startSettled).
+// A profile that has it already starts it with the browser: nothing to wait for.
+export function adBlockerInstalling(profile, { on = true, version = null, id = AD_BLOCKER_ID, platform = process.platform } = {}) {
+  if (!on || (platform !== "darwin" && platform !== "linux")) return false;
+  const base = join(profile, "Default");
+  let have = [];
+  try { have = readdirSync(join(base, "Extensions", id)).map((d) => d.replace(/_\d+$/, "")).filter((v) => /^\d+(\.\d+)*$/.test(v)); } catch { /* none */ }
+  if (have.some((v) => !version || newerOrSame(v, String(version)))) return false;
+  for (const file of ["Preferences", "Secure Preferences"]) {
+    try {
+      const gone = JSON.parse(readFileSync(join(base, file), "utf8"))?.extensions?.external_uninstalls;
+      if (Array.isArray(gone) && gone.includes(id)) return false;
+    } catch { /* none yet */ }
+  }
+  return true;
+}
+
+// Dotted versions: a at b or newer.
+function newerOrSame(a, b) {
+  const x = a.split(".").map(Number), y = b.split(".").map(Number);
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    const d = (x[i] || 0) - (y[i] || 0);
+    if (d) return d > 0;
+  }
   return true;
 }

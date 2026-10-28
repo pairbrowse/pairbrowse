@@ -1,15 +1,18 @@
-// The start tab's own first load (daemon/browser/tabs.mjs startTabLoaded): a build with its own
-// pages opens its new tab page in the first tab, and on a slow machine that page's late load cut
-// off an agent's first browser_navigate. The first agent call waits for it (ready(), bounded), and
-// a browser_navigate cut off on the untouched new tab page goes once more (retryAborted), never
-// when the page went elsewhere or a download started.
+// What the first agent call waits for after a launch (daemon/browser/tabs.mjs startSettled, ready(),
+// bounded): the start tab's own first load (startTabLoaded) and, on a start that installs the ad
+// blocker (browser/adblock.mjs adBlockerInstalling), that install (workerUp): on a slow machine it
+// cut off an agent's first browser_navigate, with the start tab long loaded. A browser_navigate
+// cut off on the untouched new tab page goes once more (retryAborted), never when the page went
+// elsewhere or a download started.
 import "./helpers/home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { EventEmitter } from "node:events";
-import { startTabLoaded, retryAborted, downloadStartedAt, isOwnNewTab, createTabs, START_LOAD_MS } from "../scripts/daemon/browser/tabs.mjs";
+import { startTabLoaded, startSettled, workerUp, retryAborted, downloadStartedAt, isOwnNewTab, createTabs, START_LOAD_MS, WORKER_SETTLE_MS } from "../scripts/daemon/browser/tabs.mjs";
+import { adBlockerInstalling, AD_BLOCKER_ID } from "../scripts/browser/adblock.mjs";
+import { extensionUrl } from "../ui/urls.js";
 import { testHome } from "./helpers/home.mjs";
 
 // A tab whose new tab page commits after commitMs and loads loadMs after that (never: Infinity).
@@ -63,6 +66,71 @@ test("the wait is bounded, and ends when the tab goes elsewhere or closes", asyn
   setTimeout(() => { closed.closed = true; }, 60);
   assert.equal(await startTabLoaded(closed, { every: 20 }), "closed");
   assert.equal(START_LOAD_MS, 5000);
+});
+
+// A context whose ad blocker's service worker starts after upMs (never: Infinity), beside another
+// extension's that runs from the start.
+function workers({ upMs = 0, id = AD_BLOCKER_ID } = {}) {
+  const t0 = Date.now();
+  const other = { url: () => "chrome-extension://aaaabbbbccccddddeeeeffffgggghhhh/sw.js" };
+  const blocker = { url: () => `chrome-extension://${id}/js/background.js` };
+  return { serviceWorkers: () => (Date.now() - t0 >= upMs ? [other, blocker] : [other]) };
+}
+
+// The Linux run that showed it: the launch's start tab was loaded within 4 ms, the wait ended
+// there, and the ad blocker's install (on the profile's first start) cut the agent's first page
+// load off a moment later. The wait now holds until that install is in, and a little more.
+test("a start that installs the ad blocker waits for it, though the start tab is loaded already", async () => {
+  const t0 = Date.now();
+  assert.equal(await startSettled(lateTab(), workers({ upMs: 500 }), { adBlocker: AD_BLOCKER_ID, settle: 200 }), "loaded, ad blocker up");
+  const took = Date.now() - t0;
+  assert.ok(took >= 680, `held until the ad blocker ran and settled (${took} ms)`);
+  assert.ok(took < 2000, `not longer (${took} ms)`);
+  // No install on this start: the loaded start tab alone, at once.
+  const t1 = Date.now();
+  assert.equal(await startSettled(lateTab(), workers({ upMs: Infinity }), { adBlocker: null }), "loaded");
+  assert.ok(Date.now() - t1 < 200);
+  // Both late: the later of the two.
+  const t2 = Date.now();
+  assert.equal(await startSettled(lateTab({ commitMs: 200, loadMs: 500 }), workers({ upMs: 100 }), { adBlocker: AD_BLOCKER_ID, settle: 50, every: 20 }), "loaded, ad blocker up");
+  assert.ok(Date.now() - t2 >= 650);
+  assert.ok(WORKER_SETTLE_MS >= 300, "the cut-offs came up to a quarter second after the worker started");
+});
+
+test("the wait for the ad blocker is bounded, and only its own worker counts", async () => {
+  const t0 = Date.now();
+  assert.equal(await startSettled(lateTab(), workers({ upMs: Infinity }), { adBlocker: AD_BLOCKER_ID, ms: 400 }), "loaded, ad blocker timeout");
+  const took = Date.now() - t0;
+  assert.ok(took >= 350 && took < 1200, `bounded (${took} ms)`);
+  // The settle never runs past the bound either.
+  const t1 = Date.now();
+  assert.equal(await workerUp(workers({ upMs: 250 }), extensionUrl(AD_BLOCKER_ID), { ms: 400, settle: 5000 }), "up");
+  assert.ok(Date.now() - t1 < 900);
+  // A driver whose list throws: no worker, still bounded.
+  assert.equal(await workerUp({ serviceWorkers: () => { throw new Error("gone"); } }, "chrome-extension://x/", { ms: 200 }), "timeout");
+});
+
+test("the ad blocker installs on a profile's first start, a newer shipped copy, and never after the person removed it", () => {
+  const profile = join(testHome, "ab-profile");
+  const ext = join(profile, "Default", "Extensions", AD_BLOCKER_ID);
+  const on = { platform: "linux" };
+  assert.equal(adBlockerInstalling(profile, { ...on, version: "2026.1020.1" }), true, "a new profile");
+  assert.equal(adBlockerInstalling(profile, { ...on, version: null }), true, "a new profile, the store's copy");
+  assert.equal(adBlockerInstalling(profile, { ...on, on: false }), false, "turned off");
+  assert.equal(adBlockerInstalling(profile, { platform: "win32" }), false, "the browser reads no entry there");
+  mkdirSync(join(ext, "2026.1020.1_0"), { recursive: true });
+  assert.equal(adBlockerInstalling(profile, { ...on, version: "2026.1020.1" }), false, "there already");
+  assert.equal(adBlockerInstalling(profile, { ...on, version: null }), false);
+  assert.equal(adBlockerInstalling(profile, { ...on, version: "2026.1027.0" }), true, "a newer shipped copy updates it");
+  mkdirSync(join(ext, "2026.1101.5_0"));
+  assert.equal(adBlockerInstalling(profile, { ...on, version: "2026.1027.0" }), false, "the store updated it past the shipped copy");
+  // Removed by the person: the browser never installs it again.
+  const other = join(testHome, "ab-removed");
+  mkdirSync(join(other, "Default"), { recursive: true });
+  writeFileSync(join(other, "Default", "Preferences"), JSON.stringify({ extensions: { external_uninstalls: [AD_BLOCKER_ID] } }));
+  assert.equal(adBlockerInstalling(other, on), false);
+  writeFileSync(join(other, "Default", "Preferences"), "{not json");
+  assert.equal(adBlockerInstalling(other, on), true, "an unreadable record: as if none");
 });
 
 test("browser_navigate goes once more only when cut off on the untouched new tab page", async () => {

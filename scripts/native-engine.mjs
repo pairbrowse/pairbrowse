@@ -20,6 +20,7 @@ import { boundedStep, launchWithin, localSite } from "./native/probe.mjs";
 import { STRICT_WEBRTC } from "./net/config.mjs";
 import { ENGINE_KEYS as PROFILE_ENGINE_KEYS, PICKS_THIS_COMPUTER, THIS_COMPUTER_NOTE } from "./profiles/map.mjs";
 import { PERSONA_FILE, LEGACY_PERSONA } from "./sessions.mjs";
+import { NO_CLONE_FEATURE } from "./native/clones.mjs";
 
 // Humanized typing and form fills live in native/humanize.mjs; re-exported for older importers.
 export * from "./native/humanize.mjs";
@@ -505,6 +506,9 @@ function splitExtensionArgs(args, extensions) {
   return { extensionPaths: [...paths], userArgs: rest };
 }
 
+// The switch that turns the engine's code-sign clone off, on macOS only (native/clones.mjs).
+export const noCloneArgs = (platform) => (platform === "darwin" ? [`--disable-features=${NO_CLONE_FEATURE}`] : []);
+
 export const DRIVER_BLINK_SWITCH = "--disable-blink-features=AutomationControlled";
 export const DRIVER_BACKGROUND_SWITCH = "--disable-background-networking";
 
@@ -651,6 +655,9 @@ export async function launchNative(chromium, config, directory, options, pack, l
     // The identity's own engine switches (native/graphics.mjs: the GPU pool entry, WebGPU's
     // software adapter by name with the service on), the helper's, never from browserArgs.
     ...plan.identitySwitches,
+    // macOS: no copy of the whole app at each start (native/clones.mjs: the engine removes it only
+    // on a clean exit, so every hard stop left one behind). Merged into the one --disable-features.
+    ...noCloneArgs(process.platform),
     ...userArgs,
   ]);
   const gated = pack.gateEngineSwitches(options.executablePath, args, false);

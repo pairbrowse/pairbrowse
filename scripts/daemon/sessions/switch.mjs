@@ -7,6 +7,8 @@ import { validName, isTemporary, rememberSession, listSessions, createSession, d
 import { renameRunsSession } from "../../runs.mjs";
 import { within } from "../../util.mjs";
 import { where } from "../where.mjs";
+import { sweepCodeSignClones } from "../../native/clones.mjs";
+import { harnessStarted } from "../../testenv.mjs";
 
 // While a throwaway session is open, a marker says so: if the helper restarts, the session is
 // gone and the next result tells Claude it's back on a kept one (with its logins).
@@ -227,9 +229,12 @@ export function createSwitch(st, deps, api) {
     return fail('Use action "list", "use", "new", "delete" or "profiles".');
   }
 
-  // At startup: throwaway sessions a crash left behind, and the note that a clean one ended.
+  // At startup: throwaway sessions a crash left behind, the copies of the browser a hard stop
+  // left on macOS (native/clones.mjs; in the background, never in a test run, which leaves the
+  // computer's folders alone), and the note that a clean one ended.
   function startUp() {
     try { sweepTemporary(); } catch {}
+    if (!harnessStarted()) sweepCodeSignClones({ log });
     if (!existsSync(CLEAN_MARKER)) return;
     rmSync(CLEAN_MARKER, { force: true });
     hostNote(`The clean session ended when the browser restarted. This is session "${st.session}" now, with its logins: switch to a new clean one (pairbrowse_session new, clean: true) if you need it.`);

@@ -5,6 +5,17 @@ Native browser builds are released separately as `browser-<version>` on the
 [GitHub releases page](https://github.com/pairbrowse/pairbrowse/releases), with their SHA-256s, signed
 release check and VirusTotal reports. No release so far fixed a vulnerability with a CVE.
 
+## Unreleased
+
+**Fixed**
+
+- **The PairBrowse browser no longer fills your Mac's disk with copies of itself.** On a Mac the
+  browser kept a copy of itself while it ran, in a hidden system folder, and removed it only when
+  it closed normally. Each time it was stopped hard (PairBrowse ending it, a crash, a test run),
+  the copy stayed behind, a few hundred megabytes as Finder counts it each time. PairBrowse now
+  starts the browser without that copy, and when PairBrowse starts it removes the copies earlier
+  runs left behind (only PairBrowse's own, and only while no PairBrowse browser is open).
+
 ## 0.18.4 (2026-10-28)
 
 PairBrowse is a plugin for Claude Code and Codex: the agent fills in forms, signs up for services

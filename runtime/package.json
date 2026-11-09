@@ -4,7 +4,7 @@
   "engines": { "node": ">=18" },
   "description": "Pinned browser runtime installed into ~/.pairbrowse/runtime with npm ci --ignore-scripts.",
   "dependencies": {
-    "@playwright/mcp": "0.0.83",
+    "@playwright/mcp": "0.0.84",
     "patchright": "1.63.0"
   }
 }
